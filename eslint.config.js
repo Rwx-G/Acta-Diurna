@@ -34,8 +34,45 @@ export default defineConfig(
 		}
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		// Architecture rule: schema modules are pure data definitions. They must
+		// not depend on server-only code or UI components.
+		files: ['src/lib/schema/**'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: ['$lib/server', '$lib/server/*', '**/server/**'],
+							message:
+								'Architecture rule: src/lib/schema must not import server-only code ($lib/server).'
+						},
+						{
+							group: ['$lib/ui', '$lib/ui/*', '**/ui/**'],
+							message: 'Architecture rule: src/lib/schema must not import UI components ($lib/ui).'
+						}
+					]
+				}
+			]
+		}
+	},
+	{
+		// Architecture rule: renderers stay pure. They must not depend on
+		// server-only code so output is reproducible from input alone.
+		files: ['src/lib/render/**'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: ['$lib/server', '$lib/server/*', '**/server/**'],
+							message:
+								'Architecture rule: src/lib/render must not import server-only code ($lib/server); renderers stay pure.'
+						}
+					]
+				}
+			]
+		}
 	}
 );

@@ -18,7 +18,8 @@
 		"format": "prettier --write .",
 		"test:unit": "vitest",
 		"test:e2e": "playwright test --pass-with-no-tests",
-		"test": "playwright install chromium && vitest run && pnpm run test:e2e"
+		"test:setup": "playwright install chromium",
+		"test": "vitest run && pnpm run test:e2e"
 	},
 	"devDependencies": {
 		"@eslint/js": "10.0.1",
