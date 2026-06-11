@@ -59,3 +59,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Build only, no push: proves the production image assembles from a
+      # clean context (story 1.3 / AR8 / D15).
+      - run: docker build --tag acta-diurna:ci .
