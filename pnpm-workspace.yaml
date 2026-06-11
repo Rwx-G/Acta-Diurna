@@ -1,0 +1,5 @@
+# pnpm settings (pnpm >= 10 reads these here, not from package.json).
+# esbuild's postinstall validates its platform binary; required by vite and
+# drizzle-kit. Approved explicitly so installs stay non-interactive.
+allowBuilds:
+  esbuild: true
