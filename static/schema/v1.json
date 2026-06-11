@@ -1,0 +1,532 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "Acta Diurna document (schema v1)",
+	"type": "object",
+	"properties": {
+		"version": {
+			"type": "number",
+			"const": 1
+		},
+		"title": {
+			"type": "string",
+			"minLength": 1
+		},
+		"theme": {
+			"type": "string",
+			"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+		},
+		"sections": {
+			"minItems": 1,
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+					},
+					"title": {
+						"type": "string",
+						"minLength": 1
+					},
+					"audiences": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"summary",
+								"full",
+								"technical"
+							]
+						}
+					},
+					"annex": {
+						"type": "boolean"
+					},
+					"blocks": {
+						"minItems": 1,
+						"type": "array",
+						"items": {
+							"oneOf": [
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "text"
+										},
+										"id": {
+											"type": "string",
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"paragraphs": {
+											"type": "array",
+											"items": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"text": {
+															"type": "string"
+														},
+														"bold": {
+															"type": "boolean"
+														},
+														"italic": {
+															"type": "boolean"
+														},
+														"link": {
+															"type": "object",
+															"properties": {
+																"href": {
+																	"type": "string",
+																	"format": "uri"
+																}
+															},
+															"required": [
+																"href"
+															]
+														}
+													},
+													"required": [
+														"text"
+													]
+												}
+											}
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"paragraphs"
+									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "table"
+										},
+										"id": {
+											"type": "string",
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"columns": {
+											"minItems": 1,
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"key": {
+														"type": "string",
+														"minLength": 1
+													},
+													"label": {
+														"type": "string",
+														"minLength": 1
+													}
+												},
+												"required": [
+													"key",
+													"label"
+												]
+											}
+										},
+										"rows": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"propertyNames": {
+													"type": "string"
+												},
+												"additionalProperties": {
+													"anyOf": [
+														{
+															"type": "string"
+														},
+														{
+															"type": "number"
+														},
+														{
+															"type": "boolean"
+														},
+														{
+															"type": "null"
+														}
+													]
+												}
+											}
+										},
+										"binding": {
+											"type": "object",
+											"properties": {
+												"dataSetId": {
+													"type": "string",
+													"minLength": 1
+												},
+												"fields": {
+													"minItems": 1,
+													"type": "array",
+													"items": {
+														"type": "object",
+														"properties": {
+															"name": {
+																"type": "string",
+																"minLength": 1
+															},
+															"type": {
+																"type": "string",
+																"enum": [
+																	"string",
+																	"number",
+																	"date",
+																	"boolean"
+																]
+															}
+														},
+														"required": [
+															"name",
+															"type"
+														]
+													}
+												}
+											},
+											"required": [
+												"fields"
+											]
+										},
+										"options": {
+											"type": "object",
+											"properties": {
+												"stickyHeader": {
+													"default": true,
+													"type": "boolean"
+												}
+											}
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"columns"
+									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "chart"
+										},
+										"id": {
+											"type": "string",
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"kind": {
+											"type": "string",
+											"enum": [
+												"line",
+												"bar",
+												"area",
+												"pie"
+											]
+										},
+										"series": {
+											"minItems": 1,
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"name": {
+														"type": "string",
+														"minLength": 1
+													},
+													"points": {
+														"type": "array",
+														"items": {
+															"type": "object",
+															"properties": {
+																"x": {
+																	"anyOf": [
+																		{
+																			"type": "string"
+																		},
+																		{
+																			"type": "number"
+																		}
+																	]
+																},
+																"y": {
+																	"type": "number"
+																}
+															},
+															"required": [
+																"x",
+																"y"
+															]
+														}
+													}
+												},
+												"required": [
+													"name",
+													"points"
+												]
+											}
+										},
+										"binding": {
+											"type": "object",
+											"properties": {
+												"dataSetId": {
+													"type": "string",
+													"minLength": 1
+												},
+												"fields": {
+													"minItems": 1,
+													"type": "array",
+													"items": {
+														"type": "object",
+														"properties": {
+															"name": {
+																"type": "string",
+																"minLength": 1
+															},
+															"type": {
+																"type": "string",
+																"enum": [
+																	"string",
+																	"number",
+																	"date",
+																	"boolean"
+																]
+															}
+														},
+														"required": [
+															"name",
+															"type"
+														]
+													}
+												}
+											},
+											"required": [
+												"fields"
+											]
+										},
+										"xAxisLabel": {
+											"type": "string",
+											"minLength": 1
+										},
+										"yAxisLabel": {
+											"type": "string",
+											"minLength": 1
+										},
+										"legendLabel": {
+											"type": "string",
+											"minLength": 1
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"kind"
+									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "kpi"
+										},
+										"id": {
+											"type": "string",
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"items": {
+											"minItems": 1,
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"label": {
+														"type": "string",
+														"minLength": 1
+													},
+													"value": {
+														"anyOf": [
+															{
+																"type": "string"
+															},
+															{
+																"type": "number"
+															}
+														]
+													},
+													"unit": {
+														"type": "string",
+														"minLength": 1
+													},
+													"trend": {
+														"type": "string",
+														"enum": [
+															"up",
+															"down",
+															"flat"
+														]
+													}
+												},
+												"required": [
+													"label",
+													"value"
+												]
+											}
+										},
+										"binding": {
+											"type": "object",
+											"properties": {
+												"dataSetId": {
+													"type": "string",
+													"minLength": 1
+												},
+												"fields": {
+													"minItems": 1,
+													"type": "array",
+													"items": {
+														"type": "object",
+														"properties": {
+															"name": {
+																"type": "string",
+																"minLength": 1
+															},
+															"type": {
+																"type": "string",
+																"enum": [
+																	"string",
+																	"number",
+																	"date",
+																	"boolean"
+																]
+															}
+														},
+														"required": [
+															"name",
+															"type"
+														]
+													}
+												}
+											},
+											"required": [
+												"fields"
+											]
+										}
+									},
+									"required": [
+										"type",
+										"id"
+									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "image"
+										},
+										"id": {
+											"type": "string",
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"assetId": {
+											"type": "string",
+											"format": "uuid",
+											"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+										},
+										"alt": {
+											"type": "string",
+											"minLength": 1
+										},
+										"caption": {
+											"type": "string",
+											"minLength": 1
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"assetId",
+										"alt"
+									]
+								}
+							]
+						}
+					}
+				},
+				"required": [
+					"id",
+					"title",
+					"blocks"
+				]
+			}
+		}
+	},
+	"required": [
+		"version",
+		"title",
+		"sections"
+	]
+}

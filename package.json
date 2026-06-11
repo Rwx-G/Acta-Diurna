@@ -19,7 +19,8 @@
 		"test:unit": "vitest",
 		"test:e2e": "playwright test --pass-with-no-tests",
 		"test:setup": "playwright install chromium",
-		"test": "vitest run && pnpm run test:e2e"
+		"test": "vitest run && pnpm run test:e2e",
+		"schema:export": "node scripts/export-schema.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "10.0.1",

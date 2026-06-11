@@ -1,0 +1,23 @@
+{
+	"version": 1,
+	"title": "Minimal Report",
+	"sections": [
+		{
+			"id": "overview",
+			"title": "Overview",
+			"blocks": [
+				{
+					"type": "text",
+					"id": "introduction",
+					"paragraphs": [
+						[
+							{
+								"text": "The smallest valid Acta Diurna document."
+							}
+						]
+					]
+				}
+			]
+		}
+	]
+}
