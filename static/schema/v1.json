@@ -9,27 +9,33 @@
 		},
 		"title": {
 			"type": "string",
-			"minLength": 1
+			"minLength": 1,
+			"maxLength": 300
 		},
 		"theme": {
 			"type": "string",
+			"maxLength": 300,
 			"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 		},
 		"sections": {
 			"minItems": 1,
+			"maxItems": 100,
 			"type": "array",
 			"items": {
 				"type": "object",
 				"properties": {
 					"id": {
 						"type": "string",
+						"maxLength": 300,
 						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 					},
 					"title": {
 						"type": "string",
-						"minLength": 1
+						"minLength": 1,
+						"maxLength": 300
 					},
 					"audiences": {
+						"maxItems": 3,
 						"type": "array",
 						"items": {
 							"type": "string",
@@ -45,6 +51,7 @@
 					},
 					"blocks": {
 						"minItems": 1,
+						"maxItems": 200,
 						"type": "array",
 						"items": {
 							"oneOf": [
@@ -57,9 +64,11 @@
 										},
 										"id": {
 											"type": "string",
+											"maxLength": 300,
 											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 										},
 										"audiences": {
+											"maxItems": 3,
 											"type": "array",
 											"items": {
 												"type": "string",
@@ -71,14 +80,18 @@
 											}
 										},
 										"paragraphs": {
+											"minItems": 1,
+											"maxItems": 500,
 											"type": "array",
 											"items": {
+												"maxItems": 200,
 												"type": "array",
 												"items": {
 													"type": "object",
 													"properties": {
 														"text": {
-															"type": "string"
+															"type": "string",
+															"maxLength": 5000
 														},
 														"bold": {
 															"type": "boolean"
@@ -91,7 +104,9 @@
 															"properties": {
 																"href": {
 																	"type": "string",
-																	"format": "uri"
+																	"maxLength": 2000,
+																	"format": "uri",
+																	"pattern": "^https?://"
 																}
 															},
 															"required": [
@@ -121,9 +136,11 @@
 										},
 										"id": {
 											"type": "string",
+											"maxLength": 300,
 											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 										},
 										"audiences": {
+											"maxItems": 3,
 											"type": "array",
 											"items": {
 												"type": "string",
@@ -136,17 +153,20 @@
 										},
 										"columns": {
 											"minItems": 1,
+											"maxItems": 100,
 											"type": "array",
 											"items": {
 												"type": "object",
 												"properties": {
 													"key": {
 														"type": "string",
-														"minLength": 1
+														"minLength": 1,
+														"maxLength": 300
 													},
 													"label": {
 														"type": "string",
-														"minLength": 1
+														"minLength": 1,
+														"maxLength": 300
 													}
 												},
 												"required": [
@@ -156,16 +176,19 @@
 											}
 										},
 										"rows": {
+											"maxItems": 10000,
 											"type": "array",
 											"items": {
 												"type": "object",
 												"propertyNames": {
-													"type": "string"
+													"type": "string",
+													"maxLength": 300
 												},
 												"additionalProperties": {
 													"anyOf": [
 														{
-															"type": "string"
+															"type": "string",
+															"maxLength": 5000
 														},
 														{
 															"type": "number"
@@ -185,17 +208,20 @@
 											"properties": {
 												"dataSetId": {
 													"type": "string",
-													"minLength": 1
+													"minLength": 1,
+													"maxLength": 300
 												},
 												"fields": {
 													"minItems": 1,
+													"maxItems": 100,
 													"type": "array",
 													"items": {
 														"type": "object",
 														"properties": {
 															"name": {
 																"type": "string",
-																"minLength": 1
+																"minLength": 1,
+																"maxLength": 300
 															},
 															"type": {
 																"type": "string",
@@ -243,9 +269,11 @@
 										},
 										"id": {
 											"type": "string",
+											"maxLength": 300,
 											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 										},
 										"audiences": {
+											"maxItems": 3,
 											"type": "array",
 											"items": {
 												"type": "string",
@@ -267,15 +295,18 @@
 										},
 										"series": {
 											"minItems": 1,
+											"maxItems": 50,
 											"type": "array",
 											"items": {
 												"type": "object",
 												"properties": {
 													"name": {
 														"type": "string",
-														"minLength": 1
+														"minLength": 1,
+														"maxLength": 300
 													},
 													"points": {
+														"maxItems": 10000,
 														"type": "array",
 														"items": {
 															"type": "object",
@@ -283,7 +314,8 @@
 																"x": {
 																	"anyOf": [
 																		{
-																			"type": "string"
+																			"type": "string",
+																			"maxLength": 300
 																		},
 																		{
 																			"type": "number"
@@ -312,17 +344,20 @@
 											"properties": {
 												"dataSetId": {
 													"type": "string",
-													"minLength": 1
+													"minLength": 1,
+													"maxLength": 300
 												},
 												"fields": {
 													"minItems": 1,
+													"maxItems": 100,
 													"type": "array",
 													"items": {
 														"type": "object",
 														"properties": {
 															"name": {
 																"type": "string",
-																"minLength": 1
+																"minLength": 1,
+																"maxLength": 300
 															},
 															"type": {
 																"type": "string",
@@ -347,15 +382,18 @@
 										},
 										"xAxisLabel": {
 											"type": "string",
-											"minLength": 1
+											"minLength": 1,
+											"maxLength": 300
 										},
 										"yAxisLabel": {
 											"type": "string",
-											"minLength": 1
+											"minLength": 1,
+											"maxLength": 300
 										},
 										"legendLabel": {
 											"type": "string",
-											"minLength": 1
+											"minLength": 1,
+											"maxLength": 300
 										}
 									},
 									"required": [
@@ -373,9 +411,11 @@
 										},
 										"id": {
 											"type": "string",
+											"maxLength": 300,
 											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 										},
 										"audiences": {
+											"maxItems": 3,
 											"type": "array",
 											"items": {
 												"type": "string",
@@ -388,18 +428,21 @@
 										},
 										"items": {
 											"minItems": 1,
+											"maxItems": 50,
 											"type": "array",
 											"items": {
 												"type": "object",
 												"properties": {
 													"label": {
 														"type": "string",
-														"minLength": 1
+														"minLength": 1,
+														"maxLength": 300
 													},
 													"value": {
 														"anyOf": [
 															{
-																"type": "string"
+																"type": "string",
+																"maxLength": 300
 															},
 															{
 																"type": "number"
@@ -408,7 +451,8 @@
 													},
 													"unit": {
 														"type": "string",
-														"minLength": 1
+														"minLength": 1,
+														"maxLength": 300
 													},
 													"trend": {
 														"type": "string",
@@ -430,17 +474,20 @@
 											"properties": {
 												"dataSetId": {
 													"type": "string",
-													"minLength": 1
+													"minLength": 1,
+													"maxLength": 300
 												},
 												"fields": {
 													"minItems": 1,
+													"maxItems": 100,
 													"type": "array",
 													"items": {
 														"type": "object",
 														"properties": {
 															"name": {
 																"type": "string",
-																"minLength": 1
+																"minLength": 1,
+																"maxLength": 300
 															},
 															"type": {
 																"type": "string",
@@ -478,9 +525,11 @@
 										},
 										"id": {
 											"type": "string",
+											"maxLength": 300,
 											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 										},
 										"audiences": {
+											"maxItems": 3,
 											"type": "array",
 											"items": {
 												"type": "string",
@@ -498,11 +547,13 @@
 										},
 										"alt": {
 											"type": "string",
-											"minLength": 1
+											"minLength": 1,
+											"maxLength": 500
 										},
 										"caption": {
 											"type": "string",
-											"minLength": 1
+											"minLength": 1,
+											"maxLength": 500
 										}
 									},
 									"required": [

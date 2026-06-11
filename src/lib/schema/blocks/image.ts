@@ -11,8 +11,11 @@ export const imageBlockSchema = z.object({
 	id: idSchema,
 	audiences: audiencesSchema.optional(),
 	assetId: z.uuid('Must be the UUID of an uploaded asset.'),
-	alt: z.string().min(1, 'Alt text must not be empty.'),
-	caption: z.string().min(1).optional()
+	alt: z
+		.string()
+		.min(1, 'Alt text must not be empty.')
+		.max(500, 'Alt text too long: 500 characters maximum.'),
+	caption: z.string().min(1).max(500, 'Caption too long: 500 characters maximum.').optional()
 });
 
 export type ImageBlock = z.infer<typeof imageBlockSchema>;

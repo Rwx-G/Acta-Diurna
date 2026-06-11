@@ -4,7 +4,7 @@
  * `$lib/ui` (enforced by ESLint `no-restricted-imports`).
  */
 import { z } from 'zod';
-import { documentSchemaV1 } from './versions/v1.ts';
+import { documentSchemaV1 } from './versions/index.ts';
 
 export {
 	AUDIENCES,
@@ -41,16 +41,14 @@ export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 
 export {
+	documentSchemaV1,
 	getSchema,
 	isSupportedVersion,
 	schemaRegistry,
 	SUPPORTED_VERSIONS,
 	UnsupportedVersionError
 } from './versions/index.ts';
-export type { SupportedVersion } from './versions/index.ts';
-
-export { documentSchemaV1 } from './versions/v1.ts';
-export type { DocumentV1, DocumentV1Input } from './versions/v1.ts';
+export type { DocumentV1, DocumentV1Input, SupportedVersion } from './versions/index.ts';
 
 export {
 	documentErrorMap,
@@ -68,8 +66,34 @@ export type {
 /** Version of the current document schema. */
 export const DOCUMENT_SCHEMA_VERSION = 1;
 
-/** Alias for the current document schema version. */
-export const documentSchema = documentSchemaV1;
+/**
+ * `z.url({ protocol: /^https?$/ })` keeps the protocol restriction internal to
+ * zod; the emitted JSON Schema only carries `format: "uri"`. Walk the tree and
+ * stamp the restriction on the link `href` node so the published artifact
+ * advertises it to producers.
+ */
+function attachLinkHrefPattern(node: unknown): void {
+	if (Array.isArray(node)) {
+		for (const item of node) {
+			attachLinkHrefPattern(item);
+		}
+		return;
+	}
+	if (typeof node !== 'object' || node === null) {
+		return;
+	}
+	const record = node as Record<string, unknown>;
+	const properties = record['properties'];
+	if (typeof properties === 'object' && properties !== null) {
+		const href = (properties as Record<string, unknown>)['href'];
+		if (typeof href === 'object' && href !== null) {
+			(href as Record<string, unknown>)['pattern'] = '^https?://';
+		}
+	}
+	for (const value of Object.values(record)) {
+		attachLinkHrefPattern(value);
+	}
+}
 
 /**
  * Exports the current document schema as JSON Schema draft 2020-12, the
@@ -79,6 +103,7 @@ export const documentSchema = documentSchemaV1;
 export function toJsonSchema(): Record<string, unknown> {
 	const jsonSchema = z.toJSONSchema(documentSchemaV1, { target: 'draft-2020-12', io: 'input' });
 	const { $schema, ...rest } = jsonSchema;
+	attachLinkHrefPattern(rest);
 	return {
 		$schema,
 		title: `Acta Diurna document (schema v${DOCUMENT_SCHEMA_VERSION})`,

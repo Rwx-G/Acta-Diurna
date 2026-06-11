@@ -44,4 +44,26 @@ describe('toJsonSchema', () => {
 		const committed: unknown = JSON.parse(readFileSync('static/schema/v1.json', 'utf8'));
 		expect(committed).toEqual(toJsonSchema());
 	});
+
+	it('publishes the http(s) restriction as a pattern on the link href node', () => {
+		type BlockNode = {
+			properties: {
+				type?: { const?: string };
+				paragraphs?: {
+					items: {
+						items: {
+							properties: { link: { properties: { href: { pattern?: string } } } };
+						};
+					};
+				};
+			};
+		};
+		const schema = toJsonSchema() as ExportedJsonSchema;
+		const blocks = schema.properties.sections.items.properties.blocks.items.oneOf as BlockNode[];
+		const textBlock = blocks.find((block) => block.properties.type?.const === 'text');
+		expect(textBlock).toBeDefined();
+		expect(
+			textBlock?.properties.paragraphs?.items.items.properties.link.properties.href.pattern
+		).toBe('^https?://');
+	});
 });

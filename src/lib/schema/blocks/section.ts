@@ -21,10 +21,16 @@ export type BlockType = Block['type'];
 
 export const sectionSchema = z.object({
 	id: idSchema,
-	title: z.string().min(1, 'A section needs a title.'),
+	title: z
+		.string()
+		.min(1, 'A section needs a title.')
+		.max(300, 'Section title too long: 300 characters maximum.'),
 	audiences: audiencesSchema.optional(),
 	annex: z.boolean().optional(),
-	blocks: z.array(blockSchema).min(1, 'A section must contain at least one block.')
+	blocks: z
+		.array(blockSchema)
+		.min(1, 'A section must contain at least one block.')
+		.max(200, 'Too many blocks in a section: 200 maximum.')
 });
 
 export type Section = z.infer<typeof sectionSchema>;

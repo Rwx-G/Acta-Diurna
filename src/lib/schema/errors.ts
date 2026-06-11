@@ -1,6 +1,11 @@
 import type { z } from 'zod';
-import { SUPPORTED_VERSIONS } from './versions/index.ts';
-import { documentSchemaV1, type DocumentV1 } from './versions/v1.ts';
+import {
+	documentSchemaV1,
+	getSchema,
+	isSupportedVersion,
+	SUPPORTED_VERSIONS,
+	type DocumentV1
+} from './versions/index.ts';
 
 /**
  * One actionable validation error (FR2/FR15). The same shape feeds the
@@ -75,15 +80,8 @@ function lastFieldName(path: ReadonlyArray<PropertyKey>): string | undefined {
 	return undefined;
 }
 
-function hintForIssue(issue: z.core.$ZodIssue): string | undefined {
-	if (issue.code === 'custom') {
-		const hint = issue.params?.['hint'];
-		return typeof hint === 'string' ? hint : undefined;
-	}
-	const field = lastFieldName(issue.path);
-	if (field !== undefined && field in FIELD_HINTS) {
-		return FIELD_HINTS[field];
-	}
+/** Issue-code-specific hints. The generic expected-type case lives in {@link hintForIssue}. */
+function hintForCode(issue: z.core.$ZodIssue): string | undefined {
 	switch (issue.code) {
 		case 'invalid_union':
 			if (issue.discriminator !== undefined && 'options' in issue && issue.options !== undefined) {
@@ -91,12 +89,10 @@ function hintForIssue(issue: z.core.$ZodIssue): string | undefined {
 			}
 			return undefined;
 		case 'invalid_value':
-			if (field === 'version') {
-				return `Supported document schema versions: ${SUPPORTED_VERSIONS.join(', ')}.`;
-			}
 			return `Allowed values: ${issue.values.map(String).join(', ')}.`;
 		case 'too_small':
 			if (issue.origin === 'array') {
+				const field = lastFieldName(issue.path);
 				return (
 					(field !== undefined ? ARRAY_HINTS[field] : undefined) ??
 					`Provide at least ${issue.minimum} item(s).`
@@ -106,8 +102,6 @@ function hintForIssue(issue: z.core.$ZodIssue): string | undefined {
 				return 'Provide a non-empty value.';
 			}
 			return undefined;
-		case 'invalid_type':
-			return `Provide a value of type ${issue.expected}.`;
 		case 'invalid_format':
 			switch (issue.format) {
 				case 'url':
@@ -124,6 +118,31 @@ function hintForIssue(issue: z.core.$ZodIssue): string | undefined {
 	}
 }
 
+/**
+ * Hint precedence: custom-issue `params.hint` > issue-code hint > field hint.
+ * The generic expected-type hint ranks below field hints because it carries
+ * the least information (a missing `alt` deserves the accessibility hint, not
+ * "provide a string").
+ */
+function hintForIssue(issue: z.core.$ZodIssue): string | undefined {
+	if (issue.code === 'custom') {
+		const hint = issue.params?.['hint'];
+		return typeof hint === 'string' ? hint : undefined;
+	}
+	const codeHint = hintForCode(issue);
+	if (codeHint !== undefined) {
+		return codeHint;
+	}
+	const field = lastFieldName(issue.path);
+	if (field !== undefined && field in FIELD_HINTS) {
+		return FIELD_HINTS[field];
+	}
+	if (issue.code === 'invalid_type') {
+		return `Provide a value of type ${issue.expected}.`;
+	}
+	return undefined;
+}
+
 /** Flattens a `ZodError` into actionable `{path, message, hint?}` entries. */
 export function toValidationErrors(error: z.ZodError): ValidationErrorDetail[] {
 	return error.issues.map((issue) => {
@@ -136,16 +155,41 @@ export function toValidationErrors(error: z.ZodError): ValidationErrorDetail[] {
 	});
 }
 
-/**
- * Validates an untrusted value against the current document schema.
- * THE contract every consumer uses: editor saves, API writes, agent payloads.
- */
-export function validateDocument(input: unknown): DocumentValidationResult {
-	const result = documentSchemaV1.safeParse(input, { error: documentErrorMap });
+const SUPPORTED_VERSIONS_HINT = `Supported document schema versions: ${SUPPORTED_VERSIONS.join(', ')}.`;
+
+function versionError(message: string): DocumentValidationResult {
+	return { ok: false, errors: [{ path: 'version', message, hint: SUPPORTED_VERSIONS_HINT }] };
+}
+
+function parseWith(schema: typeof documentSchemaV1, input: unknown): DocumentValidationResult {
+	const result = schema.safeParse(input, { error: documentErrorMap });
 	if (result.success) {
 		return { ok: true, document: result.data };
 	}
 	return { ok: false, errors: toValidationErrors(result.error) };
+}
+
+/**
+ * Validates an untrusted value against the document schema matching its
+ * declared `version`, routed through the version registry (FR7). A missing or
+ * unsupported version yields a single actionable error carrying the supported
+ * range. THE contract every consumer uses: editor saves, API writes, agent
+ * payloads.
+ */
+export function validateDocument(input: unknown): DocumentValidationResult {
+	if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+		// Not a candidate document at all: let the schema report the root-level
+		// type error with the standard `document` path.
+		return parseWith(documentSchemaV1, input);
+	}
+	const version: unknown = (input as Record<string, unknown>)['version'];
+	if (version === undefined) {
+		return versionError('Missing document schema version.');
+	}
+	if (typeof version !== 'number' || !isSupportedVersion(version)) {
+		return versionError('Unsupported document schema version.');
+	}
+	return parseWith(getSchema(version), input);
 }
 
 /** Shapes validation errors as an RFC 9457 problem-details body (architecture D9). */

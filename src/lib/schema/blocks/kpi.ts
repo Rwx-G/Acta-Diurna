@@ -6,9 +6,9 @@ export const kpiTrendSchema = z.enum(['up', 'down', 'flat']);
 export type KpiTrend = z.infer<typeof kpiTrendSchema>;
 
 export const kpiItemSchema = z.object({
-	label: z.string().min(1),
-	value: z.union([z.string(), z.number()]),
-	unit: z.string().min(1).optional(),
+	label: z.string().min(1).max(300, 'KPI label too long: 300 characters maximum.'),
+	value: z.union([z.string().max(300, 'KPI value too long: 300 characters maximum.'), z.number()]),
+	unit: z.string().min(1).max(300, 'KPI unit too long: 300 characters maximum.').optional(),
 	trend: kpiTrendSchema.optional()
 });
 
@@ -19,7 +19,7 @@ export const kpiBlockSchema = z
 		type: z.literal('kpi'),
 		id: idSchema,
 		audiences: audiencesSchema.optional(),
-		items: z.array(kpiItemSchema).min(1).optional(),
+		items: z.array(kpiItemSchema).min(1).max(50, 'Too many KPI items: 50 maximum.').optional(),
 		binding: bindingSchema.optional()
 	})
 	.superRefine(requireStaticDataOrBinding('items'));

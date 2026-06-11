@@ -31,7 +31,9 @@ describe('validateDocument - invalid corpus', () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0].path).toBe('sections[0].blocks[0].alt');
 		expect(errors[0].message).toBe('Missing required field: expected string.');
-		expect(errors[0].hint).toContain('alt text is required');
+		expect(errors[0].hint).toBe(
+			'Describe the image for screen readers; alt text is required on every image block.'
+		);
 	});
 
 	it('lists the valid block types for an unknown block type', () => {
@@ -49,7 +51,7 @@ describe('validateDocument - invalid corpus', () => {
 				{
 					id: 'overview',
 					title: 'Overview',
-					blocks: [{ type: 'text', id: 'intro', paragraphs: [] }]
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
 				}
 			]
 		});
@@ -57,6 +59,38 @@ describe('validateDocument - invalid corpus', () => {
 		expect(errors[0].path).toBe('version');
 		expect(errors[0].message).toBe('Unsupported document schema version.');
 		expect(errors[0].hint).toBe('Supported document schema versions: 1.');
+	});
+
+	it('reports an actionable error when the version is missing', () => {
+		const errors = expectInvalid({
+			title: 'No version',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
+				}
+			]
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe('version');
+		expect(errors[0].message).toBe('Missing document schema version.');
+		expect(errors[0].hint).toBe('Supported document schema versions: 1.');
+	});
+
+	it('routes a version 1 document through the registry dispatch', () => {
+		const result = validateDocument({
+			version: 1,
+			title: 'Routed',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
 	});
 
 	it('reports the expected type for a wrong field type', () => {
@@ -67,7 +101,7 @@ describe('validateDocument - invalid corpus', () => {
 				{
 					id: 'overview',
 					title: 'Overview',
-					blocks: [{ type: 'text', id: 'intro', paragraphs: [] }]
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
 				}
 			]
 		});
@@ -99,7 +133,9 @@ describe('validateDocument - invalid corpus', () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0].path).toBe('sections[0].blocks[0].rows');
 		expect(errors[0].message).toBe('Provide static rows or a data binding.');
-		expect(errors[0].hint).toContain('binding declaring the expected fields');
+		expect(errors[0].hint).toBe(
+			'Add inline rows for static content, or a binding declaring the expected fields.'
+		);
 	});
 
 	it('rejects an invalid section id slug', () => {
@@ -110,14 +146,16 @@ describe('validateDocument - invalid corpus', () => {
 				{
 					id: 'Bad Slug',
 					title: 'Bad',
-					blocks: [{ type: 'text', id: 'intro', paragraphs: [] }]
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
 				}
 			]
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0].path).toBe('sections[0].id');
 		expect(errors[0].message).toBe('Must be a slug: lowercase letters, digits and single hyphens.');
-		expect(errors[0].hint).toContain('lowercase letters, digits and single hyphens');
+		expect(errors[0].hint).toBe(
+			'Use lowercase letters, digits and single hyphens, e.g. executive-summary.'
+		);
 	});
 
 	it('rejects non-http(s) link URLs in narrative runs', () => {
@@ -145,7 +183,7 @@ describe('validateDocument - invalid corpus', () => {
 					id: 'overview',
 					title: 'Overview',
 					audiences: ['vip'],
-					blocks: [{ type: 'text', id: 'intro', paragraphs: [] }]
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
 				}
 			]
 		});
@@ -154,7 +192,7 @@ describe('validateDocument - invalid corpus', () => {
 		expect(errors[0].hint).toBe('Allowed values: summary, full, technical.');
 	});
 
-	it('rejects a non-UUID asset reference', () => {
+	it('rejects a non-UUID asset reference with format guidance', () => {
 		const errors = expectInvalid(
 			documentWithBlocks([
 				{ type: 'image', id: 'diagram', assetId: 'https://example.com/x.png', alt: 'A diagram' }
@@ -162,7 +200,19 @@ describe('validateDocument - invalid corpus', () => {
 		);
 		expect(errors).toHaveLength(1);
 		expect(errors[0].path).toBe('sections[0].blocks[0].assetId');
-		expect(errors[0].hint).toContain('remote image URLs are not supported');
+		// invalid_format is code-specific, so it outranks the assetId field hint
+		expect(errors[0].hint).toBe('Use a UUID, e.g. 0197b3a0-5c6e-7c2a-9f4d-2b8e6a1d3c5f.');
+	});
+
+	it('keeps the field hint for a missing asset reference', () => {
+		const errors = expectInvalid(
+			documentWithBlocks([{ type: 'image', id: 'diagram', alt: 'A diagram' }])
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe('sections[0].blocks[0].assetId');
+		expect(errors[0].hint).toBe(
+			'Reference an uploaded asset by its UUID; remote image URLs are not supported.'
+		);
 	});
 
 	it('reports the document root for non-object input', () => {
@@ -191,6 +241,54 @@ describe('validateDocument - invalid corpus', () => {
 		expect(paths).toContain('title');
 		expect(paths).toContain('sections[0].blocks[0].alt');
 		expect(paths).toContain('sections[0].blocks[1].type');
+	});
+});
+
+describe('validateDocument - size bounds (DoS protection)', () => {
+	it('caps the number of sections at 100', () => {
+		const errors = expectInvalid({
+			version: 1,
+			title: 'Too many sections',
+			sections: Array.from({ length: 101 }, (_, index) => ({
+				id: `section-${index}`,
+				title: 'Section',
+				blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
+			}))
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe('sections');
+		expect(errors[0].message).toBe('Too many sections: 100 maximum.');
+	});
+
+	it('caps the runs per paragraph at 200', () => {
+		const errors = expectInvalid(
+			documentWithBlocks([
+				{
+					type: 'text',
+					id: 'narrative',
+					paragraphs: [Array.from({ length: 201 }, () => ({ text: 'run' }))]
+				}
+			])
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe('sections[0].blocks[0].paragraphs[0]');
+		expect(errors[0].message).toBe('Too many runs in a paragraph: 200 maximum.');
+	});
+
+	it('caps the table rows at 10000', () => {
+		const errors = expectInvalid(
+			documentWithBlocks([
+				{
+					type: 'table',
+					id: 'big-table',
+					columns: [{ key: 'n', label: 'N' }],
+					rows: Array.from({ length: 10001 }, (_, index) => ({ n: index }))
+				}
+			])
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe('sections[0].blocks[0].rows');
+		expect(errors[0].message).toBe('Too many table rows: 10000 maximum.');
 	});
 });
 

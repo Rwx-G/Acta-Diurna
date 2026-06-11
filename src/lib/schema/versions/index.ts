@@ -10,7 +10,7 @@ export const schemaRegistry = {
 
 export type SupportedVersion = keyof typeof schemaRegistry;
 
-export const SUPPORTED_VERSIONS: readonly number[] = Object.keys(schemaRegistry).map(Number);
+export const SUPPORTED_VERSIONS = [1] as const satisfies readonly SupportedVersion[];
 
 export class UnsupportedVersionError extends Error {
 	readonly requestedVersion: number;

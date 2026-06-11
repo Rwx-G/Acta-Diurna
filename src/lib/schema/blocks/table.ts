@@ -1,13 +1,18 @@
 import { z } from 'zod';
 import { audiencesSchema, bindingSchema, idSchema, requireStaticDataOrBinding } from './shared.ts';
 
-export const tableCellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+export const tableCellSchema = z.union([
+	z.string().max(5000, 'Cell text too long: 5000 characters maximum.'),
+	z.number(),
+	z.boolean(),
+	z.null()
+]);
 
 export type TableCell = z.infer<typeof tableCellSchema>;
 
 export const tableColumnSchema = z.object({
-	key: z.string().min(1),
-	label: z.string().min(1)
+	key: z.string().min(1).max(300, 'Column key too long: 300 characters maximum.'),
+	label: z.string().min(1).max(300, 'Column label too long: 300 characters maximum.')
 });
 
 export type TableColumn = z.infer<typeof tableColumnSchema>;
@@ -17,8 +22,13 @@ export const tableBlockSchema = z
 		type: z.literal('table'),
 		id: idSchema,
 		audiences: audiencesSchema.optional(),
-		columns: z.array(tableColumnSchema).min(1),
-		rows: z.array(z.record(z.string(), tableCellSchema)).optional(),
+		columns: z.array(tableColumnSchema).min(1).max(100, 'Too many table columns: 100 maximum.'),
+		rows: z
+			.array(
+				z.record(z.string().max(300, 'Row key too long: 300 characters maximum.'), tableCellSchema)
+			)
+			.max(10000, 'Too many table rows: 10000 maximum.')
+			.optional(),
 		binding: bindingSchema.optional(),
 		options: z
 			.object({
