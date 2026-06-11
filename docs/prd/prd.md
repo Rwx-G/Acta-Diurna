@@ -77,7 +77,7 @@ Target users: analysts, consultants, and engineers who produce recurring reports
 Prove one loop: **compose from templates, fill, share a link, the report is beautiful and visible.**
 
 - Declarative document model (versioned JSON schema) and interactive renderer (hybrid slides + scroll, links, polished default theme)
-- Template bricks and **saved skeletons** (compose once, reuse every cycle)
+- Template bricks and **saved skeletons** (compose once, reuse every cycle); duplicate a previous issue to start the next
 - Data injection: file upload and basic API push onto a skeleton
 - External sharing with recipient validation: the author sends an unguessable link; the reader verifies their email via an SMTP magic link before reading. Two modes per share: **restricted** (author-listed emails only) or **open with verification** (anyone holding the link, identity validated and recorded). Links revocable and expirable.
 - SMTP integration (magic link delivery) configured via environment
@@ -312,17 +312,18 @@ The authoritative phase feature lists live in the Product Scope section; functio
 - FR27: Readers can read any report on a mobile browser `[P1]`
 - FR28: Readers can switch a report between audience levels (summary / full / technical); reports without level tags render identically for everyone `[P2]`
 - FR29: Presenters can use a presenter view with speaker notes, timer, next-section preview, and a meeting mode that hides annexes `[P2]`
+- FR39: Authors can select among multiple built-in themes for a report; the default theme applies when none is chosen `[P2]`
 
 ### AI & Programmatic Authoring
 
-- FR30: Authenticated clients can create, update, and publish reports through the REST API with full parity to the author workspace `[P1]`
+- FR30: Authenticated clients can create, update, and publish reports through the REST API with full parity to the author workspace; in MVP this is the programmatic authoring surface for agents and scripts, until the MCP server (FR31) ships `[P1]`
 - FR31: AI agents can discover the document schema, list skeletons, and author reports through an MCP server `[P2]`
 - FR32: AI connectors generate an outline for human approval before producing report content `[P2]`
 - FR33: Operators can configure any OpenAI-compatible LLM endpoint (cloud or local); AI connectors are opt-in per instance `[P2]`
 
 ### Administration & Deployment
 
-- FR34: Operators can deploy the full stack with docker compose and configure it entirely through environment variables `[P1]`
+- FR34: Operators can deploy the full stack with docker compose, configure it entirely through environment variables, and upgrade it with a pull and restart - database migrations run automatically `[P1]`
 - FR35: The author authenticates to the workspace (single author account in MVP) `[P1]`
 - FR36: Operators configure the SMTP relay (host, credentials, TLS mode) via environment `[P1]`
 - FR37: Operators can back up and restore all state through standard PostgreSQL tooling `[P1]`
