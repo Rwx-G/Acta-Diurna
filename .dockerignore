@@ -1,0 +1,39 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+.github
+
+# Secrets and environment
+.env
+.env.*
+
+# Dependencies and build outputs
+node_modules
+build
+.svelte-kit
+
+# Tests and tooling not needed in the image
+e2e
+test-results
+playwright-report
+playwright.config.ts
+eslint.config.js
+.prettierrc
+.prettierignore
+.vscode
+.idea
+
+# Project prose and agent workspaces
+docs
+_bmad
+_bmad-output
+_junk
+.claude
+*.md
+LICENSE
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
