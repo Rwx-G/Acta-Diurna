@@ -1,12 +1,14 @@
 import { defineConfig } from 'drizzle-kit';
 
+if (!process.env.DATABASE_URL) {
+	throw new Error('DATABASE_URL is required for drizzle-kit commands');
+}
+
 export default defineConfig({
 	dialect: 'postgresql',
 	schema: './src/lib/server/db/schema.ts',
 	out: './drizzle',
 	dbCredentials: {
-		// Only needed by drizzle-kit commands that touch a live database
-		// (push, migrate, studio); `generate` works without it.
-		url: process.env.DATABASE_URL ?? ''
+		url: process.env.DATABASE_URL
 	}
 });
