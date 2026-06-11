@@ -236,7 +236,7 @@ npx sv create acta-diurna --install pnpm
 Acta-Diurna/
 ├── README.md / LICENSE / .gitignore / .gitattributes / .github/   # already in repo
 ├── package.json / pnpm-lock.yaml / .nvmrc                         # Node 22 pinned
-├── svelte.config.js / vite.config.ts / tsconfig.json (strict)
+├── vite.config.ts (config home: SvelteKit + adapter via sveltekit() options) / tsconfig.json (strict)
 ├── eslint.config.js / .prettierrc
 ├── drizzle.config.ts / playwright.config.ts
 ├── Dockerfile / docker-compose.yml / .dockerignore / .env.example
