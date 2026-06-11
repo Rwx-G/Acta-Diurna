@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo.svg" alt="Acta Diurna logo" width="88" align="left">
+</picture>
+
 # Acta Diurna
 
 Self-hosted, AI-powered reporting platform. Reports are served as polished web documents - presentable in a meeting, readable from an email, adapted to each audience. A better alternative to PowerPoint for recurring reporting.
