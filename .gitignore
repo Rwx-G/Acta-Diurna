@@ -1,0 +1,21 @@
+# Local scratch space, never committed
+_junk/
+
+# Environment and secrets
+.env
+.env.*
+
+# Node
+node_modules/
+
+# Build outputs
+build/
+.svelte-kit/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+*.swp
