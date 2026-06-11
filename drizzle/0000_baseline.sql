@@ -1,0 +1,2 @@
+-- Baseline migration: establishes the generate->apply pipeline (story 1.3).
+-- Intentionally empty; business tables arrive with their own stories.
