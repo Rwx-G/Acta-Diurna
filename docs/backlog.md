@@ -4,6 +4,8 @@ Items parked during autonomous development runs: decisions needing the product o
 
 ## Decisions Needed (product owner)
 
+- **Compose secrets vs env simplicity (1.3 security audit, High).** docker.md mandates no secrets in env; current compose passes POSTGRES_PASSWORD/SESSION_SECRET via `environment:` (readable via docker inspect). Moving to Compose `secrets:` + `_FILE` convention hardens but complicates the 5-minute deploy promise. Trade-off is the product owner's: harden now, or accept for single-host self-hosted (operator owns the docker socket anyway) and document. Recommendation: accept + document, revisit if multi-operator hosting appears.
+- **Local secrets-fence hook was narrowed during 1.3** (uncommitted, `.claude/hooks/secrets-fence.py`): exactly `.env.example` is now writable; all other .env variants stay blocked (10-case probe recorded). Review and bless or revert.
 - **Binding-to-render-slot mapping (before Epic 2 story 2.4/2.5).** The schema's `binding.fields` declares expected field names+types, but nothing maps a field onto its consuming slot (table column key, chart x/y, kpi item). Architect review recommends pinning this by a short decision before Epic 2: extend `bindingSchema` with per-field target slots (schema change, version-safe since additive) vs keep the mapping resolver-side by convention. Recommendation: additive schema extension. (Raised: 1.2 QA, 2026-06-12)
 
 ## QA Findings (non-blocking)
@@ -15,4 +17,7 @@ Items parked during autonomous development runs: decisions needing the product o
 
 ## Future Improvements
 
-_None yet._
+- **e2e fixture strategy: Testcontainers PostgreSQL (decision adopted from 1.3 architect review).** First e2e story (1.6) implements: `@testcontainers/postgresql` ephemeral db per Playwright run, webServer launching `node build` against it, boot migrations give a known state. Drop `--pass-with-no-tests` then; axe-core gate lands there too.
+- **Trivy image scan in CI docker job** (docker.md tooling gap, 1.3 architect review).
+- **Migration failure policy**: bounded retry for transient connection errors + operator recovery runbook; verify drizzle transactional-DDL behavior before complex migrations. App restart is on-failure:5 since 1.3 QA. (1.3 architect review)
+- **Pool sizing from env** when the reader realm load arrives (Epic 3); pool error handler exists since 1.3 QA.
