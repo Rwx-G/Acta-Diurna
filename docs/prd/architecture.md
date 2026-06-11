@@ -108,7 +108,7 @@ npx sv create acta-diurna --install pnpm
 
 ### Data Architecture
 
-- **D1 - Database access: Drizzle ORM 0.44 (stable) + node-postgres driver.** Rejected: Prisma (heavy runtime, codegen), Kysely (lower-level without benefit here), Drizzle 1.0 beta (no betas in foundations). Migrations via drizzle-kit, executed automatically at container start (FR34).
+- **D1 - Database access: Drizzle ORM 0.45.x (stable; 0.44 superseded by security advisory GHSA-gpj5-g38j-94v9) + node-postgres driver.** Rejected: Prisma (heavy runtime, codegen), Kysely (lower-level without benefit here), Drizzle 1.0 beta (no betas in foundations). Migrations via drizzle-kit, executed automatically at container start (FR34).
 - **D2 - Document storage: the report document lives in a JSONB column**; relational tables around it (reports, skeletons, shares, reader_identities, access_records, data_sets). Uploaded data files on the single Docker volume, metadata in PostgreSQL (matches the NFR backup contract: pg_dump + one volume copy).
 - **D3 - Validation: Zod 4 is the single source of truth for the document schema.** Native `z.toJSONSchema()` export produces the published JSON Schema for agents (FR31). One definition yields TypeScript types, runtime validation, and the published contract. Custom error map produces the actionable errors required by FR2/FR15.
 

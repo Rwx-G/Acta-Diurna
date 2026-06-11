@@ -85,7 +85,7 @@ From the Architecture Decision Document:
 
 - AR1: **Starter template**: `npx sv create acta-diurna --install pnpm` (SvelteKit minimal, TypeScript, add-ons: eslint, prettier, vitest, playwright) + post-scaffold: `@sveltejs/adapter-node`, strict tsconfig, exact version pinning, `.nvmrc` - this is Epic 1 Story 1
 - AR2: **Document schema v1 package** (`src/lib/schema/`): Zod 4 single source of truth, typed blocks, audience-level tags designed in, version field + N/N-1 support, `z.toJSONSchema()` export, actionable error map - the load-bearing deliverable, scheduled immediately after scaffold
-- AR3: Drizzle ORM 0.44 + node-postgres; drizzle-kit migrations executed automatically at container start
+- AR3: Drizzle ORM 0.45.x + node-postgres; drizzle-kit migrations executed automatically at container start
 - AR4: Shared error model: typed `AppError` mapped to RFC 9457 `application/problem+json` by a single hook; same shape for schema validation, binding diagnostics, HTTP errors
 - AR5: Service layer under `src/lib/server/<domain>/` (documents, skeletons, ingestion, sharing, auth, mail); routes thin; UI and API both consume services (FR30 parity is structural)
 - AR6: Two session realms (author / reader) with separate cookies; magic-link tokens hashed at rest (SHA-256); author password argon2id
