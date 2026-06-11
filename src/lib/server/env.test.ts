@@ -65,6 +65,28 @@ describe('parseEnv', () => {
 		);
 	});
 
+	it('allows debug LOG_LEVEL outside production', () => {
+		const env = parseEnv({ ...validEnv, NODE_ENV: 'development', LOG_LEVEL: 'debug' });
+
+		expect(env.LOG_LEVEL).toBe('debug');
+	});
+
+	it('names LOG_LEVEL when debug is requested in production', () => {
+		expect(() =>
+			parseEnv({ ...validEnv, NODE_ENV: 'production', LOG_LEVEL: 'debug' })
+		).toThrowError(/LOG_LEVEL: debug is not allowed when NODE_ENV=production/);
+	});
+
+	it('names LOG_LEVEL when the value is not a known level', () => {
+		expect(() => parseEnv({ ...validEnv, LOG_LEVEL: 'trace' })).toThrowError(/LOG_LEVEL/);
+	});
+
+	it('names ORIGIN when the scheme is not http(s)', () => {
+		expect(() => parseEnv({ ...validEnv, ORIGIN: 'ftp://reports.example.com' })).toThrowError(
+			/ORIGIN: must be an http:\/\/ or https:\/\/ URL/
+		);
+	});
+
 	it('names PORT when it is not a valid port number', () => {
 		expect(() => parseEnv({ ...validEnv, PORT: 'abc' })).toThrowError(/PORT/);
 		expect(() => parseEnv({ ...validEnv, PORT: '70000' })).toThrowError(/PORT/);

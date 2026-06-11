@@ -1,7 +1,8 @@
 services:
   app:
     build: .
-    restart: unless-stopped
+    # Permanent boot failures (bad env, failed migration) must stop, not loop silently.
+    restart: on-failure:5
     ports:
       - '${PORT:-3000}:3000'
     environment:
@@ -47,6 +48,15 @@ services:
       start_period: 10s
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Entrypoint runs as root then drops to postgres (gosu): the minimum it needs.
+    cap_add:
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+      - SETGID
+      - SETUID
 
 volumes:
   pgdata:

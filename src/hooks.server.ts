@@ -1,4 +1,5 @@
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
+import { sequence } from '@sveltejs/kit/hooks';
 import { building } from '$app/environment';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv } from '$lib/server/env';
@@ -29,16 +30,26 @@ export const init: ServerInit = async () => {
 	logger.info('migrations applied, accepting traffic');
 };
 
-export const handle: Handle = async ({ event, resolve }) => {
-	const requestId = crypto.randomUUID();
-	event.locals.requestId = requestId;
+const requestContext: Handle = async ({ event, resolve }) => {
+	event.locals.requestId = crypto.randomUUID();
+	return await resolve(event);
+};
+
+const securityHeaders: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'no-referrer');
+	return response;
+};
+
+const accessLog: Handle = async ({ event, resolve }) => {
 	const start = performance.now();
 
 	const response = await resolve(event);
 
 	logger.info(
 		{
-			requestId,
+			requestId: event.locals.requestId,
 			method: event.request.method,
 			path: event.url.pathname,
 			status: response.status,
@@ -48,6 +59,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	);
 	return response;
 };
+
+export const handle: Handle = sequence(requestContext, securityHeaders, accessLog);
 
 export const handleError: HandleServerError = ({ error, event, status, message }) => {
 	logger.error(
@@ -60,6 +73,12 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 		},
 		message
 	);
-	// Never leak internals to the client (problem+json shaping arrives with the API layer).
-	return { message: 'Internal Error' };
+	// Never leak internals to the client; RFC 9457 problem-details shape
+	// (message is required by SvelteKit's App.Error and mirrors title).
+	return {
+		type: 'about:blank',
+		title: 'Internal Server Error',
+		status: 500,
+		message: 'Internal Server Error'
+	};
 };

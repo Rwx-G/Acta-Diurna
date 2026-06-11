@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from './+server';
+import { logger } from '$lib/server/logger';
 
 const query = vi.fn();
 
@@ -11,6 +12,8 @@ vi.mock('$lib/server/logger', () => ({
 	logger: { error: vi.fn() }
 }));
 
+const loggerError = vi.mocked(logger.error);
+
 async function callGet(): Promise<Response> {
 	// The handler uses no request context; healthz takes no input by design.
 	return await GET({} as Parameters<typeof GET>[0]);
@@ -19,6 +22,7 @@ async function callGet(): Promise<Response> {
 describe('GET /healthz', () => {
 	beforeEach(() => {
 		query.mockReset();
+		loggerError.mockClear();
 	});
 
 	it('returns 200 with db ok when the database answers', async () => {
@@ -38,5 +42,6 @@ describe('GET /healthz', () => {
 
 		expect(response.status).toBe(503);
 		expect(await response.json()).toEqual({ status: 'error', db: 'error' });
+		expect(loggerError).toHaveBeenCalledTimes(1);
 	});
 });
