@@ -129,7 +129,7 @@ npx sv create acta-diurna --install pnpm
 
 - **D11 - State: Svelte 5 runes + SvelteKit load functions only; no external state library.**
 - **D12 - Charts: LayerChart** (composable Svelte components over D3 modules), SSR-rendered to SVG with minimal hydration - fits the 200 KB reader-path budget where ECharts (~400 KB) does not. Maintained (April 2026 release line), server `renderChart()` available for future export needs.
-- **D13 - Theming: design tokens as CSS custom properties; no Tailwind.** Svelte scoped CSS suffices; tokens make FR39 (multiple themes, P2) additive.
+- **D13 - Theming: design tokens as CSS custom properties; no Tailwind.** Svelte scoped CSS suffices; tokens make FR39 (multiple themes, P2) additive. Breakpoint tokens per the UX specification: 768px (reader mobile/desktop), 1024px (workspace minimum), 1280px (composer full layout).
 
 ### Infrastructure & Deployment
 

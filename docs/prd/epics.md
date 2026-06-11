@@ -231,6 +231,7 @@ So that a usable instance exists in under five minutes.
 **Given** a VM with Docker
 **When** `cp .env.example .env` then `docker compose up -d`
 **Then** the app starts, Drizzle migrations run automatically at boot, and `/healthz` reports app+db OK (FR34, NFR5, AR3)
+**And** this story creates the Drizzle migration baseline (`drizzle-kit generate`) that the boot runner executes
 
 **Given** a missing or invalid env variable
 **When** the container starts
@@ -253,6 +254,7 @@ So that only I can create and manage reports.
 **Given** author credentials configured at setup
 **When** I log in with the correct password (argon2id at rest, AR6)
 **Then** an author-realm session is created (signed, HttpOnly, SameSite cookie) and the workspace opens (FR35, NFR12)
+**And** this story creates the sessions table migration (author realm)
 
 **Given** a wrong password
 **When** submitted repeatedly
@@ -307,6 +309,11 @@ So that reading it beats opening a slide deck.
 **Then** zero author design work is needed, charts render server-side as SVG (LayerChart, AR11), reader-path JS stays under 200 KB compressed (FR5, NFR3), and axe-core checks pass in e2e (NFR14/15)
 **And** the author's workspace preview uses the identical renderer
 
+**Given** the token-structured theme system
+**When** a second (test-only) theme definition is applied
+**Then** the report renders fully in it with no component change - proving FR39 additivity (AR10)
+**And** component and interaction design follows the render tier specification in `ux-design-specification.md`
+
 ### Story 1.7: Publish Lifecycle & Version-Aware Rendering
 
 As the author,
@@ -347,6 +354,11 @@ So that I never start a recurring report from a blank page.
 **When** previewed
 **Then** it renders with the default theme and placeholder content
 
+**Given** an invalid structure (e.g. an empty section)
+**When** I save
+**Then** save is blocked with an inline actionable message at the offending element
+**And** the composer follows UX Flow A (three-zone composer) in `ux-design-specification.md`
+
 ### Story 2.2: Save Skeletons & Instantiate Reports
 
 As the author,
@@ -357,7 +369,11 @@ So that every issue of a recurring report has an identical structure.
 
 **Given** an assembled structure
 **When** I save it as a named skeleton
-**Then** it is stored (skeletons table) and listed in my skeleton library (FR9)
+**Then** it is stored (skeletons table - created by this story's migration) and listed in my skeleton library (FR9)
+
+**Given** a skeleton name already in use
+**When** saved
+**Then** a problem-details error asks for a distinct name
 
 **Given** a saved skeleton
 **When** I create a report from it
@@ -389,7 +405,7 @@ So that my exported tool data becomes charts and tables without manual re-entry.
 
 **Given** a CSV, JSON, or Excel file up to 50 MB
 **When** uploaded
-**Then** it is parsed, stored (uploads volume + data_sets table), and its fields/columns are inspectable, with visible progress (FR12, NFR4)
+**Then** it is parsed and stored (uploads volume + data_sets table - created by this story's migration, carrying the injection timestamp and an optional data-as-of field), and its fields/columns are inspectable, with visible progress (FR12, NFR4, FR16 groundwork)
 
 **Given** a parsed data set
 **When** I bind a table/chart/KPI block to its fields
@@ -415,6 +431,7 @@ So that the weekly cycle is "inject, glance, share" - even when an export format
 **When** binding resolves
 **Then** the report is flagged with an actionable diagnostic naming the block, the expected field, and the closest candidate (FR15)
 **And** I can remap the binding from the diagnostic and re-render
+**And** binding states and diagnostics follow UX Flow B in `ux-design-specification.md`
 
 ## Epic 3: Secure Sharing & Verified Readers
 
@@ -446,7 +463,7 @@ So that distribution is one link with a bounded lifetime.
 
 **Given** a published report
 **When** I create a share
-**Then** a high-entropy link (>= 128 bits) is generated with an optional expiry I control (FR17, FR21, NFR6)
+**Then** a high-entropy link (>= 128 bits) is generated with an optional expiry I control (shares table created by this story's migration) (FR17, FR21, NFR6)
 
 **Given** a draft report
 **When** I attempt to share it
@@ -466,7 +483,8 @@ So that access is secure without an account.
 
 **Given** the magic link
 **When** clicked
-**Then** a reader-realm session opens (separate cookie realm), the report is served, and my verified identity is recorded for this access (FR22, NFR12)
+**Then** a reader-realm session opens (separate cookie realm), the report is served, and my verified identity is recorded for this access (reader_identities and access_records tables created by this story's migrations) (FR22, NFR12)
+**And** the verification experience follows UX Flow C (themed VerifyCard) in `ux-design-specification.md`
 
 **Given** my persistent reader session
 **When** I revisit the report later or from the same device
@@ -586,6 +604,10 @@ So that I can orient myself in an instance without bespoke integration.
 **When** an agent connects with a valid PAT
 **Then** it can list skeletons and reports and fetch the document schema with examples (FR31 read surface)
 
+**Given** an invalid or revoked PAT
+**When** an agent connects via MCP
+**Then** the handshake fails with the standard 401 problem detail - no information beyond authentication failure
+
 ### Story 5.2: MCP Authoring
 
 As an AI agent,
@@ -600,7 +622,11 @@ So that authoring is native from any MCP-capable assistant.
 
 **Given** an invalid document from an agent
 **When** validated
-**Then** the MCP error payload carries the actionable detail (machine-recoverable)
+**Then** the MCP error payload carries the actionable detail (block path, field, hint - machine-recoverable)
+
+**Given** an MCP write against a revoked PAT or a published report being mutated illegally
+**When** attempted
+**Then** the tool result carries the same problem-details semantics as the REST API (FR30 parity)
 
 ### Story 5.3: LLM Endpoint Configuration
 
@@ -613,6 +639,10 @@ So that AI generation is available without data leaving my control unknowingly.
 **Given** instance settings
 **When** I configure endpoint, model, and key (env or settings)
 **Then** no LLM call is made anywhere before explicit opt-in, and the endpoint can be any OpenAI-compatible URL - cloud or local (FR33, NFR18)
+
+**Given** no endpoint configured or opt-in absent
+**When** generation is requested
+**Then** a problem-details error states that AI generation is disabled and how an operator enables it
 
 ### Story 5.4: Outline-First Generation
 
@@ -630,6 +660,11 @@ So that generated reports follow my narrative, not the model's.
 **When** I edit and approve it
 **Then** content generation fills the document only after approval, and the result is schema-validated before save
 **And** regeneration after outline changes requires re-approval
+**And** the approval interaction follows UX Flow D in `ux-design-specification.md`
+
+**Given** a generation failure (endpoint unreachable, invalid model output)
+**When** it occurs
+**Then** the draft document is left untouched and the error names the failing stage with a retry action
 
 ## Epic 6: Multi-Audience Reading & Governance (Phase 2)
 
@@ -697,7 +732,11 @@ So that stale numbers are never mistaken for fresh ones.
 
 **Given** a data-bound block
 **When** rendered
-**Then** a "data as of" timestamp from the underlying data set injection is displayed unobtrusively (FR16)
+**Then** the data-as-of timestamp (the explicit data-as-of field when provided, otherwise the injection timestamp from data_sets) is displayed unobtrusively (FR16)
+
+**Given** a data set with no usable timestamp
+**When** rendered
+**Then** the indicator is omitted rather than showing a misleading date
 
 ### Story 6.5: Theme Selection
 
@@ -710,6 +749,10 @@ So that different report series can carry different identities.
 **Given** at least two additional built-in themes on the token system
 **When** I select a theme for a report
 **Then** it renders fully in that theme; no selection falls back to the default (FR39, AR10)
+
+**Given** an invalid or removed theme reference on a report
+**When** rendered
+**Then** the default theme applies and a workspace warning flags the report
 
 **Given** any built-in theme
 **When** audited

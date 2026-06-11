@@ -302,6 +302,23 @@ flowchart TD
 
 **Returning reader:** session persists - the same link goes straight to the cover.
 
+### Flow D - Outline-First Generation (story 5.4, Phase 2)
+
+The AI proposes, the author disposes - approval is a designed moment, not a dialog box.
+
+```mermaid
+flowchart TD
+    A[Report editor > Generate with AI] --> B[Request panel: pick skeleton<br/>+ data set + intent note]
+    B --> C[Outline draft appears in right panel:<br/>bounded list of sections + key points]
+    C -->|edit items inline| C
+    C -->|Approve outline| D[Generation fills the draft<br/>determinate progress per section]
+    D --> E[LivePreview shows the result<br/>schema-validated before save]
+    E -->|author edits outline again| F[Re-approval required<br/>before regeneration]
+    D -->|endpoint unreachable / invalid output| G[Draft untouched - error names<br/>the failing stage, retry action]
+```
+
+The outline is plain editable text items (no nested trees); approval is the same morphing primary action grammar as the rest of the workspace. Generated content lands as ordinary blocks - editable, validated, never privileged.
+
 ### Journey Patterns
 
 - **List + detail + contextual right panel** everywhere in the workspace (reports, skeletons, shares).
