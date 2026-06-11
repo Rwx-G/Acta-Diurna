@@ -1,0 +1,19 @@
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+
+# Miscellaneous
+/static/
+
+# Pre-existing repo content not owned by the app toolchain
+/docs/
+/.claude/
+/_bmad/
+/_bmad-output/
+/.github/ISSUE_TEMPLATE/
+/.github/PULL_REQUEST_TEMPLATE.md
+/README.md
+/LICENSE

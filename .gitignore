@@ -4,6 +4,7 @@ _junk/
 # Environment and secrets
 .env
 .env.*
+!.env.example
 
 # Node
 node_modules/
@@ -11,6 +12,14 @@ node_modules/
 # Build outputs
 build/
 .svelte-kit/
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Playwright
+test-results/
+playwright-report/
 
 # OS
 .DS_Store
