@@ -9,9 +9,9 @@
 	<nav class="rail" aria-label="Workspace">
 		<p class="wordmark">Acta Diurna</p>
 		<a href={resolve('/(workspace)/reports')}>Reports</a>
-		<!-- Disabled rail entries: skeletons arrive with Epic 2, settings later. -->
-		<span class="disabled" aria-disabled="true" title="Skeletons arrive with Epic 2">Skeletons</span
-		>
+		<!-- Skeletons: the composer ships with story 2.1; the skeleton list is 2.2. -->
+		<a href={resolve('/(workspace)/skeletons/compose')}>Skeletons</a>
+		<!-- Disabled rail entry: settings later. -->
 		<span class="disabled" aria-disabled="true" title="Settings are not available yet"
 			>Settings</span
 		>
