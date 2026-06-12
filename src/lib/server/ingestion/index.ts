@@ -7,6 +7,15 @@ export type { DataSet, IngestInput, ParsedTable, SourceFormat } from './ingestio
 
 export { bindBlock, getDataSet, listDataSets, readDataSetTable } from './queries.ts';
 
+export { rebindReport, remapField } from './rebind.ts';
+export type { RebindResult } from './rebind.ts';
+
+export { diagnoseBlock, diagnoseDocument, summarize } from './diagnostics.ts';
+export type { BindingState, BindingSummary, BlockDiagnostic, FieldDrift } from './diagnostics.ts';
+
+export { closestField, levenshtein } from './distance.ts';
+export type { ClosestMatch } from './distance.ts';
+
 export { resolveTable, resolveChart, resolveKpi } from './resolve.ts';
 export type { DataRow, ResolvedTable } from './resolve.ts';
 
