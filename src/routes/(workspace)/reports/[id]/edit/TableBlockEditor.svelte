@@ -1,14 +1,18 @@
 <script lang="ts">
-	import type { TableBlock } from '$lib/schema';
+	import type { Scales, TableBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import BindingEditor from './BindingEditor.svelte';
 
 	interface Props {
 		block: TableBlock;
+		/** Document scales, for the optional per-column conditional formatting (7.5). */
+		scales?: Scales;
 		onEdit: () => void;
 	}
 
-	let { block = $bindable(), onEdit }: Props = $props();
+	let { block = $bindable(), scales, onEdit }: Props = $props();
+
+	const scaleOptions = $derived(scales ?? []);
 
 	function renameColumnKey(columnIndex: number, key: string): void {
 		const oldKey = block.columns[columnIndex].key;
@@ -54,6 +58,21 @@
 			}}
 			aria-label={`Column ${columnIndex + 1} label`}
 		/>
+		<select
+			value={column.scaleRef ?? ''}
+			onchange={(event) => {
+				const value = event.currentTarget.value;
+				if (value === '') delete column.scaleRef;
+				else column.scaleRef = value;
+				onEdit();
+			}}
+			aria-label={`Column ${columnIndex + 1} scale`}
+		>
+			<option value="">Plain text</option>
+			{#each scaleOptions as scale (scale.key)}
+				<option value={scale.key}>{scale.label}</option>
+			{/each}
+		</select>
 		<Button
 			variant="ghost"
 			onclick={() => {
@@ -132,7 +151,8 @@
 		margin-bottom: var(--space-3);
 	}
 
-	input {
+	input,
+	select {
 		padding: var(--space-2) var(--space-3);
 		font: inherit;
 		color: inherit;

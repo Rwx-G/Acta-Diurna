@@ -3,6 +3,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
+	import ChipClusterBlockEditor from './ChipClusterBlockEditor.svelte';
 	import ComparisonMatrixBlockEditor from './ComparisonMatrixBlockEditor.svelte';
 	import FieldGridBlockEditor from './FieldGridBlockEditor.svelte';
 	import ImageBlockEditor from './ImageBlockEditor.svelte';
@@ -73,7 +74,7 @@
 	{#if block.type === 'text'}
 		<TextBlockEditor bind:block {sectionIndex} {blockIndex} {onEdit} />
 	{:else if block.type === 'table'}
-		<TableBlockEditor bind:block {onEdit} />
+		<TableBlockEditor bind:block {scales} {onEdit} />
 	{:else if block.type === 'chart'}
 		<ChartBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'kpi'}
@@ -88,6 +89,8 @@
 		<LegendBlockEditor bind:block {scales} {onEdit} />
 	{:else if block.type === 'set-membership'}
 		<SetMembershipBlockEditor bind:block {matrixBlocks} {onEdit} />
+	{:else if block.type === 'chip-cluster'}
+		<ChipClusterBlockEditor bind:block {scales} {onEdit} />
 	{/if}
 </article>
 

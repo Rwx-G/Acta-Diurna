@@ -43,7 +43,8 @@
 		'comparison-matrix',
 		'field-grid',
 		'legend',
-		'set-membership'
+		'set-membership',
+		'chip-cluster'
 	];
 </script>
 

@@ -93,6 +93,11 @@ export function newBlock(type: BlockType): Block {
 			// cross-reference pass flags it; the author picks the comparison-matrix
 			// block before saving.
 			return { type, id, sourceBlockId: '' };
+		case 'chip-cluster':
+			// Starts with an empty scale ref (not slug-valid) and one empty entry: its
+			// block schema flags the empties; the author picks the scale and entries
+			// before saving.
+			return { type, id, scaleRef: '', entries: [''] };
 	}
 }
 

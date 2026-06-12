@@ -45,6 +45,10 @@
 				return `Legend - ${block.scaleRef || 'no scale'}`;
 			case 'set-membership':
 				return `Set membership - ${block.sourceBlockId ? 'from matrix' : 'no matrix'}`;
+			case 'chip-cluster': {
+				const count = block.entries.length;
+				return `Chip cluster - ${count} chip${count === 1 ? '' : 's'}`;
+			}
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;
