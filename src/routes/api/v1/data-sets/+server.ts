@@ -17,9 +17,11 @@ import { formatFromContentType, readBodyBytes, readFilename, readTargetReportId 
  * Excel content-type gets the honest 415 the upload flow gives), and the target
  * report is `?reportId=<uuid>`. An optional `X-Filename` header is recorded as
  * metadata only (the service stores bytes under a UUIDv7 name, never the client
- * value - the 2.4 path-traversal defence). The 50 MB cap is enforced from
- * `Content-Length` BEFORE the body is buffered (the DoS guard), and re-checked
- * on the buffered length by `ingestBytes` (the 2.4 413).
+ * value - the 2.4 path-traversal defence). The 50 MB cap is enforced by a
+ * STREAMING read that aborts the moment cumulative bytes exceed the cap, so an
+ * oversized body is never fully buffered (the DoS guard); a declared
+ * `Content-Length` above the cap is a cheap pre-read 413 fast path; and the
+ * assembled length is re-checked by `ingestBytes` (the 2.4 413).
  *
  * Binding (the upload-flow parity):
  *   - With `?reportId`, after the data set is stored the push runs the 2.5

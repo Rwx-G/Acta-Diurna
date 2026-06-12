@@ -2,7 +2,7 @@
  * Transport parsing for `POST /api/v1/data-sets` (story 4.3). The endpoint is a
  * thin adapter over the SAME ingestion + binding services the upload form uses;
  * the only logic here is reading the raw-body transport (format from
- * `Content-Type`, target from the query, the byte-cap pre-check) into the shape
+ * `Content-Type`, target from the query, the streaming byte-cap) into the shape
  * `ingestBytes` takes. Every business rule (parse, inspect, store, bind,
  * rebind, diagnostics) stays in the reused services.
  */
@@ -75,10 +75,16 @@ export function readFilename(request: Request, format: SourceFormat): string {
 }
 
 /**
- * Reads the request body into bytes, rejecting an over-cap payload BEFORE
- * buffering it: a declared `Content-Length` above the cap is a 413 with no read
- * (the DoS guard). The buffered length is re-checked by `ingestBytes` for a
- * transport that under-reports or omits the length. An empty body is a 400.
+ * Reads the request body into bytes, bounding memory at `MAX_UPLOAD_BYTES`.
+ *
+ * The declared `Content-Length` is a cheap fast-path early rejection: above the
+ * cap, a 413 with no read at all. But Content-Length is client-supplied and
+ * omittable (a chunked request can lie or omit it), so it is NOT the real bound.
+ * The real bound is the STREAMING read below: chunks are pulled one at a time
+ * and the cumulative byte count is checked after each; the instant it exceeds
+ * the cap the reader is cancelled and a 413 is thrown, so an oversized body is
+ * never fully buffered (the DoS guard). `ingestBytes` re-checks the assembled
+ * length as the second line. An empty body is a 400.
  */
 export async function readBodyBytes(request: Request): Promise<Uint8Array> {
 	const declared = request.headers.get('content-length');
@@ -88,9 +94,41 @@ export async function readBodyBytes(request: Request): Promise<Uint8Array> {
 			throw tooLarge(MAX_UPLOAD_BYTES);
 		}
 	}
-	const bytes = new Uint8Array(await request.arrayBuffer());
-	if (bytes.byteLength === 0) {
+
+	if (request.body === null) {
 		throw malformedRequest('The request body is empty; send the file bytes.');
+	}
+
+	const reader = request.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value === undefined) continue;
+			total += value.byteLength;
+			if (total > MAX_UPLOAD_BYTES) {
+				// Stop AT the cap: cancel the stream so the remaining (potentially
+				// unbounded) body is never pulled into memory.
+				await reader.cancel();
+				throw tooLarge(MAX_UPLOAD_BYTES);
+			}
+			chunks.push(value);
+		}
+	} finally {
+		reader.releaseLock();
+	}
+
+	if (total === 0) {
+		throw malformedRequest('The request body is empty; send the file bytes.');
+	}
+
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
 	}
 	return bytes;
 }

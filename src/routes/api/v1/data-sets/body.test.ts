@@ -83,6 +83,45 @@ describe('readBodyBytes', () => {
 		await expect(readBodyBytes(req)).rejects.toMatchObject({ status: 413 });
 	});
 
+	it('aborts the stream with 413 once cumulative bytes exceed the cap, without buffering it all', async () => {
+		// A stream that would yield far more than the cap (one 1 MB chunk per pull),
+		// and no honest Content-Length. The fast-path pre-check cannot save us here;
+		// the streaming abort must stop AT the cap. We assert it (a) throws 413 and
+		// (b) cancels the reader before pulling the whole (here, effectively
+		// unbounded) body - proved by `cancelled` flipping and the pull count
+		// staying near the cap, not running away.
+		const chunkSize = 1_000_000;
+		const cap = 50_000_000;
+		let pulls = 0;
+		let cancelled = false;
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulls += 1;
+				// Yield well past the cap if never cancelled; the abort must cut it off.
+				if (pulls > (cap / chunkSize) * 4) {
+					controller.close();
+					return;
+				}
+				controller.enqueue(new Uint8Array(chunkSize));
+			},
+			cancel() {
+				cancelled = true;
+			}
+		});
+		const req = new Request('http://localhost/api/v1/data-sets', {
+			method: 'POST',
+			headers: { 'content-type': 'text/csv' },
+			body,
+			// Node's fetch Request needs duplex for a stream body.
+			duplex: 'half'
+		} as RequestInit & { duplex: 'half' });
+
+		await expect(readBodyBytes(req)).rejects.toMatchObject({ status: 413 });
+		expect(cancelled).toBe(true);
+		// Stopped at the cap: one chunk over (51 pulls), nowhere near the 200-pull runaway.
+		expect(pulls).toBeLessThanOrEqual(cap / chunkSize + 2);
+	});
+
 	it('rejects an empty body with 400', async () => {
 		await expect(readBodyBytes(request('text/csv', ''))).rejects.toMatchObject({ status: 400 });
 	});

@@ -83,14 +83,11 @@ test('PAT-push a CSV onto a draft report, plus the public schema endpoint', asyn
 	// Push the matching data set: the auto-rebind resolves the "severity" column
 	// from the recovered slot mapping (FR14), and the response carries the
 	// per-block diagnostics + summary (FR15 parity).
-	const push = await page.request.post(
-		`${E2E_BASE_URL}/api/v1/data-sets?reportId=${report.id}`,
-		{
-			headers: { ...auth, 'content-type': 'text/csv', 'x-filename': 'incidents.csv' },
-			data: 'severity\nCritical\nHigh',
-			failOnStatusCode: false
-		}
-	);
+	const push = await page.request.post(`${E2E_BASE_URL}/api/v1/data-sets?reportId=${report.id}`, {
+		headers: { ...auth, 'content-type': 'text/csv', 'x-filename': 'incidents.csv' },
+		data: 'severity\nCritical\nHigh',
+		failOnStatusCode: false
+	});
 	expect(push.status()).toBe(201);
 	const pushBody = (await push.json()) as {
 		dataSet: { id: string; sourceFormat: string };
@@ -116,23 +113,20 @@ test('PAT-push a CSV onto a draft report, plus the public schema endpoint', asyn
 
 	// A drift: push data whose field renames "severity" -> "level". The diagnostic
 	// names the closest match (FR15) and the binding is reported as drifted.
-	const drift = await page.request.post(
-		`${E2E_BASE_URL}/api/v1/data-sets?reportId=${report.id}`,
-		{
-			headers: { ...auth, 'content-type': 'text/csv' },
-			data: 'severities\nMedium\nLow',
-			failOnStatusCode: false
-		}
-	);
+	const drift = await page.request.post(`${E2E_BASE_URL}/api/v1/data-sets?reportId=${report.id}`, {
+		headers: { ...auth, 'content-type': 'text/csv' },
+		data: 'severities\nMedium\nLow',
+		failOnStatusCode: false
+	});
 	expect(drift.status()).toBe(201);
 	const driftText = JSON.stringify(await drift.json());
 	expect(driftText).toContain('severities');
 
 	// Pushing onto a PUBLISHED report is a clean 409 (binding targets a draft).
-	const published = await page.request.post(
-		`${E2E_BASE_URL}/api/v1/reports/${report.id}/publish`,
-		{ headers: auth, failOnStatusCode: false }
-	);
+	const published = await page.request.post(`${E2E_BASE_URL}/api/v1/reports/${report.id}/publish`, {
+		headers: auth,
+		failOnStatusCode: false
+	});
 	expect(published.status()).toBe(200);
 	const onPublished = await page.request.post(
 		`${E2E_BASE_URL}/api/v1/data-sets?reportId=${report.id}`,
