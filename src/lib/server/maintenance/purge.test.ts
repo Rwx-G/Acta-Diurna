@@ -1,23 +1,34 @@
-import { mkdtemp, rm, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, access, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
-import {
-	DEFAULT_ORPHAN_RETENTION_DAYS,
-	orphanCutoff,
-	purgeOrphanDataSets,
-	purgeVerificationTokens
-} from './purge.ts';
 
 // The WHERE predicate is evaluated by PostgreSQL, which the unit suite does not
 // run; the fake db below stands in for the query builder and returns the rows
 // the test seeds as "matching". So these tests cover the orchestration the
-// function owns in process: the returned count, the per-row file unlink, and the
-// ENOENT tolerance. The grace-window boundary math is asserted directly on the
-// pure `orphanCutoff` helper.
+// function owns in process: the returned count, the per-row file unlink, the
+// ENOENT tolerance, the swallow-and-log isolation of a non-ENOENT unlink error,
+// and the defense-in-depth UPLOADS_DIR containment guard. The grace-window
+// boundary math is asserted directly on the pure `orphanCutoff` helper.
 
 const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-purge-'));
+
+vi.mock('$lib/server/env', () => ({ serverEnv: () => ({ UPLOADS_DIR: uploadsDir }) }));
+
+const warn = vi.fn();
+vi.mock('$lib/server/logger', () => ({ logger: { warn, info: vi.fn(), error: vi.fn() } }));
+
+const {
+	DEFAULT_ORPHAN_RETENTION_DAYS,
+	orphanCutoff,
+	purgeOrphanDataSets,
+	purgeVerificationTokens
+} = await import('./purge.ts');
+
+beforeEach(() => {
+	warn.mockReset();
+});
 
 interface DeletedRows {
 	[table: string]: Record<string, unknown>[];
@@ -121,5 +132,51 @@ describe('purgeOrphanDataSets', () => {
 	it('removes nothing and unlinks nothing when no orphan matched', async () => {
 		const { db } = fakeDb({ data_sets: [] });
 		expect(await purgeOrphanDataSets(db, new Date(), 30)).toBe(0);
+	});
+
+	it('a mid-loop non-ENOENT unlink error does not strand the other files (CWE-459)', async () => {
+		// A directory under uploadsDir cannot be unlink()ed: the call throws a
+		// non-ENOENT error (EPERM/EISDIR), the same class as EACCES/EBUSY/EIO on a
+		// real file. It sits BETWEEN two good files, so it proves the loop swallows
+		// the error and still unlinks every remaining row.
+		const before = join(uploadsDir, 'before.csv');
+		const undeletable = await mkdtemp(join(uploadsDir, 'locked-'));
+		const after = join(uploadsDir, 'after.csv');
+		await writeFile(before, 'x');
+		await writeFile(after, 'y');
+		const { db } = fakeDb({
+			data_sets: [{ storagePath: before }, { storagePath: undeletable }, { storagePath: after }]
+		});
+
+		const removed = await purgeOrphanDataSets(db, new Date(), 30);
+
+		expect(removed).toBe(3);
+		expect(await exists(before)).toBe(false);
+		expect(await exists(after)).toBe(false);
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({ storagePath: undeletable }),
+			expect.stringContaining('failed to unlink')
+		);
+		await rm(undeletable, { recursive: true, force: true });
+	});
+
+	it('refuses to unlink a path outside UPLOADS_DIR and logs it (defense in depth)', async () => {
+		const outside = await mkdtemp(join(tmpdir(), 'acta-outside-'));
+		const stray = join(outside, 'stray.csv');
+		await writeFile(stray, 'z');
+		const { db } = fakeDb({ data_sets: [{ storagePath: stray }] });
+
+		const removed = await purgeOrphanDataSets(db, new Date(), 30);
+
+		// The row is still counted (it is deleted from the table), but its file is
+		// left untouched because it resolves outside the uploads volume.
+		expect(removed).toBe(1);
+		expect(await exists(stray)).toBe(true);
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({ storagePath: stray }),
+			expect.stringContaining('outside UPLOADS_DIR')
+		);
+		await unlink(stray);
+		await rm(outside, { recursive: true, force: true });
 	});
 });

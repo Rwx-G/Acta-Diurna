@@ -14,6 +14,7 @@
  * history; leave it to 6.3.
  */
 import { unlink } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { and, isNull, lt, or, isNotNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { dataSets, verificationTokens } from '$lib/server/db/schema';
@@ -61,6 +62,12 @@ export async function purgeVerificationTokens(db: Db, now: Date): Promise<number
  * than the window is collected. A missing file is tolerated (ENOENT): the row is
  * still removed so a half-cleaned state self-heals. Returns the number of rows
  * removed.
+ *
+ * The DELETE...RETURNING runs first and is the authoritative cleanup; the file
+ * unlink is best-effort bookkeeping (CWE-459). Each unlink is isolated so a
+ * single un-removable file (EACCES/EBUSY/EIO) never aborts the loop and strands
+ * the remaining rows' files - those rows are already gone from the table, so they
+ * would never match the orphan predicate again and their files would leak forever.
  */
 export async function purgeOrphanDataSets(
 	db: Db,
@@ -74,18 +81,35 @@ export async function purgeOrphanDataSets(
 		.returning({ storagePath: dataSets.storagePath });
 
 	for (const row of deleted) {
-		await unlinkTolerant(row.storagePath);
+		await unlinkOrphanFile(row.storagePath);
 	}
 	return deleted.length;
 }
 
-/** Unlinks a stored file, treating an already-missing file as success (ENOENT). */
-async function unlinkTolerant(storagePath: string): Promise<void> {
+/**
+ * Unlinks one orphan's stored file. Swallows every error so the sweep always
+ * attempts every file (the row is already deleted, so a thrown error here would
+ * strand the rest). ENOENT is silent (already-missing self-heals); any other
+ * failure is logged at warn with the path so an operator can reclaim the space.
+ *
+ * Defense-in-depth: the path must resolve under UPLOADS_DIR before any unlink.
+ * `storage_path` is server-minted today (a UUID name under UPLOADS_DIR, see
+ * ingestion.ts), so this is a cheap invariant guard - never delete a path outside
+ * the uploads volume even if a future change or a tampered row let one in.
+ */
+async function unlinkOrphanFile(storagePath: string): Promise<void> {
+	const resolved = resolve(storagePath);
+	const uploadsRoot = resolve(serverEnv().UPLOADS_DIR);
+	if (!resolved.startsWith(uploadsRoot + sep)) {
+		logger.warn({ storagePath }, 'purge: refusing to unlink a path outside UPLOADS_DIR');
+		return;
+	}
+
 	try {
-		await unlink(storagePath);
+		await unlink(resolved);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-		throw error;
+		logger.warn({ err: error, storagePath }, 'purge: failed to unlink orphan data set file');
 	}
 }
 
