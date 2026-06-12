@@ -11,7 +11,7 @@ import {
 	type ShareMode,
 	type ShareSummary
 } from '$lib/server/sharing';
-import { listShareRecipients, setShareRecipients } from '$lib/server/sharing';
+import { listRecipientsForShares, setShareRecipients } from '$lib/server/sharing';
 import { isPlausibleEmail, normalizeEmail } from '$lib/server/reader';
 import { AppError, errorPageShape } from '$lib/server/problem';
 
@@ -37,12 +37,12 @@ export const load: PageServerLoad = async ({ params }): Promise<SharePageData> =
 	try {
 		const report = await getReport(params.id);
 		const summaries = await listShares(report.id);
-		const shares = await Promise.all(
-			summaries.map(async (share) => ({
-				...share,
-				recipients: await listShareRecipients(share.id)
-			}))
-		);
+		// One batched read for every share's allow-list, not one query per share.
+		const recipientsByShare = await listRecipientsForShares(summaries.map((share) => share.id));
+		const shares = summaries.map((share) => ({
+			...share,
+			recipients: recipientsByShare.get(share.id) ?? []
+		}));
 		return {
 			report: { id: report.id, title: report.title, status: report.status },
 			shares

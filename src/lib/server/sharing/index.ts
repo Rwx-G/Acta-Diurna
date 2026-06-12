@@ -23,4 +23,9 @@ export type {
 
 export { generateShareToken, hashShareToken, SHARE_TOKEN_BYTES } from './tokens.ts';
 
-export { setShareRecipients, listShareRecipients, isAuthorizedReader } from './recipients.ts';
+export {
+	setShareRecipients,
+	listShareRecipients,
+	listRecipientsForShares,
+	isAuthorizedReader
+} from './recipients.ts';

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '$lib/server/problem';
 import {
 	isAuthorizedReader,
+	listRecipientsForShares,
 	listShareRecipients,
 	MAX_SHARE_RECIPIENTS,
 	setShareRecipients
@@ -39,17 +40,30 @@ function flatten(node: unknown, columns: Column[], params: Param[]): void {
 	}
 }
 
-function decodeFilter(filter: unknown): { shareId?: string; email?: string; id?: string } {
+function decodeFilter(filter: unknown): {
+	shareId?: string;
+	shareIds?: string[];
+	email?: string;
+	id?: string;
+} {
 	const columns: Column[] = [];
 	const params: Param[] = [];
 	flatten(filter, columns, params);
 
-	const result: { shareId?: string; email?: string; id?: string } = {};
+	// `eq(col, val)` contributes one Column then one Param positionally; an
+	// `inArray(share_id, [a, b, ...])` contributes one share_id Column followed by
+	// several Params, so a leading share_id Column with extra trailing Params is
+	// the IN list. Collect every share_id value for the batched lookup.
+	const result: { shareId?: string; shareIds?: string[]; email?: string; id?: string } = {};
 	for (let i = 0; i < columns.length; i++) {
 		const value = params[i]?.value;
 		if (columns[i].name === 'share_id') result.shareId = value as string;
 		if (columns[i].name === 'email') result.email = value as string;
 		if (columns[i].name === 'id') result.id = value as string;
+	}
+	const shareIdColumns = columns.filter((column) => column.name === 'share_id');
+	if (shareIdColumns.length === 1 && columns.length === 1 && params.length > 0) {
+		result.shareIds = params.map((param) => param.value as string);
 	}
 	return result;
 }
@@ -63,6 +77,10 @@ function matchesShares(filter: unknown) {
 
 function matches(filter: unknown) {
 	const f = decodeFilter(filter);
+	if (f.shareIds !== undefined) {
+		const wanted = new Set(f.shareIds);
+		return dbState.rows.filter((row) => wanted.has(row.shareId));
+	}
 	return dbState.rows.filter(
 		(row) =>
 			(f.shareId === undefined || row.shareId === f.shareId) &&
@@ -239,6 +257,31 @@ describe('listShareRecipients', () => {
 
 	it('returns empty for a share with no list', async () => {
 		expect(await listShareRecipients(SHARE_ID)).toEqual([]);
+	});
+});
+
+describe('listRecipientsForShares', () => {
+	it('groups recipients by share id in one query', async () => {
+		await setShareRecipients(SHARE_ID, ['zed@example.com', 'amy@example.com']);
+		await setShareRecipients(OTHER_SHARE_ID, ['solo@example.com']);
+
+		const grouped = await listRecipientsForShares([SHARE_ID, OTHER_SHARE_ID]);
+
+		expect(grouped.get(SHARE_ID)).toEqual(['amy@example.com', 'zed@example.com']);
+		expect(grouped.get(OTHER_SHARE_ID)).toEqual(['solo@example.com']);
+	});
+
+	it('maps a share with no recipients to an empty array', async () => {
+		await setShareRecipients(SHARE_ID, ['only@example.com']);
+
+		const grouped = await listRecipientsForShares([SHARE_ID, OTHER_SHARE_ID]);
+
+		expect(grouped.get(SHARE_ID)).toEqual(['only@example.com']);
+		expect(grouped.get(OTHER_SHARE_ID)).toEqual([]);
+	});
+
+	it('returns an empty map for empty input without touching the database', async () => {
+		expect(await listRecipientsForShares([])).toEqual(new Map());
 	});
 });
 

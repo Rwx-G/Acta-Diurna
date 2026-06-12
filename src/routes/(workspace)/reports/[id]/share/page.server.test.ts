@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	createShare,
-	listShareRecipients,
+	listRecipientsForShares,
 	listShares,
 	revokeShare,
 	setShareMode,
@@ -17,7 +17,7 @@ vi.mock('$lib/server/sharing', () => ({
 	listShares: vi.fn(),
 	setShareMode: vi.fn(),
 	revokeShare: vi.fn(),
-	listShareRecipients: vi.fn(),
+	listRecipientsForShares: vi.fn(),
 	setShareRecipients: vi.fn(),
 	shareUrl: (origin: string, token: string) => `${origin}/r/${token}`
 }));
@@ -32,7 +32,7 @@ const createShareMock = vi.mocked(createShare);
 const listSharesMock = vi.mocked(listShares);
 const setShareModeMock = vi.mocked(setShareMode);
 const revokeShareMock = vi.mocked(revokeShare);
-const listShareRecipientsMock = vi.mocked(listShareRecipients);
+const listRecipientsForSharesMock = vi.mocked(listRecipientsForShares);
 const setShareRecipientsMock = vi.mocked(setShareRecipients);
 const getReportMock = vi.mocked(getReport);
 
@@ -71,7 +71,7 @@ function actionEvent(fields: Record<string, string>): never {
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	listShareRecipientsMock.mockResolvedValue([]);
+	listRecipientsForSharesMock.mockResolvedValue(new Map());
 	setShareRecipientsMock.mockResolvedValue(undefined);
 	setShareModeMock.mockResolvedValue(1);
 	revokeShareMock.mockResolvedValue(undefined);
@@ -207,11 +207,13 @@ describe('load with recipients', () => {
 				status: 'active'
 			}
 		]);
-		listShareRecipientsMock.mockResolvedValue(['a@example.com', 'b@example.com']);
+		listRecipientsForSharesMock.mockResolvedValue(
+			new Map([['s1', ['a@example.com', 'b@example.com']]])
+		);
 
 		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
 
-		expect(listShareRecipientsMock).toHaveBeenCalledWith('s1');
+		expect(listRecipientsForSharesMock).toHaveBeenCalledWith(['s1']);
 		expect(result!.shares[0].recipients).toEqual(['a@example.com', 'b@example.com']);
 	});
 });

@@ -10,7 +10,7 @@
  * the verification token binding, and the identity row all key on one canonical
  * form: `Foo@X.com` written to the list authorizes `foo@x.com` at verification.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { shareRecipients, shares } from '$lib/server/db/schema';
@@ -110,6 +110,31 @@ export async function listShareRecipients(shareId: string): Promise<string[]> {
 		.where(eq(shareRecipients.shareId, shareId))
 		.orderBy(shareRecipients.email);
 	return rows.map((row) => row.email);
+}
+
+/**
+ * Batched recipient lookup for many shares in one query (the management load
+ * renders every share's allow-list at once). A single `WHERE share_id IN (...)`
+ * replaces one query per share (N+1), then groups the rows by share id in JS.
+ * Each share's emails come back ascending, and a share with no recipients maps
+ * to an empty array so the caller can index every id unconditionally. An empty
+ * `shareIds` short-circuits to an empty map without touching the database.
+ */
+export async function listRecipientsForShares(shareIds: string[]): Promise<Map<string, string[]>> {
+	const grouped = new Map<string, string[]>(shareIds.map((id) => [id, []]));
+	if (shareIds.length === 0) return grouped;
+
+	const rows = await getDb()
+		.select({ shareId: shareRecipients.shareId, email: shareRecipients.email })
+		.from(shareRecipients)
+		.where(inArray(shareRecipients.shareId, shareIds))
+		.orderBy(shareRecipients.email);
+
+	for (const row of rows) {
+		const emails = grouped.get(row.shareId);
+		if (emails) emails.push(row.email);
+	}
+	return grouped;
 }
 
 /**
