@@ -23,13 +23,25 @@ const envSchema = z
 		PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 		LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('info'),
 		UPLOADS_DIR: z.string().min(1).default('data/uploads'),
-		// SMTP is consumed by the mailer from Epic 3; declared now so operators can
-		// configure it ahead of time and invalid values fail fast at boot.
+		// SMTP is consumed by the mailer (Epic 3, story 3.1). The whole block is
+		// optional - an operator may deploy first and configure the relay later -
+		// but its SHAPE is validated at boot (fail-fast on a malformed value) and
+		// the superRefine below enforces all-or-nothing so a partial config is
+		// caught early. Reachability is NOT tested at boot: an unreachable relay
+		// must not stop the container; delivery failures surface at send time in
+		// the workspace (NFR16). See story 3.1 Dev Notes (boot-vs-send split).
 		SMTP_HOST: z.string().min(1).optional(),
 		SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
 		SMTP_USER: z.string().min(1).optional(),
-		SMTP_PASS: z.string().min(1).optional(),
-		SMTP_FROM: z.email('must be an email address, e.g. reports@example.com').optional()
+		SMTP_PASSWORD: z.string().min(1).optional(),
+		SMTP_FROM: z.email('must be an email address, e.g. reports@example.com').optional(),
+		// STARTTLS upgrades a plaintext connection on the SMTP port (587 typically);
+		// tls dials an implicit-TLS port (465); none is plaintext, dev/local only.
+		SMTP_TLS_MODE: z
+			.enum(['starttls', 'tls', 'none'], {
+				error: 'must be one of starttls, tls or none'
+			})
+			.optional()
 	})
 	.superRefine((env, ctx) => {
 		if (env.NODE_ENV === 'production' && env.LOG_LEVEL === 'debug') {
@@ -38,6 +50,30 @@ const envSchema = z
 				path: ['LOG_LEVEL'],
 				message: 'debug is not allowed when NODE_ENV=production - use fatal, error, warn or info'
 			});
+		}
+		// All-or-nothing SMTP: if any SMTP_* var is present, the relay essentials
+		// (host, port, from) must all be present so a half-configured relay never
+		// reaches send time. User/password are optional (some relays accept
+		// unauthenticated localhost submission); TLS mode defaults at the mailer.
+		const smtpKeys = [
+			'SMTP_HOST',
+			'SMTP_PORT',
+			'SMTP_USER',
+			'SMTP_PASSWORD',
+			'SMTP_FROM',
+			'SMTP_TLS_MODE'
+		] as const;
+		const anySmtp = smtpKeys.some((key) => env[key] !== undefined);
+		if (anySmtp) {
+			for (const key of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_FROM'] as const) {
+				if (env[key] === undefined) {
+					ctx.addIssue({
+						code: 'custom',
+						path: [key],
+						message: 'required when any SMTP_* variable is set (relay is half-configured)'
+					});
+				}
+			}
 		}
 	});
 

@@ -10,8 +10,9 @@ const SECRET_KEY_NAMES = [
 	'session_secret',
 	'apiKey',
 	'api_key',
-	'smtpPass',
-	'smtp_pass'
+	'smtpPassword',
+	'smtp_password',
+	'SMTP_PASSWORD'
 ];
 
 // The logger reads LOG_LEVEL directly (not through serverEnv) so it is usable

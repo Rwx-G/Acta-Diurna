@@ -8,6 +8,15 @@ const validEnv = {
 	AUTHOR_PASSWORD_HASH: '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$c29tZWhhc2g'
 };
 
+const validSmtp = {
+	SMTP_HOST: 'smtp.example.com',
+	SMTP_PORT: '587',
+	SMTP_USER: 'mailer',
+	SMTP_PASSWORD: 'relay-secret',
+	SMTP_FROM: 'reports@example.com',
+	SMTP_TLS_MODE: 'starttls'
+};
+
 describe('parseEnv', () => {
 	it('parses a valid environment and applies defaults', () => {
 		const env = parseEnv(validEnv);
@@ -22,10 +31,48 @@ describe('parseEnv', () => {
 	});
 
 	it('coerces PORT and SMTP_PORT from strings', () => {
-		const env = parseEnv({ ...validEnv, PORT: '8080', SMTP_PORT: '587' });
+		const env = parseEnv({ ...validEnv, ...validSmtp, PORT: '8080', SMTP_PORT: '587' });
 
 		expect(env.PORT).toBe(8080);
 		expect(env.SMTP_PORT).toBe(587);
+	});
+
+	it('parses a complete SMTP block', () => {
+		const env = parseEnv({ ...validEnv, ...validSmtp });
+
+		expect(env.SMTP_HOST).toBe('smtp.example.com');
+		expect(env.SMTP_PORT).toBe(587);
+		expect(env.SMTP_USER).toBe('mailer');
+		expect(env.SMTP_PASSWORD).toBe('relay-secret');
+		expect(env.SMTP_FROM).toBe('reports@example.com');
+		expect(env.SMTP_TLS_MODE).toBe('starttls');
+	});
+
+	it('accepts an absent SMTP block (relay configured later)', () => {
+		const env = parseEnv(validEnv);
+
+		expect(env.SMTP_HOST).toBeUndefined();
+		expect(env.SMTP_TLS_MODE).toBeUndefined();
+	});
+
+	it('names SMTP_TLS_MODE when the mode is unknown', () => {
+		expect(() => parseEnv({ ...validEnv, ...validSmtp, SMTP_TLS_MODE: 'ssl' })).toThrowError(
+			/SMTP_TLS_MODE: must be one of starttls, tls or none/
+		);
+	});
+
+	it('names SMTP_PORT when the port is not numeric', () => {
+		expect(() => parseEnv({ ...validEnv, ...validSmtp, SMTP_PORT: 'abc' })).toThrowError(
+			/SMTP_PORT/
+		);
+	});
+
+	it('rejects a half-configured SMTP block (host set, from missing)', () => {
+		const { SMTP_FROM, ...partial } = validSmtp;
+		void SMTP_FROM;
+		expect(() => parseEnv({ ...validEnv, ...partial })).toThrowError(
+			/SMTP_FROM: required when any SMTP_\* variable is set/
+		);
 	});
 
 	it('treats empty strings as absent so optionals and defaults apply', () => {
