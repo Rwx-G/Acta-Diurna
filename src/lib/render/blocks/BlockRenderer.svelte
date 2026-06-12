@@ -3,8 +3,10 @@
 	import type { BlockView } from '../document-view.ts';
 	import ChartBlock from './ChartBlock.svelte';
 	import ComparisonMatrixBlock from './ComparisonMatrixBlock.svelte';
+	import FieldGridBlock from './FieldGridBlock.svelte';
 	import ImageBlock from './ImageBlock.svelte';
 	import KpiBlock from './KpiBlock.svelte';
+	import LegendBlock from './LegendBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import TextBlock from './TextBlock.svelte';
 
@@ -33,6 +35,10 @@
 		<ImageBlock block={view.block} />
 	{:else if view.block.type === 'comparison-matrix'}
 		<ComparisonMatrixBlock block={view.block} {scales} {theme} />
+	{:else if view.block.type === 'field-grid'}
+		<FieldGridBlock block={view.block} />
+	{:else if view.block.type === 'legend'}
+		<LegendBlock block={view.block} {scales} {theme} />
 	{/if}
 </div>
 
