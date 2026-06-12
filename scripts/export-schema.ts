@@ -6,12 +6,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DOCUMENT_SCHEMA_VERSION, toJsonSchema } from '../src/lib/schema/index.ts';
+import { CURRENT_SCHEMA_VERSION, toJsonSchema } from '../src/lib/schema/index.ts';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const outputPath = resolve(projectRoot, 'static', 'schema', `v${DOCUMENT_SCHEMA_VERSION}.json`);
+const outputPath = resolve(projectRoot, 'static', 'schema', `v${CURRENT_SCHEMA_VERSION}.json`);
 
 mkdirSync(dirname(outputPath), { recursive: true });
 writeFileSync(outputPath, `${JSON.stringify(toJsonSchema(), null, '\t')}\n`);
 
-console.log(`Document JSON Schema (v${DOCUMENT_SCHEMA_VERSION}) written to ${outputPath}`);
+console.log(`Document JSON Schema (v${CURRENT_SCHEMA_VERSION}) written to ${outputPath}`);

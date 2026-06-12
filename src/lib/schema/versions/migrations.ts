@@ -65,8 +65,10 @@ export function migrateToVersion(
 	let current = document;
 	let version = readVersion(current);
 	// Bounded by the number of registered migrations: each step strictly
-	// advances `version`, so the loop cannot run longer than the chain.
-	for (let step = 0; version !== target && step <= migrations.length; step += 1) {
+	// advances `version`, so a chain of N migrations needs at most N steps. The
+	// post-loop `version !== target` check below covers the case where the loop
+	// exhausts the bound without reaching the target.
+	for (let step = 0; version !== target && step < migrations.length; step += 1) {
 		const next = migrations.find((migration) => migration.from === version);
 		if (next === undefined) {
 			throw new MigrationPathError(version, target);

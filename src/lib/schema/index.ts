@@ -50,6 +50,10 @@ export {
 } from './versions/index.ts';
 export type { DocumentV1, DocumentV1Input, SupportedVersion } from './versions/index.ts';
 
+// CURRENT_SCHEMA_VERSION is imported (not just re-exported) because `toJsonSchema`
+// stamps it into the published artifact title - one source of truth for the version.
+import { CURRENT_SCHEMA_VERSION } from './versions/migrations.ts';
+
 export {
 	CURRENT_SCHEMA_VERSION,
 	DOCUMENT_MIGRATIONS,
@@ -71,9 +75,6 @@ export type {
 	ValidationErrorDetail,
 	ValidationProblemDetails
 } from './errors.ts';
-
-/** Version of the current document schema. */
-export const DOCUMENT_SCHEMA_VERSION = 1;
 
 /**
  * `z.url({ protocol: /^https?$/ })` keeps the protocol restriction internal to
@@ -115,7 +116,7 @@ export function toJsonSchema(): Record<string, unknown> {
 	attachLinkHrefPattern(rest);
 	return {
 		$schema,
-		title: `Acta Diurna document (schema v${DOCUMENT_SCHEMA_VERSION})`,
+		title: `Acta Diurna document (schema v${CURRENT_SCHEMA_VERSION})`,
 		...rest
 	};
 }

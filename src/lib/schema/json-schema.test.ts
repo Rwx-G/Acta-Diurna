@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DOCUMENT_SCHEMA_VERSION, toJsonSchema } from './index.ts';
+import { CURRENT_SCHEMA_VERSION, toJsonSchema } from './index.ts';
 
 type ExportedJsonSchema = {
 	$schema: string;
@@ -23,7 +23,7 @@ describe('toJsonSchema', () => {
 	it('produces draft 2020-12 with the version identifier 1', () => {
 		const schema = toJsonSchema() as ExportedJsonSchema;
 		expect(schema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
-		expect(schema.title).toBe(`Acta Diurna document (schema v${DOCUMENT_SCHEMA_VERSION})`);
+		expect(schema.title).toBe(`Acta Diurna document (schema v${CURRENT_SCHEMA_VERSION})`);
 		expect(schema.type).toBe('object');
 		expect(schema.properties.version).toEqual({ type: 'number', const: 1 });
 		expect(schema.required).toEqual(['version', 'title', 'sections']);

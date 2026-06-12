@@ -26,6 +26,18 @@ describe('document migration chain', () => {
 		expect(migrated.sections).toEqual(syntheticV0Document.sections);
 	});
 
+	it('walks a multi-step chain to the target within the loop bound', () => {
+		const chain = [
+			{ from: 0, to: 1, migrate: (doc: Record<string, unknown>) => ({ ...doc, version: 1 }) },
+			{ from: 1, to: 2, migrate: (doc: Record<string, unknown>) => ({ ...doc, version: 2 }) }
+		];
+
+		const migrated = migrateToVersion({ version: 0, title: 'Chained', sections: [] }, 2, chain);
+
+		expect(migrated.version).toBe(2);
+		expect(migrated.title).toBe('Chained');
+	});
+
 	it('throws MigrationPathError when no step reaches the target version', () => {
 		expect(() => migrateToVersion({ version: 99, title: 'Y', sections: [] })).toThrow(
 			MigrationPathError
