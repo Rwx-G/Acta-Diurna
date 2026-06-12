@@ -241,6 +241,26 @@ describe('parseEnv', () => {
 		expect(() => parseEnv({ ...validEnv, LOG_LEVEL: 'trace' })).toThrowError(/LOG_LEVEL/);
 	});
 
+	it('rejects an http ORIGIN in production so session cookies are never sent without Secure', () => {
+		expect(() =>
+			parseEnv({ ...validEnv, NODE_ENV: 'production', ORIGIN: 'http://reports.example.com' })
+		).toThrowError(/ORIGIN: must be an https:\/\/ URL when NODE_ENV=production/);
+	});
+
+	it('accepts an https ORIGIN in production', () => {
+		const env = parseEnv({
+			...validEnv,
+			NODE_ENV: 'production',
+			ORIGIN: 'https://reports.example.com'
+		});
+
+		expect(env.ORIGIN).toBe('https://reports.example.com');
+	});
+
+	it('allows an http ORIGIN outside production (local dev)', () => {
+		expect(parseEnv({ ...validEnv, NODE_ENV: 'development' }).ORIGIN).toBe('http://localhost:3000');
+	});
+
 	it('names ORIGIN when the scheme is not http(s)', () => {
 		expect(() => parseEnv({ ...validEnv, ORIGIN: 'ftp://reports.example.com' })).toThrowError(
 			/ORIGIN: must be an http:\/\/ or https:\/\/ URL/

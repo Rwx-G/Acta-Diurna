@@ -98,6 +98,19 @@ const envSchema = z
 				message: 'debug is not allowed when NODE_ENV=production - use fatal, error, warn or info'
 			});
 		}
+		// Session cookies derive their `Secure` flag from the ORIGIN scheme
+		// (cookies.ts isSecureOrigin), so an http:// ORIGIN in production ships
+		// author and reader session cookies WITHOUT Secure - sendable over
+		// plaintext. Refuse to boot rather than silently degrade. Behind a
+		// TLS-terminating proxy, ORIGIN is still the public https:// URL.
+		if (env.NODE_ENV === 'production' && env.ORIGIN.startsWith('http://')) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['ORIGIN'],
+				message:
+					'must be an https:// URL when NODE_ENV=production so session cookies are Secure (set it to the public https URL, even behind a TLS-terminating proxy)'
+			});
+		}
 		// All-or-nothing SMTP: if any SMTP_* var is present, the relay essentials
 		// (host, port, from) must all be present so a half-configured relay never
 		// reaches send time. User/password are optional (some relays accept
