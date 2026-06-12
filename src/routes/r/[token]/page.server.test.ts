@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 	getPublishedDocument: vi.fn(),
 	requestVerification: vi.fn(),
 	verificationConsume: vi.fn(),
+	shareConsume: vi.fn(),
 	globalConsume: vi.fn()
 }));
 
@@ -27,6 +28,7 @@ vi.mock('$lib/server/documents/reports', () => ({
 vi.mock('$lib/server/auth/rate-limit', () => ({
 	GLOBAL_VERIFICATION_KEY: 'global',
 	verificationRateLimiter: { consume: mocks.verificationConsume },
+	verificationShareLimiter: { consume: mocks.shareConsume },
 	verificationFailureLimiter: { consume: mocks.globalConsume }
 }));
 vi.mock('$lib/server/reader', async () => {
@@ -85,6 +87,7 @@ function actionEvent(form: Record<string, string>, overrides: Record<string, unk
 beforeEach(() => {
 	for (const m of Object.values(mocks)) m.mockReset();
 	mocks.verificationConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+	mocks.shareConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 	mocks.globalConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 });
 
@@ -241,6 +244,40 @@ describe('request-verification action (enumeration-safety)', () => {
 
 		expect(result).toMatchObject({ status: 429, data: { state: 'throttled' } });
 		expect(mocks.requestVerification).not.toHaveBeenCalled();
+	});
+
+	it('returns "throttled" when the per-share brake trips, BEFORE draining the global bucket', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.shareConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 5 });
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toMatchObject({ status: 429, data: { state: 'throttled' } });
+		expect(mocks.requestVerification).not.toHaveBeenCalled();
+		// The per-share brake short-circuits before the global brake, so one share's
+		// flood never drains the instance-wide bucket.
+		expect(mocks.globalConsume).not.toHaveBeenCalled();
+	});
+
+	it('throttles the drained share while a DIFFERENT share still passes (no cross-share starvation)', async () => {
+		// The per-share brake is keyed by share id: when share-1's bucket is drained
+		// it is throttled, but share-2 (a distinct key) is unaffected. The mock keys
+		// its decision on the share id it is consumed with, mirroring the real
+		// per-share limiter.
+		mocks.requestVerification.mockResolvedValue(undefined);
+		mocks.shareConsume.mockImplementation((shareId: string) =>
+			shareId === 'share-1'
+				? { allowed: false, retryAfterSeconds: 5 }
+				: { allowed: true, retryAfterSeconds: 0 }
+		);
+
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		const drained = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+		expect(drained).toMatchObject({ status: 429, data: { state: 'throttled' } });
+
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, id: 'share-2' });
+		const other = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+		expect(other).toEqual({ state: 'sent' });
 	});
 
 	it('returns "throttled" when the global brake trips (proxy-collapse second line)', async () => {

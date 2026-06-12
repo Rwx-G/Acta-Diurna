@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { GLOBAL_LOGIN_FAILURE_KEY, TokenBucketLimiter } from './rate-limit';
+import {
+	GLOBAL_LOGIN_FAILURE_KEY,
+	TokenBucketLimiter,
+	verificationShareLimiter
+} from './rate-limit';
 
 const KEY = '192.0.2.10:/login';
 const T0 = 1_000_000_000_000;
@@ -102,6 +106,25 @@ describe('global login failure brake', () => {
 		const denied = limiter.check(GLOBAL_LOGIN_FAILURE_KEY, T0);
 		expect(denied.allowed).toBe(false);
 		expect(denied.retryAfterSeconds).toBe(10);
+	});
+});
+
+describe('per-share verification brake', () => {
+	it('drains one share without throttling another (keyed by share id alone)', () => {
+		// Distinct share ids are distinct bucket keys: a flood against one share
+		// trips its own bucket but leaves every other share's bucket full, so one
+		// share's flood cannot starve verification on the rest of the instance.
+		const flooded = 'share-flooded';
+		const other = 'share-other';
+
+		let lastDenied = { allowed: true, retryAfterSeconds: 0 };
+		for (let i = 0; i < 100; i += 1) {
+			lastDenied = verificationShareLimiter.consume(flooded, T0);
+		}
+		expect(lastDenied.allowed).toBe(false);
+
+		// The untouched share is unaffected by the flood on the other key.
+		expect(verificationShareLimiter.consume(other, T0).allowed).toBe(true);
 	});
 });
 

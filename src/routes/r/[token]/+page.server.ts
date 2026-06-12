@@ -4,7 +4,8 @@ import { readReaderCookie } from '$lib/server/auth/cookies';
 import {
 	GLOBAL_VERIFICATION_KEY,
 	verificationFailureLimiter,
-	verificationRateLimiter
+	verificationRateLimiter,
+	verificationShareLimiter
 } from '$lib/server/auth/rate-limit';
 import { validateReaderSession } from '$lib/server/auth/sessions';
 import { getPublishedDocument } from '$lib/server/documents/reports';
@@ -160,14 +161,17 @@ async function requestVerificationAction(event: RequestEvent) {
 }
 
 /**
- * Per-(IP, share) limit plus the IP-independent global brake (the reverse-proxy
- * second line). Both are consumed on every attempt; either tripping throttles
- * the reader. Keyed by share so probing one share does not starve verification
- * on another.
+ * Per-(IP, share) limit, then the IP-independent per-share brake (keyed by share
+ * alone), then the IP-independent global brake (the reverse-proxy second line).
+ * All three are consumed on every attempt; any tripping throttles the reader.
+ * The per-share brake stops one share's flood from draining the global bucket
+ * and starving verification on every other share.
  */
 function withinVerificationLimit(clientAddress: string, shareId: string): boolean {
 	const perIp = verificationRateLimiter.consume(`${clientAddress}:${shareId}`);
 	if (!perIp.allowed) return false;
+	const perShare = verificationShareLimiter.consume(shareId);
+	if (!perShare.allowed) return false;
 	const global = verificationFailureLimiter.consume(GLOBAL_VERIFICATION_KEY);
 	return global.allowed;
 }

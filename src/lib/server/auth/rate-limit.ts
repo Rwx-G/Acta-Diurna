@@ -144,6 +144,17 @@ const VERIFICATION_REFILL_TOKENS_PER_SECOND = 1 / 20;
 const VERIFICATION_FAILURE_CAPACITY = 60;
 /** One global verification allowance earned back every 5 seconds once drained. */
 const VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND = 1 / 5;
+/**
+ * Per-SHARE burst before the IP-independent sub-brake engages. Sized between the
+ * per-IP capacity (5) and the global capacity (60): a single share tolerates a
+ * larger burst than one IP (several readers may verify the same share at once)
+ * but far less than the whole instance, so one share's flood drains its OWN
+ * bucket and trips this brake long before it can drain the shared global one and
+ * starve verification on every other share.
+ */
+const VERIFICATION_SHARE_CAPACITY = 20;
+/** One per-share verification allowance earned back every 5 seconds once drained. */
+const VERIFICATION_SHARE_REFILL_TOKENS_PER_SECOND = 1 / 5;
 
 /** Single global key for the verification brake (mirrors GLOBAL_LOGIN_FAILURE_KEY). */
 export const GLOBAL_VERIFICATION_KEY = 'global:/r/verify';
@@ -157,6 +168,20 @@ export const GLOBAL_VERIFICATION_KEY = 'global:/r/verify';
 export const verificationRateLimiter: TokenBucketLimiter = new TokenBucketLimiter(
 	VERIFICATION_BUCKET_CAPACITY,
 	VERIFICATION_REFILL_TOKENS_PER_SECOND
+);
+
+/**
+ * IP-independent per-SHARE brake, keyed by share id ALONE (no IP). Sits between
+ * the per-IP limiter and the global brake: the per-IP limiter degrades when
+ * addresses collapse behind a proxy or are spoofed, and the global brake is
+ * instance-wide, so without this middle line a flood against one share could
+ * drain the global bucket and starve verification on EVERY other share. Keyed by
+ * share so the flood is contained to the share it targets. Consumed on every
+ * verification attempt, after the per-IP limiter and before the global brake.
+ */
+export const verificationShareLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	VERIFICATION_SHARE_CAPACITY,
+	VERIFICATION_SHARE_REFILL_TOKENS_PER_SECOND
 );
 
 /**

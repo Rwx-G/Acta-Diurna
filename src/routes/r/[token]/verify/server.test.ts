@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	setReaderCookie: vi.fn(),
 	completeVerification: vi.fn(),
 	verificationConsume: vi.fn(),
+	shareConsume: vi.fn(),
 	globalConsume: vi.fn()
 }));
 
@@ -18,6 +19,7 @@ vi.mock('$lib/server/auth/cookies', () => ({ setReaderCookie: mocks.setReaderCoo
 vi.mock('$lib/server/auth/rate-limit', () => ({
 	GLOBAL_VERIFICATION_KEY: 'global',
 	verificationRateLimiter: { consume: mocks.verificationConsume },
+	verificationShareLimiter: { consume: mocks.shareConsume },
 	verificationFailureLimiter: { consume: mocks.globalConsume }
 }));
 vi.mock('$lib/server/reader', () => ({
@@ -46,6 +48,7 @@ function event(search: string, overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
 	for (const m of Object.values(mocks)) m.mockReset();
 	mocks.verificationConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+	mocks.shareConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 	mocks.globalConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 });
 
@@ -95,6 +98,20 @@ describe('GET /r/[token]/verify', () => {
 		expect(mocks.setReaderCookie).not.toHaveBeenCalled();
 	});
 
+	it('when the per-share brake denies: same expired bounce, no consume (one share cannot starve all)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.shareConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 5 });
+
+		await expect(GET(event('?t=good'))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+		expect(mocks.completeVerification).not.toHaveBeenCalled();
+		// The per-share brake short-circuits BEFORE the global brake, so the
+		// instance-wide bucket is never drained by one share's flood.
+		expect(mocks.globalConsume).not.toHaveBeenCalled();
+	});
+
 	it('when the global brake denies: same expired bounce, no consume (proxy-collapse second line)', async () => {
 		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
 		mocks.globalConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 10 });
@@ -113,6 +130,7 @@ describe('GET /r/[token]/verify', () => {
 		await expect(GET(event('?t=x'))).rejects.toBeDefined();
 
 		expect(mocks.verificationConsume).toHaveBeenCalledWith('203.0.113.5:share-1');
+		expect(mocks.shareConsume).toHaveBeenCalledWith('share-1');
 		expect(mocks.globalConsume).toHaveBeenCalledWith('global');
 	});
 });

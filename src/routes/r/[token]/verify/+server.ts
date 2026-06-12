@@ -4,7 +4,8 @@ import { setReaderCookie } from '$lib/server/auth/cookies';
 import {
 	GLOBAL_VERIFICATION_KEY,
 	verificationFailureLimiter,
-	verificationRateLimiter
+	verificationRateLimiter,
+	verificationShareLimiter
 } from '$lib/server/auth/rate-limit';
 import { completeVerification, serveNeutralClosed } from '$lib/server/reader';
 import { getShareByToken } from '$lib/server/sharing';
@@ -71,14 +72,18 @@ export const GET: RequestHandler = async ({
 };
 
 /**
- * Per-(IP, share) limit plus the IP-independent global brake (the reverse-proxy
- * second line), mirroring the email-submission action. Both buckets are consumed
- * on every landing; either tripping throttles the reader. Keyed by share so a
- * flood against one share does not starve verification on another.
+ * Per-(IP, share) limit, then the IP-independent per-share brake (keyed by share
+ * alone), then the IP-independent global brake (the reverse-proxy second line),
+ * mirroring the email-submission action. All three are consumed on every
+ * landing; any tripping throttles the reader. The per-share brake stops one
+ * share's flood from draining the global bucket and starving verification on
+ * every other share.
  */
 function withinVerificationLimit(clientAddress: string, shareId: string): boolean {
 	const perIp = verificationRateLimiter.consume(`${clientAddress}:${shareId}`);
 	if (!perIp.allowed) return false;
+	const perShare = verificationShareLimiter.consume(shareId);
+	if (!perShare.allowed) return false;
 	const global = verificationFailureLimiter.consume(GLOBAL_VERIFICATION_KEY);
 	return global.allowed;
 }
