@@ -153,6 +153,31 @@ export async function createReport(title: string): Promise<Report> {
 	return toReport(row);
 }
 
+/**
+ * Creates a draft report from an arbitrary document (validate-on-write, like
+ * `createReport`). The skeleton instantiation path (FR11) seeds the draft with
+ * the skeleton's structure here, so a report from a skeleton goes through the
+ * same write contract as a blank report - the document, not the seed, is the
+ * only difference. The row gets a fresh UUIDv7; the document's own ids are kept.
+ */
+export async function createReportWithDocument(documentInput: unknown): Promise<Report> {
+	const document = validateOrThrow(documentInput);
+	const now = new Date();
+	const row: ReportRow = {
+		id: uuidv7(),
+		title: document.title,
+		status: 'draft',
+		schemaVersion: document.version,
+		document,
+		publishedDocument: null,
+		publishedAt: null,
+		createdAt: now,
+		updatedAt: now
+	};
+	await getDb().insert(reports).values(row);
+	return toReport(row);
+}
+
 /** Loads one report; 404 when the id is unknown or malformed. */
 export async function getReport(id: string): Promise<Report> {
 	return toReport(await getRow(id));

@@ -56,3 +56,23 @@ export const reports = pgTable(
 );
 
 export type ReportRow = typeof reports.$inferSelect;
+
+// A skeleton (FR9/FR11) is a reusable report structure: the same JSONB `DocumentV1`
+// the reports table stores, with placeholder bindings instead of data. `name` is
+// unique so the library lists distinct templates (the document title doubles as
+// the name; a duplicate is a 409). `schema_version` is denormalized from the
+// document, mirroring the reports table, so version queries never parse JSONB.
+export const skeletons = pgTable(
+	'skeletons',
+	{
+		id: uuid('id').primaryKey(),
+		name: text('name').notNull(),
+		schemaVersion: integer('schema_version').notNull(),
+		document: jsonb('document').$type<DocumentV1>().notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [uniqueIndex('skeletons_name_idx').on(table.name)]
+);
+
+export type SkeletonRow = typeof skeletons.$inferSelect;

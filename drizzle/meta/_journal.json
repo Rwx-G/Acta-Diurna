@@ -29,6 +29,13 @@
       "when": 1781233143221,
       "tag": "0003_publish_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781236484484,
+      "tag": "0004_skeletons",
+      "breakpoints": true
     }
   ]
 }

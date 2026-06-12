@@ -10,6 +10,7 @@ import type { ReportRow } from '../db/schema';
 import {
 	assertShareable,
 	createReport,
+	createReportWithDocument,
 	deleteDraft,
 	getPublishedDocument,
 	getReport,
@@ -214,6 +215,36 @@ describe('createReport', () => {
 		const error = await expectAppError(createReport(''), 422);
 
 		expect(error.errors?.[0].path).toBe('title');
+		expect(dbState.inserted).toHaveLength(0);
+	});
+});
+
+describe('createReportWithDocument', () => {
+	it('stores a draft seeded with the given document (skeleton instantiation path)', async () => {
+		const report = await createReportWithDocument(validDocument('From Skeleton'));
+
+		expect(report.id).toMatch(UUIDV7_PATTERN);
+		expect(report.status).toBe('draft');
+		expect(report.schemaVersion).toBe(1);
+		expect(report.title).toBe('From Skeleton');
+		expect(report.document.sections).toHaveLength(1);
+		expect(dbState.inserted).toHaveLength(1);
+		expect(dbState.inserted[0].id).toBe(report.id);
+	});
+
+	it('mints a fresh row id per call so two reports from one document are distinct', async () => {
+		const document = validDocument('Recurring');
+
+		const first = await createReportWithDocument(document);
+		const second = await createReportWithDocument(document);
+
+		expect(first.id).not.toBe(second.id);
+		expect(first.document).toEqual(second.document);
+		expect(dbState.inserted).toHaveLength(2);
+	});
+
+	it('rejects an invalid document with a 422 before touching the database', async () => {
+		await expectAppError(createReportWithDocument({ version: 1, title: '', sections: [] }), 422);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 });
