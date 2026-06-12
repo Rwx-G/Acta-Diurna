@@ -1,3 +1,5 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { expect, test } from '@playwright/test';
 import { E2E_BASE_URL } from './fixtures.ts';
 
@@ -88,4 +90,85 @@ test('MCP handshake requires a PAT and identifies as acta-diurna', async ({ page
 		failOnStatusCode: false
 	});
 	expect(afterRevoke.status()).toBe(401);
+});
+
+// Story 5.2 (FR31 authoring): drive the write tools end-to-end with a REAL MCP
+// client (the SDK's Client over the Streamable HTTP transport, PAT-authenticated)
+// against the live server, so the full authoring lifecycle round-trips through the
+// real service + DB - not a mock: create_report -> get_report shows it ->
+// update_report -> publish_report -> delete_report, plus a bad-document write
+// returning the FR2 actionable errors[] (the same payload REST returns).
+test('MCP write tools author a report end-to-end with a real PAT', async ({ page }, testInfo) => {
+	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
+
+	// Mint a PAT via the settings UI (shown once).
+	await page.goto('/settings');
+	await page.getByLabel('Token name').fill('e2e mcp write');
+	await page.getByRole('button', { name: 'Create token' }).click();
+	const tokenCode = page.locator('.created-url');
+	await expect(tokenCode).toBeVisible();
+	const rawToken = (await tokenCode.textContent())!.trim();
+
+	const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
+		requestInit: { headers: { authorization: `Bearer ${rawToken}` } }
+	});
+	const client = new Client({ name: 'e2e-write', version: '0.0.0' });
+	await client.connect(transport);
+
+	const parse = (result: Awaited<ReturnType<typeof client.callTool>>) => {
+		const content = result.content as { type: string; text: string }[];
+		return JSON.parse(content[0].text) as Record<string, unknown>;
+	};
+
+	try {
+		// create_report (blank starter) -> a fresh draft with an id.
+		const created = await client.callTool({
+			name: 'create_report',
+			arguments: { title: 'MCP authored' }
+		});
+		expect(created.isError).toBeFalsy();
+		const report = parse(created);
+		const id = report.id as string;
+		expect(id).toMatch(/^[0-9a-f-]{36}$/);
+		expect(report.status).toBe('draft');
+
+		// get_report shows the just-created report (the round-trip through the DB).
+		const fetched = await client.callTool({ name: 'get_report', arguments: { id } });
+		expect((parse(fetched) as { id: string }).id).toBe(id);
+
+		// update_report (title only) renames the draft.
+		const renamed = await client.callTool({
+			name: 'update_report',
+			arguments: { id, title: 'MCP renamed' }
+		});
+		expect((parse(renamed) as { title: string }).title).toBe('MCP renamed');
+
+		// publish_report freezes the snapshot.
+		const published = await client.callTool({ name: 'publish_report', arguments: { id } });
+		expect((parse(published) as { status: string }).status).toBe('published');
+
+		// delete_report on a published report is the service 409 (no silent skip).
+		const deletePublished = await client.callTool({ name: 'delete_report', arguments: { id } });
+		expect(deletePublished.isError).toBe(true);
+		expect((parse(deletePublished) as { status: number }).status).toBe(409);
+
+		// unpublish_report reverts to draft, then delete_report succeeds.
+		await client.callTool({ name: 'unpublish_report', arguments: { id } });
+		const deleted = await client.callTool({ name: 'delete_report', arguments: { id } });
+		expect(deleted.isError).toBeFalsy();
+		expect(parse(deleted)).toEqual({ id, deleted: true });
+
+		// A bad document returns the FR2 actionable errors[] (the REST parity payload).
+		const invalid = await client.callTool({
+			name: 'create_report',
+			arguments: { document: { version: 1 } }
+		});
+		expect(invalid.isError).toBe(true);
+		const problem = parse(invalid) as { status: number; errors: { path: string }[] };
+		expect(problem.status).toBe(422);
+		expect(Array.isArray(problem.errors)).toBe(true);
+		expect(problem.errors.length).toBeGreaterThan(0);
+	} finally {
+		await transport.close();
+	}
 });

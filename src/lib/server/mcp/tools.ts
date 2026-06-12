@@ -17,7 +17,17 @@
  * never leaked as a tool result. Auth failure is NOT a tool result: it is the
  * transport-level 401 the `apiAuth` hook returns before the route runs.
  */
-import { getReport, listReports } from '$lib/server/documents/reports';
+import {
+	createReport,
+	createReportWithDocument,
+	deleteDraft,
+	getReport,
+	listReports,
+	publishReport,
+	unpublishToDraft
+} from '$lib/server/documents/reports';
+import { composeReportUpdate, type ReportUpdate } from '$lib/server/documents/update-composition';
+import { DEFAULT_REPORT_TITLE } from '$lib/server/documents/defaults';
 import { AppError } from '$lib/server/problem';
 import { getPublishedSchema } from '$lib/server/schema/published';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
@@ -83,4 +93,85 @@ export function listReportsTool(): Promise<McpToolResult> {
 /** `get_report` -> one full report (`getReport`); an unknown id is the service 404 as a tool error. */
 export function getReportTool(id: string): Promise<McpToolResult> {
 	return withProblemMapping(async () => jsonResult(await getReport(id)));
+}
+
+/*
+ * Write tools (story 5.2, FR31 authoring). Each is a THIN delegation to the EXACT
+ * documents/publish service the REST `/api/v1/reports` endpoints call - no
+ * validation, no Drizzle, no composition logic that the route does not also use
+ * (the combined update goes through the shared `composeReportUpdate`). A service
+ * `AppError` (422 invalid document with `errors[]`, 409 stale/published, 404
+ * unknown id) is carried into the tool error channel as the SAME problem-details
+ * body REST returns, via `withProblemMapping`/`problemResult` - byte-parity with
+ * the REST error bodies. The `document` arg is `unknown`: the SERVICE's
+ * `validateDocument` is the validator (the handler does not re-validate), so an
+ * invalid document surfaces as the FR2 422 with the actionable `errors[]`.
+ */
+
+/** Tool-arg `expectedUpdatedAt` is a zod-validated ISO string; the services take a `Date`. */
+function toExpectedDate(expectedUpdatedAt: string | undefined): Date | undefined {
+	return expectedUpdatedAt === undefined ? undefined : new Date(expectedUpdatedAt);
+}
+
+/**
+ * `create_report` -> `createReportWithDocument(document)` when a document is
+ * given (the skeleton/instantiation path), else `createReport(title)` with the
+ * blank starter (mirroring `POST /api/v1/reports`). Returns the created report.
+ */
+export function createReportTool(input: {
+	title?: string;
+	document?: unknown;
+}): Promise<McpToolResult> {
+	return withProblemMapping(async () => {
+		if (input.document !== undefined) {
+			return jsonResult(await createReportWithDocument(input.document));
+		}
+		return jsonResult(await createReport(input.title ?? DEFAULT_REPORT_TITLE));
+	});
+}
+
+/**
+ * `update_report` -> the shared `composeReportUpdate` (same composition the REST
+ * PATCH uses): combined `{title, document}` is ONE guarded `updateReportDocument`
+ * write with `document.title = title`; document-only / title-only route to the
+ * matching service. A stale `expectedUpdatedAt` is the service 409.
+ */
+export function updateReportTool(input: {
+	id: string;
+	title?: string;
+	document?: unknown;
+	expectedUpdatedAt?: string;
+}): Promise<McpToolResult> {
+	return withProblemMapping(async () => {
+		const update: ReportUpdate = {
+			id: input.id,
+			title: input.title,
+			document: input.document,
+			expectedUpdatedAt: toExpectedDate(input.expectedUpdatedAt)
+		};
+		return jsonResult(await composeReportUpdate(update));
+	});
+}
+
+/** `publish_report` -> `publishReport(id, expectedUpdatedAt?)`; idempotent on a published report. */
+export function publishReportTool(input: {
+	id: string;
+	expectedUpdatedAt?: string;
+}): Promise<McpToolResult> {
+	return withProblemMapping(async () =>
+		jsonResult(await publishReport(input.id, toExpectedDate(input.expectedUpdatedAt)))
+	);
+}
+
+/** `unpublish_report` -> `unpublishToDraft(id)`; idempotent on a draft, no concurrency token. */
+export function unpublishReportTool(id: string): Promise<McpToolResult> {
+	return withProblemMapping(async () => jsonResult(await unpublishToDraft(id)));
+}
+
+/** `delete_report` -> `deleteDraft(id)`; a published report is the service 409 (not deletable). */
+export function deleteReportTool(id: string): Promise<McpToolResult> {
+	return withProblemMapping(async () => {
+		await deleteDraft(id);
+		return jsonResult({ id, deleted: true });
+	});
 }

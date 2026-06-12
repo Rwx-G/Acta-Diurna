@@ -4,14 +4,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/server/documents/reports', () => ({
 	listReports: vi.fn(),
-	getReport: vi.fn()
+	getReport: vi.fn(),
+	createReport: vi.fn(),
+	createReportWithDocument: vi.fn(),
+	updateReportDocument: vi.fn(),
+	updateReportTitle: vi.fn(),
+	publishReport: vi.fn(),
+	unpublishToDraft: vi.fn(),
+	deleteDraft: vi.fn()
 }));
 
 vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
-import { getReport, listReports } from '$lib/server/documents/reports';
+import {
+	createReport,
+	createReportWithDocument,
+	deleteDraft,
+	getReport,
+	listReports,
+	publishReport,
+	unpublishToDraft,
+	updateReportDocument,
+	updateReportTitle,
+	type Report
+} from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { buildMcpServer, MCP_SERVER_NAME } from './server';
@@ -21,18 +39,24 @@ const VALID_REPORT_ID = '01970000-0000-7000-8000-000000000001';
 const listReportsMock = vi.mocked(listReports);
 const getReportMock = vi.mocked(getReport);
 const listSkeletonsMock = vi.mocked(listSkeletons);
+const createReportMock = vi.mocked(createReport);
+const createReportWithDocumentMock = vi.mocked(createReportWithDocument);
+const updateReportDocumentMock = vi.mocked(updateReportDocument);
+const updateReportTitleMock = vi.mocked(updateReportTitle);
+const publishReportMock = vi.mocked(publishReport);
+const unpublishToDraftMock = vi.mocked(unpublishToDraft);
+const deleteDraftMock = vi.mocked(deleteDraft);
+
+const REPORT = { id: VALID_REPORT_ID, title: 'Q2', status: 'draft' } as Report;
 
 const READ_TOOLS = ['get_schema', 'list_skeletons', 'list_reports', 'get_report'];
-// 5.2 adds these; 5.1 must register NONE of them (read-only surface).
-const WRITE_TOOL_HINTS = [
-	'create',
-	'update',
-	'delete',
-	'publish',
-	'push',
-	'write',
-	'set',
-	'remove'
+// Story 5.2: the authoring (write) tools registered on the same server.
+const WRITE_TOOLS = [
+	'create_report',
+	'update_report',
+	'publish_report',
+	'unpublish_report',
+	'delete_report'
 ];
 
 let client: Client;
@@ -57,15 +81,28 @@ describe('buildMcpServer', () => {
 		expect(client.getServerVersion()?.name).toBe(MCP_SERVER_NAME);
 	});
 
-	it('registers exactly the four read-only tools and NO write tools', async () => {
+	it('registers exactly the read tools plus the 5.2 write tools', async () => {
 		const { tools } = await client.listTools();
 		const names = tools.map((t) => t.name).sort();
-		expect(names).toEqual([...READ_TOOLS].sort());
+		expect(names).toEqual([...READ_TOOLS, ...WRITE_TOOLS].sort());
+	});
 
-		for (const name of names) {
-			expect(WRITE_TOOL_HINTS.some((hint) => name.includes(hint))).toBe(false);
-			const tool = tools.find((t) => t.name === name)!;
-			expect(tool.annotations?.readOnlyHint).toBe(true);
+	it('marks the read tools readOnlyHint:true and the write tools readOnlyHint:false', async () => {
+		const { tools } = await client.listTools();
+
+		for (const name of READ_TOOLS) {
+			expect(tools.find((t) => t.name === name)!.annotations?.readOnlyHint).toBe(true);
+		}
+		for (const name of WRITE_TOOLS) {
+			expect(tools.find((t) => t.name === name)!.annotations?.readOnlyHint).toBe(false);
+		}
+	});
+
+	it('marks delete_report destructive (and the others not)', async () => {
+		const { tools } = await client.listTools();
+		expect(tools.find((t) => t.name === 'delete_report')!.annotations?.destructiveHint).toBe(true);
+		for (const name of ['create_report', 'update_report', 'publish_report', 'unpublish_report']) {
+			expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBeFalsy();
 		}
 	});
 
@@ -123,5 +160,99 @@ describe('buildMcpServer', () => {
 		const problem = JSON.parse(content[0].text) as { status: number; type: string };
 		expect(problem.status).toBe(404);
 		expect(problem.type).toBe('/problems/report-not-found');
+	});
+
+	it('create_report delegates through the SDK to createReport(title)', async () => {
+		createReportMock.mockResolvedValue(REPORT);
+		const result = await client.callTool({ name: 'create_report', arguments: { title: 'New' } });
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('New');
+		expect(result.isError).toBeFalsy();
+	});
+
+	it('update_report with title+document does ONE guarded write merging the title', async () => {
+		updateReportDocumentMock.mockResolvedValue(REPORT);
+		await client.callTool({
+			name: 'update_report',
+			arguments: {
+				id: VALID_REPORT_ID,
+				document: { version: 1, title: 'From doc', sections: [] },
+				title: 'Final'
+			}
+		});
+		expect(updateReportDocumentMock).toHaveBeenCalledExactlyOnceWith(
+			VALID_REPORT_ID,
+			{ version: 1, title: 'Final', sections: [] },
+			undefined
+		);
+		expect(updateReportTitleMock).not.toHaveBeenCalled();
+	});
+
+	it('publish_report and unpublish_report delegate to their services', async () => {
+		publishReportMock.mockResolvedValue({ ...REPORT, status: 'published' });
+		unpublishToDraftMock.mockResolvedValue(REPORT);
+
+		await client.callTool({ name: 'publish_report', arguments: { id: VALID_REPORT_ID } });
+		await client.callTool({ name: 'unpublish_report', arguments: { id: VALID_REPORT_ID } });
+
+		expect(publishReportMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID, undefined);
+		expect(unpublishToDraftMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID);
+	});
+
+	it('delete_report deletes a draft and 409s on a published report (no silent skip)', async () => {
+		deleteDraftMock.mockResolvedValue();
+		const ok = await client.callTool({ name: 'delete_report', arguments: { id: VALID_REPORT_ID } });
+		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID);
+		expect(ok.isError).toBeFalsy();
+
+		deleteDraftMock.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Report is published',
+				type: '/problems/report-published'
+			})
+		);
+		const conflict = await client.callTool({
+			name: 'delete_report',
+			arguments: { id: VALID_REPORT_ID }
+		});
+		expect(conflict.isError).toBe(true);
+		const content = conflict.content as { type: string; text: string }[];
+		expect((JSON.parse(content[0].text) as { status: number }).status).toBe(409);
+	});
+
+	it('rejects a malformed UUID at the write-tool boundary (no service call)', async () => {
+		const result = await client.callTool({
+			name: 'delete_report',
+			arguments: { id: 'not-a-uuid' }
+		});
+		expect(result.isError).toBe(true);
+		expect(deleteDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('carries a 422 invalid-document error with errors[] from create_report (FR2 parity)', async () => {
+		createReportWithDocumentMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'Validation failed',
+				type: '/problems/document-validation',
+				errors: [{ path: 'sections.0.title', message: 'required', hint: 'Name the section.' }]
+			})
+		);
+		const result = await client.callTool({
+			name: 'create_report',
+			arguments: { document: { version: 1 } }
+		});
+		expect(result.isError).toBe(true);
+		const content = result.content as { type: string; text: string }[];
+		const problem = JSON.parse(content[0].text) as {
+			status: number;
+			errors: { path: string; hint?: string }[];
+		};
+		expect(problem.status).toBe(422);
+		expect(problem.errors[0]).toEqual({
+			path: 'sections.0.title',
+			message: 'required',
+			hint: 'Name the section.'
+		});
 	});
 });
