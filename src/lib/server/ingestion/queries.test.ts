@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Column, getTableName, Param, type SQL } from 'drizzle-orm';
 import { AppError } from '$lib/server/problem';
-import { bindBlock } from './queries.ts';
+import { bindBlock, readDataSetTable } from './queries.ts';
 
 const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-queries-'));
 
@@ -162,6 +162,45 @@ describe('bindBlock', () => {
 		} catch (thrown) {
 			expect(thrown).toBeInstanceOf(AppError);
 			expect((thrown as AppError).status).toBe(422);
+			return;
+		}
+		throw new Error('expected a 422');
+	});
+});
+
+describe('readDataSetTable', () => {
+	it('maps a corrupted stored file to a 422 problem-details, not a 500', async () => {
+		// The file was valid at ingest; corrupt it on disk (unterminated quote) so
+		// the re-parse fails. bindBlock awaits this BEFORE its try block, so it must
+		// surface as problem-details, never a raw ParseError -> 500.
+		const storagePath = join(uploadsDir, `${DATA_SET_ID}.csv`);
+		await writeFile(storagePath, 'week,count\n"oops');
+
+		try {
+			await readDataSetTable(DATA_SET_ID);
+		} catch (thrown) {
+			expect(thrown).toBeInstanceOf(AppError);
+			expect((thrown as AppError).status).toBe(422);
+			expect((thrown as AppError).type).toBe('/problems/data-set-unreadable');
+			return;
+		}
+		throw new Error('expected a 422');
+	});
+
+	it('caps materialized rows and rejects an over-cap data set with 422', async () => {
+		// 10001 rows exceeds the 10000-row binding cap: fail fast with a clear 422
+		// rather than building a giant array a downstream validator would reject.
+		const storagePath = join(uploadsDir, `${DATA_SET_ID}.csv`);
+		const lines = ['week,count'];
+		for (let i = 0; i < 10001; i++) lines.push(`2026-06-01,${i}`);
+		await writeFile(storagePath, lines.join('\n'));
+
+		try {
+			await readDataSetTable(DATA_SET_ID);
+		} catch (thrown) {
+			expect(thrown).toBeInstanceOf(AppError);
+			expect((thrown as AppError).status).toBe(422);
+			expect((thrown as AppError).detail).toContain('10000 rows');
 			return;
 		}
 		throw new Error('expected a 422');

@@ -51,8 +51,15 @@ export function resolveTable(binding: Binding, data: readonly DataRow[]): Resolv
 
 	const columns: TableColumn[] = ordered.map((field) => ({ key: field.key, label: field.name }));
 	const rows = data.map((row) => {
-		const projected: Record<string, TableCell> = {};
+		// Null-prototype object: an upload field literally named `__proto__` (or
+		// `constructor`/`prototype`) must be projected as an ordinary data key, not
+		// mutate the object's prototype. Defense in depth - the keys are
+		// author-derived from upload headers crossing a trust boundary.
+		const projected: Record<string, TableCell> = Object.create(null);
 		for (const field of ordered) {
+			if (field.key === '__proto__' || field.key === 'constructor' || field.key === 'prototype') {
+				continue;
+			}
 			projected[field.key] = toCell(row[field.name]);
 		}
 		return projected;

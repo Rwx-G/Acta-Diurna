@@ -29,6 +29,18 @@ describe('resolveTable', () => {
 		const binding: Binding = { fields: [{ name: 'week', type: 'date', slot: { role: 'x' } }] };
 		expect(() => resolveTable(binding, rows)).toThrow(ParseError);
 	});
+
+	it('does not pollute the prototype from a __proto__-named field', () => {
+		const binding: Binding = {
+			fields: [{ name: '__proto__', type: 'string', slot: { role: 'column' } }]
+		};
+		const resolved = resolveTable(binding, [{ __proto__: 'evil' }]);
+		// The dangerous key is skipped, the projected row is a null-prototype
+		// object, and Object.prototype is untouched.
+		expect(Object.getPrototypeOf(resolved.rows[0])).toBeNull();
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+		expect(Object.prototype).not.toHaveProperty('evil');
+	});
 });
 
 describe('resolveChart', () => {

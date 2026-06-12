@@ -44,7 +44,9 @@ export interface ParsedTable {
 	rows: Record<string, unknown>[];
 }
 
-function toDataSet(row: DataSetRow): DataSet {
+/** Maps a stored `data_sets` row to the service `DataSet` shape. Shared by the
+ *  write side (here) and the read queries (`queries.ts`). */
+export function toDataSet(row: DataSetRow): DataSet {
 	return {
 		id: row.id,
 		reportId: row.reportId ?? null,

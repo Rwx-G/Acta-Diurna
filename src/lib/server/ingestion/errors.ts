@@ -41,6 +41,22 @@ export function tooLarge(maxBytes: number): AppError {
 	});
 }
 
+/**
+ * 422 problem-details for a stored data set that can no longer be read/parsed
+ * (file corrupted on disk after a clean ingest). Distinct from `unparseable`:
+ * the original upload was valid, so this is an integrity fault surfaced as a
+ * problem-details rather than a 500. 2.5 auto-rebind re-reads on every refill,
+ * so the failure must be a clean 422.
+ */
+export function dataSetUnreadable(): AppError {
+	return new AppError({
+		status: 422,
+		title: 'Data set could not be read',
+		type: '/problems/data-set-unreadable',
+		detail: 'Stored data set could not be read.'
+	});
+}
+
 /** 415 problem-details for an unsupported upload type. */
 export function unsupportedFormat(detail: string): AppError {
 	return new AppError({

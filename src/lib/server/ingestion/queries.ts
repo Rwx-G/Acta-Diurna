@@ -9,12 +9,20 @@ import { getDb } from '$lib/server/db/client';
 import { dataSets, type DataSetRow } from '$lib/server/db/schema';
 import { AppError } from '$lib/server/problem';
 import { applyBinding, type SlotMapping } from './bind.ts';
-import { ParseError, unparseable } from './errors.ts';
+import { dataSetUnreadable, ParseError, unparseable } from './errors.ts';
 import { parseCsv } from './csv.ts';
 import { parseJson } from './json.ts';
-import type { DataSet, ParsedTable, SourceFormat } from './ingestion.ts';
+import { toDataSet, type DataSet, type ParsedTable } from './ingestion.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Cap on rows materialized when resolving a binding. Matches the schema's
+ * table-row / chart-point maximum (10000), so a data set larger than any block
+ * can hold fails fast with a clear 422 instead of building a giant array that a
+ * downstream validator would reject anyway.
+ */
+const MAX_DATA_SET_ROWS = 10000;
 
 function notFound(): AppError {
 	return new AppError({
@@ -22,19 +30,6 @@ function notFound(): AppError {
 		title: 'Data set not found',
 		type: '/problems/data-set-not-found'
 	});
-}
-
-function toDataSet(row: DataSetRow): DataSet {
-	return {
-		id: row.id,
-		reportId: row.reportId ?? null,
-		filename: row.filename,
-		sourceFormat: row.sourceFormat as SourceFormat,
-		fields: row.fields,
-		injectedAt: row.injectedAt,
-		dataAsOf: row.dataAsOf ?? null,
-		storagePath: row.storagePath
-	};
 }
 
 /** Lists data sets, most recently injected first. */
@@ -58,12 +53,28 @@ export async function getDataSet(id: string): Promise<DataSet> {
 /**
  * Re-reads and re-parses a stored data set's rows from the uploads volume. The
  * resolver consumes this at bind time so the bound block carries real data. The
- * file was validated at ingest, so a parse error here is an integrity fault.
+ * file was validated at ingest, so a parse error here is an integrity fault,
+ * mapped to a 422 problem-details (NOT a 500) since `bindBlock` awaits this
+ * before its try block and 2.5 auto-rebind re-reads on every refill. A data set
+ * larger than any block can hold (the 10000-row/point schema cap) fails fast
+ * here with a 422 rather than building a giant array first.
  */
 export async function readDataSetTable(id: string): Promise<ParsedTable> {
 	const row = await getRow(id);
 	const text = await readFile(row.storagePath, 'utf-8');
-	return row.sourceFormat === 'csv' ? parseCsv(text) : parseJson(text);
+	let table: ParsedTable;
+	try {
+		table = row.sourceFormat === 'csv' ? parseCsv(text) : parseJson(text);
+	} catch (error) {
+		if (error instanceof ParseError) throw dataSetUnreadable();
+		throw error;
+	}
+	if (table.rows.length > MAX_DATA_SET_ROWS) {
+		throw unparseable(
+			new ParseError(`Data set exceeds ${MAX_DATA_SET_ROWS} rows for binding.`, 'format')
+		);
+	}
+	return table;
 }
 
 /**
