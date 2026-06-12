@@ -21,7 +21,13 @@ const GENERATED_NODES = path.resolve(process.cwd(), '.svelte-kit/generated/clien
 // index: SvelteKit assigns node numbers by route-tree order, so adding a route
 // can renumber them and silently measure the wrong chunk. We resolve the node
 // by the `+page`/`+layout` source it re-exports.
-const VIEW_PAGE_SOURCE = 'reports/[id]/view/+page@.svelte';
+//
+// The measured route is the PUBLIC reader surface `/r/[token]` (story 3.3): it
+// hydrates whatever the verified report needs (the Report shell) PLUS the
+// VerifyCard gateway, so it is the true reader-path JS the budget must bound -
+// the author-only `/view` preview was the Epic 1 stand-in before the public
+// route existed.
+const VIEW_PAGE_SOURCE = 'src/routes/r/[token]/+page.svelte';
 const ROOT_LAYOUT_SOURCE = 'src/routes/+layout.svelte';
 
 interface ManifestChunk {

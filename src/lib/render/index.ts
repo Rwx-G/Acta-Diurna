@@ -5,6 +5,7 @@
  * Reused identically by the reader SSR route and the workspace LivePreview.
  */
 export { default as Report } from './Report.svelte';
+export { default as VerifyCard } from './VerifyCard.svelte';
 export { toReportView, toPreviewView } from './document-view.ts';
 export type { ReportView, SectionView, BlockView, TocEntry } from './document-view.ts';
 export {
