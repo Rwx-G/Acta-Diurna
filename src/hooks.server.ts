@@ -157,14 +157,13 @@ export function isApiPath(pathname: string): boolean {
 	return pathname === '/api' || pathname.startsWith('/api/');
 }
 
-// Public-API allowlist seam: API routes that need NO bearer (the published agent
-// schema `/api/v1/schema`, story 4.3, is public by design - FR31). Empty for 4.1
-// (no public API route exists yet), but the seam is built so 4.3 adds its path
-// here and the apiAuth hook lets it through without a token. The `/api/*` error
-// boundary still wraps it.
+// Public-API allowlist seam: API routes that need NO bearer. The OpenAPI spec
+// (`/api/v1/openapi.json`, story 4.2) is a discovery surface that leaks no report
+// data, so it is public - consistent with the 4.3 public `/api/v1/schema` (FR31).
+// apiAuth lets these through with a null identity; the `/api/*` error boundary
+// still wraps them.
 export function isPublicApiPath(pathname: string): boolean {
-	void pathname;
-	return false;
+	return pathname === '/api/v1/openapi.json';
 }
 
 // Reads `Authorization: Bearer <token>`, returning the raw token or null. Only
@@ -245,11 +244,15 @@ export const apiAuth: Handle = async ({ event, resolve }) => {
  * resolve() for API routes in a try/catch and maps a thrown AppError to its
  * problem+json (RFC 9457) with the correct status; any other (unexpected) error
  * becomes an opaque 500 problem+json, logged server-side with no internal detail
- * leaked. This is the shared seam 4.2/4.3 build on: an endpoint just throws an
- * AppError and the boundary formats it - no per-endpoint catch discipline, and no
- * reliance on SvelteKit's handleError (which cannot change the status of an
- * unexpected error, always 500, and serializes as an HTML/JSON error page rather
- * than problem+json). It wraps apiAuth so even an auth-stage throw is formatted.
+ * leaked. It wraps apiAuth so even an auth-stage throw is formatted.
+ *
+ * SCOPE (the 4.2 discovery): SvelteKit's internal resolve() wraps endpoint
+ * execution in its OWN try/catch and routes any endpoint throw through
+ * handleError (always a 500) BEFORE the throw reaches a handle hook - so this
+ * boundary never sees an endpoint throw. Endpoints therefore convert their own
+ * AppError to problem+json via the `runApi` wrapper ($lib/server/api). This
+ * boundary remains the backstop for throws OUTSIDE an endpoint (e.g. the auth
+ * stage) and is the seam 4.3 also builds on (its endpoints use `runApi` too).
  */
 export const apiErrorBoundary: Handle = async ({ event, resolve }) => {
 	if (!isApiPath(event.url.pathname)) return await resolve(event);

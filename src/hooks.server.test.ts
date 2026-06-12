@@ -80,9 +80,12 @@ describe('isApiPath / isPublicApiPath', () => {
 		expect(isApiPath(path)).toBe(false);
 	});
 
-	it('has no public API path yet (4.3 schema seam is empty for 4.1)', () => {
-		expect(isPublicApiPath('/api/v1/schema')).toBe(false);
+	it('treats the OpenAPI spec as public (4.2) but not data endpoints', () => {
+		expect(isPublicApiPath('/api/v1/openapi.json')).toBe(true);
 		expect(isPublicApiPath('/api/v1/reports')).toBe(false);
+		expect(isPublicApiPath('/api/v1/whoami')).toBe(false);
+		// 4.3's /api/v1/schema is not wired yet.
+		expect(isPublicApiPath('/api/v1/schema')).toBe(false);
 	});
 });
 
