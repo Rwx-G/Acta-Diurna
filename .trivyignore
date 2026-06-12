@@ -1,0 +1,12 @@
+# Waived findings for the CI Trivy image scan. Each entry MUST carry a
+# justification and a re-check condition. A finding with an available fix that
+# is reachable in the running server is NEVER waived here - it is fixed.
+
+# CVE-2026-33671 - picomatch ReDoS via crafted extglob patterns.
+# The vulnerable 4.0.3 is only DECLARED in the manifest of vitest (a
+# devDependency, build/test tooling). pnpm resolves the actual installed
+# picomatch to the fixed 4.0.4 (see pnpm-lock.yaml), and vitest never runs in
+# the production server, so the glob matcher is unreachable at runtime. Waived
+# until vitest bumps its declared picomatch past 4.0.4; re-check on the next
+# vitest upgrade.
+CVE-2026-33671
