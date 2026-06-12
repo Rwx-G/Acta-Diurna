@@ -128,6 +128,19 @@
 	--report-trend-up: #2f6b4a; /* 5.6:1 on stone */
 	--report-trend-down: #a23b3b; /* 5.8:1 on stone */
 
+	/* Callout tones (Epic 7, story 7.7). A closed semantic accent set: each tone
+	   resolves to one of these, used for the callout's left accent border and its
+	   icon + kicker label - never raw hex in the component. Part of the theme
+	   surface, so a new theme re-skins callouts with no component change. These
+	   are decorative accents (the body text stays --report-text/AAA), so the AA
+	   floor on the report background is their contract (asserted in the contrast
+	   tests, same stance as the trend colours). */
+	--report-tone-info: #1c4a7e; /* 8.0:1 on stone */
+	--report-tone-success: #2f6b4a; /* 5.6:1 on stone */
+	--report-tone-warning: #8a5a13; /* 5.2:1 on stone */
+	--report-tone-danger: #a23b3b; /* 5.8:1 on stone */
+	--report-tone-neutral: #4a4960; /* 7.7:1 on stone */
+
 	/* Overlay scrim (TOC backdrop). Dark-ink veil on the light theme. */
 	--report-scrim: color-mix(in srgb, var(--color-ink) 55%, transparent);
 }
@@ -164,6 +177,14 @@
 	   (the light-theme greens/reds would be near-invisible here). */
 	--report-trend-up: #6fbf95; /* 8.4:1 on #14131f */
 	--report-trend-down: #f08a8a; /* 7.6:1 on #14131f */
+	/* Callout tones, lightened for the dark report bg (the light-theme tones
+	   would be near-invisible here). AA floor on #14131f, asserted in the
+	   contrast tests. */
+	--report-tone-info: #6ea8e0; /* 7.3:1 on #14131f */
+	--report-tone-success: #6fbf95; /* 8.4:1 on #14131f */
+	--report-tone-warning: #d6a85a; /* 8.4:1 on #14131f */
+	--report-tone-danger: #f08a8a; /* 7.6:1 on #14131f */
+	--report-tone-neutral: #b9b4c4; /* 9.1:1 on #14131f */
 	/* An ink veil is invisible on an already-dark page; use a light-text wash so
 	   the backdrop still reads as dimmed behind the TOC panel. */
 	--report-scrim: color-mix(in srgb, #f3efe4 22%, transparent);

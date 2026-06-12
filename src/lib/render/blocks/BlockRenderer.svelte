@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ComparisonMatrixBlock as ComparisonMatrixBlockType, Scales } from '$lib/schema';
 	import type { BlockView } from '../document-view.ts';
+	import CalloutBlock from './CalloutBlock.svelte';
 	import ChartBlock from './ChartBlock.svelte';
 	import ChipClusterBlock from './ChipClusterBlock.svelte';
 	import ComparisonMatrixBlock from './ComparisonMatrixBlock.svelte';
@@ -53,6 +54,8 @@
 		<LegendBlock block={view.block} {scales} {theme} />
 	{:else if view.block.type === 'chip-cluster'}
 		<ChipClusterBlock block={view.block} {scales} {theme} />
+	{:else if view.block.type === 'callout'}
+		<CalloutBlock block={view.block} />
 	{:else if view.block.type === 'set-membership'}
 		<SetMembershipBlock
 			block={view.block}

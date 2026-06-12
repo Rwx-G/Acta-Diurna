@@ -12,6 +12,7 @@ import {
 	DEFAULT_THEME,
 	MIDNIGHT_THEME,
 	THEME_PALETTES,
+	TONE_PALETTES,
 	type ThemePalette
 } from './palette.ts';
 
@@ -58,6 +59,33 @@ describe('categorical palette contrast (AA floor)', () => {
 			it(`${theme}: --report-chart-${index + 1} holds AA floor on background`, () => {
 				expect(contrastRatio(swatch, bg)).toBeGreaterThanOrEqual(AA_CONTRAST);
 			});
+		});
+	}
+});
+
+/**
+ * The callout tone accents (story 7.7) are decorative - the callout's left
+ * border and its icon + kicker label - not prose (the body text stays
+ * `--report-text`/AAA), so the AA floor is their contract on every theme's
+ * report background, the same stance as the categorical swatches and the trend
+ * colours. The closed tone enum has exactly five entries on every theme.
+ */
+describe('callout tone palette contrast (AA floor)', () => {
+	for (const [theme, palette] of Object.entries(TONE_PALETTES)) {
+		const bg = THEME_PALETTES[theme].bg;
+		for (const [tone, color] of Object.entries(palette)) {
+			it(`${theme}: --report-tone-${tone} holds AA floor on background`, () => {
+				expect(contrastRatio(color, bg)).toBeGreaterThanOrEqual(AA_CONTRAST);
+			});
+		}
+		it(`${theme}: exposes the five closed tones`, () => {
+			expect(Object.keys(palette).sort()).toEqual([
+				'danger',
+				'info',
+				'neutral',
+				'success',
+				'warning'
+			]);
 		});
 	}
 });

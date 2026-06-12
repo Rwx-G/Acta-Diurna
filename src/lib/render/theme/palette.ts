@@ -86,3 +86,37 @@ export const CATEGORICAL_PALETTES: Record<string, readonly string[]> = {
 	default: DEFAULT_CATEGORICAL_PALETTE,
 	midnight: MIDNIGHT_CATEGORICAL_PALETTE
 };
+
+/**
+ * Hex twins of the `--report-tone-{info,success,warning,danger,neutral}` callout
+ * accent tokens (story 7.7), per theme. These mirror the CSS tokens in
+ * `src/app.css`; the callout renderer emits the token (via the tone class), and
+ * the contrast test asserts the hex here so the accent's AA floor on each theme's
+ * report background can be checked without a browser. Update a token in app.css
+ * and its twin here together; the contrast test re-checks the floor.
+ *
+ * These are decorative accents (the callout's left border and its icon + kicker
+ * label), not prose - the body text stays `--report-text`/AAA - so the AA floor
+ * is their contract on each theme's report background, the same stance as the
+ * KPI trend colours.
+ */
+export const DEFAULT_TONE_PALETTE: Record<string, string> = {
+	info: '#1c4a7e', // --report-tone-info
+	success: '#2f6b4a', // --report-tone-success
+	warning: '#8a5a13', // --report-tone-warning
+	danger: '#a23b3b', // --report-tone-danger
+	neutral: '#4a4960' // --report-tone-neutral
+};
+
+export const MIDNIGHT_TONE_PALETTE: Record<string, string> = {
+	info: '#6ea8e0', // --report-tone-info
+	success: '#6fbf95', // --report-tone-success
+	warning: '#d6a85a', // --report-tone-warning
+	danger: '#f08a8a', // --report-tone-danger
+	neutral: '#b9b4c4' // --report-tone-neutral
+};
+
+export const TONE_PALETTES: Record<string, Record<string, string>> = {
+	default: DEFAULT_TONE_PALETTE,
+	midnight: MIDNIGHT_TONE_PALETTE
+};
