@@ -69,6 +69,9 @@ export type { SetMembershipBlock } from './blocks/set-membership.ts';
 export { chipClusterBlockSchema, MAX_CHIPS } from './blocks/chip-cluster.ts';
 export type { ChipClusterBlock } from './blocks/chip-cluster.ts';
 
+export { ICON_NAMES, iconNameSchema } from './icons.ts';
+export type { IconName } from './icons.ts';
+
 export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 
