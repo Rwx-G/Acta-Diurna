@@ -94,6 +94,15 @@ describe('newBlock', () => {
 		expect(validateDocument(documentWith([block])).ok).toBe(true);
 	});
 
+	it('creates a schema-valid code starter (an empty code string)', () => {
+		const block = newBlock('code');
+		expect(block.type).toBe('code');
+		if (block.type === 'code') expect(block.code).toBe('');
+		// The code block starts valid: an empty source, no language or annotations
+		// needed to render.
+		expect(validateDocument(documentWith([block])).ok).toBe(true);
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

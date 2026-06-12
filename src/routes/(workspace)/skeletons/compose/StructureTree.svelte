@@ -51,6 +51,10 @@
 			}
 			case 'callout':
 				return `Callout - ${block.tone}`;
+			case 'code': {
+				const lines = block.code === '' ? 0 : block.code.split('\n').length;
+				return `Code - ${lines} line${lines === 1 ? '' : 's'}`;
+			}
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;

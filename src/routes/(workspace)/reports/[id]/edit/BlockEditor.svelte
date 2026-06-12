@@ -5,6 +5,7 @@
 	import CalloutBlockEditor from './CalloutBlockEditor.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
 	import ChipClusterBlockEditor from './ChipClusterBlockEditor.svelte';
+	import CodeBlockEditor from './CodeBlockEditor.svelte';
 	import ComparisonMatrixBlockEditor from './ComparisonMatrixBlockEditor.svelte';
 	import FieldGridBlockEditor from './FieldGridBlockEditor.svelte';
 	import ImageBlockEditor from './ImageBlockEditor.svelte';
@@ -94,6 +95,8 @@
 		<ChipClusterBlockEditor bind:block {scales} {onEdit} />
 	{:else if block.type === 'callout'}
 		<CalloutBlockEditor bind:block {onEdit} />
+	{:else if block.type === 'code'}
+		<CodeBlockEditor bind:block {onEdit} />
 	{/if}
 </article>
 

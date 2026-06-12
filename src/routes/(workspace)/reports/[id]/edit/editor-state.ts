@@ -103,6 +103,10 @@ export function newBlock(type: BlockType): Block {
 			// the text block). The tone is a closed enum, so the starter picks `info`;
 			// no scale or icon is needed to render.
 			return { type, id, tone: 'info', body: [[{ text: '' }]] };
+		case 'code':
+			// Starts schema-valid: an empty code string (no language, no annotations).
+			// The author types the snippet; nothing is required to render.
+			return { type, id, code: '' };
 	}
 }
 

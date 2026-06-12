@@ -45,7 +45,8 @@
 		'legend',
 		'set-membership',
 		'chip-cluster',
-		'callout'
+		'callout',
+		'code'
 	];
 </script>
 
