@@ -1,18 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '$lib/server/problem';
 
-const { sendMail, mailerConfig } = vi.hoisted(() => ({
-	sendMail: vi.fn(),
-	mailerConfig: vi.fn()
-}));
+const { sendMail, mailerConfig, createApiToken, listApiTokens, revokeApiToken } = vi.hoisted(
+	() => ({
+		sendMail: vi.fn(),
+		mailerConfig: vi.fn(),
+		createApiToken: vi.fn(),
+		listApiTokens: vi.fn(),
+		revokeApiToken: vi.fn()
+	})
+);
 vi.mock('$lib/server/mail/send', () => ({ sendMail }));
 vi.mock('$lib/server/mail/mailer', () => ({ mailerConfig }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
+vi.mock('$lib/server/auth/api-tokens', () => ({ createApiToken, listApiTokens, revokeApiToken }));
 
 import { actions, load } from './+page.server';
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	listApiTokens.mockResolvedValue([]);
 });
 
 function formRequest(fields: Record<string, string>): Request {
@@ -118,5 +125,86 @@ describe('test-send action', () => {
 
 		expect(result.status).toBe(503);
 		expect(result.sent).toBe(false);
+	});
+});
+
+describe('load (tokens)', () => {
+	it('lists the author API tokens', async () => {
+		mailerConfig.mockReturnValue(null);
+		const tokens = [
+			{
+				id: 't1',
+				name: 'CI',
+				displayFragment: 'abcd',
+				createdAt: new Date(),
+				lastUsedAt: null,
+				revokedAt: null,
+				status: 'active'
+			}
+		];
+		listApiTokens.mockResolvedValue(tokens);
+
+		const result = (await load({} as Parameters<typeof load>[0])) as { tokens: typeof tokens };
+
+		expect(result.tokens).toEqual(tokens);
+	});
+});
+
+async function runTokenAction(
+	action: 'create-token' | 'revoke-token',
+	fields: Record<string, string>
+): Promise<Record<string, unknown>> {
+	return (await actions[action]({
+		request: formRequest(fields),
+		locals: { requestId: 'req-1' }
+	} as unknown as Parameters<(typeof actions)[typeof action]>[0])) as Record<string, unknown>;
+}
+
+describe('create-token action', () => {
+	it('mints a token and returns the raw value once', async () => {
+		createApiToken.mockResolvedValue({
+			token: 'acta_pat_RAW',
+			summary: { name: 'CI deploy' }
+		});
+
+		const result = await runTokenAction('create-token', { name: 'CI deploy' });
+
+		expect(createApiToken).toHaveBeenCalledWith('CI deploy');
+		expect(result.token).toEqual({ created: true, raw: 'acta_pat_RAW', name: 'CI deploy' });
+	});
+
+	it('trims the name before minting', async () => {
+		createApiToken.mockResolvedValue({ token: 'acta_pat_X', summary: { name: 'CI' } });
+		await runTokenAction('create-token', { name: '  CI  ' });
+		expect(createApiToken).toHaveBeenCalledWith('CI');
+	});
+
+	it('rejects an empty name with a 400 and mints nothing', async () => {
+		const result = (await runTokenAction('create-token', { name: '   ' })) as {
+			status: number;
+			data: { token: { created: false; message: string } };
+		};
+		expect(result.status).toBe(400);
+		expect(result.data.token.created).toBe(false);
+		expect(createApiToken).not.toHaveBeenCalled();
+	});
+});
+
+describe('revoke-token action', () => {
+	it('revokes the token by id', async () => {
+		revokeApiToken.mockResolvedValue(undefined);
+
+		const result = await runTokenAction('revoke-token', { tokenId: 't1' });
+
+		expect(revokeApiToken).toHaveBeenCalledWith('t1');
+		expect(result.token).toEqual({ revoked: true });
+	});
+
+	it('rejects a missing id with a 400', async () => {
+		const result = (await runTokenAction('revoke-token', { tokenId: '' })) as {
+			status: number;
+		};
+		expect(result.status).toBe(400);
+		expect(revokeApiToken).not.toHaveBeenCalled();
 	});
 });
