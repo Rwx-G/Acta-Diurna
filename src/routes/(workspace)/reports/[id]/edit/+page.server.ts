@@ -7,13 +7,15 @@ import {
 	unpublishToDraft,
 	updateReportDocument
 } from '$lib/server/documents/reports';
+import { bindBlock, listDataSets, type SlotMapping } from '$lib/server/ingestion';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError, errorPageShape } from '$lib/server/problem';
+import { parseSlotMapping } from './bind-form';
 import { applyNarrativeFields } from './editor-state';
 
 export const load: PageServerLoad = async ({ params }) => {
 	try {
-		return { report: await getReport(params.id) };
+		return { report: await getReport(params.id), dataSets: await listDataSets() };
 	} catch (thrown) {
 		// handleError cannot set a non-500 status for unexpected errors (1.4
 		// note), so UI loads translate AppError to SvelteKit's error() here.
@@ -48,6 +50,33 @@ export const actions: Actions = {
 			}
 			const report = await updateReportDocument(params.id, documentInput);
 			return { savedAt: report.updatedAt.toISOString() };
+		} catch (thrown) {
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, {
+					message: thrown.detail ?? thrown.title,
+					errors: thrown.errors ?? []
+				});
+			}
+			throw thrown;
+		}
+	},
+	bind: async ({ params, request }) => {
+		const data = await request.formData();
+		const blockId = String(data.get('blockId') ?? '');
+		const dataSetId = String(data.get('dataSetId') ?? '');
+		const rawMapping = String(data.get('slotMapping') ?? '');
+		if (!blockId || !dataSetId) {
+			return fail(400, { message: 'A block and a data set are required to bind.', errors: [] });
+		}
+		let slotMapping: SlotMapping;
+		try {
+			slotMapping = parseSlotMapping(rawMapping);
+		} catch {
+			return fail(400, { message: 'Malformed slot mapping.', errors: [] });
+		}
+		try {
+			const report = await bindBlock(params.id, blockId, dataSetId, slotMapping);
+			return { boundAt: report.updatedAt.toISOString() };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, {

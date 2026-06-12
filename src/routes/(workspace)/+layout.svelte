@@ -10,6 +10,7 @@
 		<p class="wordmark">Acta Diurna</p>
 		<a href={resolve('/(workspace)/reports')}>Reports</a>
 		<a href={resolve('/(workspace)/skeletons')}>Skeletons</a>
+		<a href={resolve('/(workspace)/data-sets')}>Data sets</a>
 		<!-- Disabled rail entry: settings later. -->
 		<span class="disabled" aria-disabled="true" title="Settings are not available yet"
 			>Settings</span

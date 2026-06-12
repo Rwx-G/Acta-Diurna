@@ -9,6 +9,7 @@ import {
 	updateReportDocument,
 	type Report
 } from '$lib/server/documents/reports';
+import { bindBlock, listDataSets } from '$lib/server/ingestion';
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
@@ -18,12 +19,18 @@ vi.mock('$lib/server/documents/reports', () => ({
 	publishReport: vi.fn(),
 	unpublishToDraft: vi.fn()
 }));
+vi.mock('$lib/server/ingestion', () => ({
+	listDataSets: vi.fn(),
+	bindBlock: vi.fn()
+}));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 
 const getReportMock = vi.mocked(getReport);
 const updateMock = vi.mocked(updateReportDocument);
 const publishMock = vi.mocked(publishReport);
 const unpublishMock = vi.mocked(unpublishToDraft);
+const listDataSetsMock = vi.mocked(listDataSets);
+const bindBlockMock = vi.mocked(bindBlock);
 const logoutMock = vi.mocked(performLogout);
 
 const REPORT_ID = '01970000-0000-7000-8000-000000000001';
@@ -77,20 +84,23 @@ beforeEach(() => {
 });
 
 describe('load', () => {
-	it('returns the report from the documents service', async () => {
+	it('returns the report and the data-set list', async () => {
 		const report = sampleReport();
 		getReportMock.mockResolvedValue(report);
+		listDataSetsMock.mockResolvedValue([]);
 
 		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
 
-		expect(result).toEqual({ report });
+		expect(result).toEqual({ report, dataSets: [] });
 		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(listDataSetsMock).toHaveBeenCalledOnce();
 	});
 
 	it('translates a service 404 AppError into a SvelteKit 404', async () => {
 		getReportMock.mockRejectedValue(
 			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
 		);
+		listDataSetsMock.mockResolvedValue([]);
 
 		try {
 			await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
@@ -224,6 +234,78 @@ describe('save action', () => {
 function actionEvent(id = REPORT_ID): { params: { id: string } } {
 	return { params: { id } } as { params: { id: string } };
 }
+
+type BindAction = typeof actions.bind;
+
+function bindEvent(form: Record<string, string>): Parameters<BindAction>[0] {
+	const data = new FormData();
+	for (const [key, value] of Object.entries(form)) data.set(key, value);
+	return {
+		params: { id: REPORT_ID },
+		request: new Request('http://localhost/reports/x/edit?/bind', { method: 'POST', body: data })
+	} as Parameters<BindAction>[0];
+}
+
+describe('bind action', () => {
+	it('binds the named block to a data set and returns the bound timestamp', async () => {
+		bindBlockMock.mockResolvedValue(sampleReport({ updatedAt: new Date('2026-06-12T11:00:00Z') }));
+
+		const result = await actions.bind(
+			bindEvent({
+				blockId: 'weekly-table',
+				dataSetId: '01970000-0000-7000-8000-0000000000bb',
+				slotMapping: JSON.stringify({ week: { role: 'column' } })
+			})
+		);
+
+		expect(bindBlockMock).toHaveBeenCalledExactlyOnceWith(
+			REPORT_ID,
+			'weekly-table',
+			'01970000-0000-7000-8000-0000000000bb',
+			{ week: { role: 'column' } }
+		);
+		expect(result).toEqual({ boundAt: '2026-06-12T11:00:00.000Z' });
+	});
+
+	it('rejects a missing block/data-set with 400 without calling the service', async () => {
+		const result = (await actions.bind(
+			bindEvent({ blockId: '', dataSetId: '', slotMapping: '{}' })
+		)) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(400);
+		expect(bindBlockMock).not.toHaveBeenCalled();
+	});
+
+	it('rejects a malformed slot mapping with 400', async () => {
+		const result = (await actions.bind(
+			bindEvent({ blockId: 'b', dataSetId: 'd', slotMapping: '{not json' })
+		)) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(400);
+		expect(bindBlockMock).not.toHaveBeenCalled();
+	});
+
+	it('maps a service 422 (incoherent mapping) to a failure', async () => {
+		bindBlockMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'File could not be parsed',
+				type: '/problems/unparseable-file',
+				detail: 'Table binding declares no column fields.'
+			})
+		);
+
+		const result = (await actions.bind(
+			bindEvent({
+				blockId: 'weekly-table',
+				dataSetId: 'd',
+				slotMapping: JSON.stringify({ week: { role: 'x' } })
+			})
+		)) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(422);
+	});
+});
 
 describe('publish action', () => {
 	it('publishes and returns the new status', async () => {

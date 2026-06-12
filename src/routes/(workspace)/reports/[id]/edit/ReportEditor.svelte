@@ -7,6 +7,7 @@
 	import type { DocumentV1 } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
+	import BlockBinder from './BlockBinder.svelte';
 	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
 	import {
@@ -25,15 +26,32 @@
 	// editable and read-only without losing the in-memory document.
 	interface Props {
 		report: PageData['report'];
+		dataSets: PageData['dataSets'];
 		form: ActionData;
 	}
 
-	let { report, form }: Props = $props();
+	let { report, dataSets, form }: Props = $props();
 
 	const editable = $derived(report.status === 'draft');
 
 	// svelte-ignore state_referenced_locally
 	let doc = $state(structuredClone(report.document));
+
+	// Data-bindable blocks in the live document (table/chart/kpi), labelled for
+	// the binder's block picker. Recomputed as the author adds/removes blocks.
+	const BINDABLE = new Set(['table', 'chart', 'kpi']);
+	const bindableBlocks = $derived(
+		doc.sections.flatMap((section) =>
+			section.blocks
+				.filter((block) => BINDABLE.has(block.type))
+				.map((block) => ({
+					id: block.id,
+					type: block.type as 'table' | 'chart' | 'kpi',
+					label: `${section.title} - ${block.type}`
+				}))
+		)
+	);
+
 	let dirty = $state(false);
 	let saving = $state(false);
 	// svelte-ignore state_referenced_locally
@@ -272,6 +290,8 @@
 		</div>
 	</fieldset>
 </form>
+
+<BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} />
 
 <style>
 	.editor-toolbar {
