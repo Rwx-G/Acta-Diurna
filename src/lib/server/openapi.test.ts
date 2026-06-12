@@ -33,6 +33,7 @@ describe('buildOpenApiDocument (D8)', () => {
 				'/reports/{id}',
 				'/reports/{id}/publish',
 				'/reports/{id}/unpublish',
+				'/reports/{id}/duplicate',
 				'/whoami',
 				'/data-sets',
 				'/schema'
@@ -56,6 +57,7 @@ describe('buildOpenApiDocument (D8)', () => {
 		expect(doc.paths['/reports/{id}'].delete).toBeDefined();
 		expect(doc.paths['/reports/{id}/publish'].post).toBeDefined();
 		expect(doc.paths['/reports/{id}/unpublish'].post).toBeDefined();
+		expect(doc.paths['/reports/{id}/duplicate'].post).toBeDefined();
 	});
 
 	it('advertises the PAT bearer security scheme (D10)', () => {

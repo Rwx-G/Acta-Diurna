@@ -397,6 +397,22 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 					}
 				}
 			},
+			'/reports/{id}/duplicate': {
+				parameters: [
+					{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+				],
+				post: {
+					summary: 'Duplicate a report into a fresh draft',
+					operationId: 'duplicateReport',
+					description:
+						'Mints a fresh draft from a deep copy of the source report (FR10), the same service the workspace Duplicate action uses. A published source is duplicated into an editable draft. Returns the new draft (201).',
+					responses: {
+						'201': reportResponse('The duplicated draft report.'),
+						'401': UNAUTHORIZED,
+						'404': NOT_FOUND
+					}
+				}
+			},
 			'/reports/{id}/unpublish': {
 				parameters: [
 					{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }

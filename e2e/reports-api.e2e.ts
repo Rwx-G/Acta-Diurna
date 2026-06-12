@@ -76,6 +76,30 @@ test('full report lifecycle over /api/v1 with a PAT, plus the OpenAPI spec', asy
 	const afterPublish = await page.request.get(url, { headers: auth, failOnStatusCode: false });
 	expect(((await afterPublish.json()) as { status: string }).status).toBe('published');
 
+	// DUPLICATE the published report -> 201, a fresh editable draft (FR10 parity).
+	const duplicated = await page.request.post(`${url}/duplicate`, {
+		headers: auth,
+		failOnStatusCode: false
+	});
+	expect(duplicated.status()).toBe(201);
+	const duplicate = (await duplicated.json()) as { id: string; status: string };
+	expect(duplicate.status).toBe('draft');
+	expect(duplicate.id).not.toBe(report.id);
+	// Clean up the duplicate draft.
+	const deletedDuplicate = await page.request.delete(`${base}/${duplicate.id}`, {
+		headers: auth,
+		failOnStatusCode: false
+	});
+	expect(deletedDuplicate.status()).toBe(204);
+
+	// Duplicating an unknown id -> 404 problem+json.
+	const duplicateUnknown = await page.request.post(
+		`${base}/01970000-0000-7000-8000-0000000000ff/duplicate`,
+		{ headers: auth, failOnStatusCode: false }
+	);
+	expect(duplicateUnknown.status()).toBe(404);
+	expect(duplicateUnknown.headers()['content-type']).toContain('application/problem+json');
+
 	// DELETE a published report -> 409 problem+json (the draft-only rule).
 	const deletePublished = await page.request.delete(url, {
 		headers: auth,
