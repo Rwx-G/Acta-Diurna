@@ -252,3 +252,23 @@ export const aiGenerationLimiter: TokenBucketLimiter = new TokenBucketLimiter(
 	AI_GENERATION_BUCKET_CAPACITY,
 	AI_GENERATION_REFILL_TOKENS_PER_SECOND
 );
+
+/** Test-send burst before the limiter engages (story 3.1 QA): a small batch so
+ * an operator can probe a couple of addresses, then a slow drip. */
+const TEST_SEND_BUCKET_CAPACITY = 5;
+/** One test-send earned back every 720 seconds once drained (sustained ~5/hour). */
+const TEST_SEND_REFILL_TOKENS_PER_SECOND = 1 / 720;
+
+/**
+ * Per-AUTHOR-SESSION limiter for the workspace `test-send` action, keyed by the
+ * authenticated author's session id (mirrors aiGenerationLimiter; the workspace
+ * guard guarantees a live session reaches the action). The action sends to an
+ * arbitrary author-chosen recipient, so a hijacked session is a spam/reputation
+ * vector: this caps it at ~5/hour. Consumed at the top of the action BEFORE any
+ * send; on deny the action returns the same 429 problem the other rate-limited
+ * actions use and sends no mail.
+ */
+export const testSendLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	TEST_SEND_BUCKET_CAPACITY,
+	TEST_SEND_REFILL_TOKENS_PER_SECOND
+);

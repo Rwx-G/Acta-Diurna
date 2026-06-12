@@ -9,7 +9,8 @@ const {
 	isAiEnabled,
 	createApiToken,
 	listApiTokens,
-	revokeApiToken
+	revokeApiToken,
+	testSendConsume
 } = vi.hoisted(() => ({
 	sendMail: vi.fn(),
 	mailerConfig: vi.fn(),
@@ -18,13 +19,17 @@ const {
 	isAiEnabled: vi.fn(),
 	createApiToken: vi.fn(),
 	listApiTokens: vi.fn(),
-	revokeApiToken: vi.fn()
+	revokeApiToken: vi.fn(),
+	testSendConsume: vi.fn()
 }));
 vi.mock('$lib/server/mail/send', () => ({ sendMail }));
 vi.mock('$lib/server/mail/mailer', () => ({ mailerConfig }));
 vi.mock('$lib/server/ai/connector', () => ({ aiConfig, chatComplete, isAiEnabled }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 vi.mock('$lib/server/auth/api-tokens', () => ({ createApiToken, listApiTokens, revokeApiToken }));
+vi.mock('$lib/server/auth/rate-limit', () => ({
+	testSendLimiter: { consume: testSendConsume }
+}));
 
 import { actions, load } from './+page.server';
 
@@ -33,6 +38,7 @@ beforeEach(() => {
 	listApiTokens.mockResolvedValue([]);
 	aiConfig.mockReturnValue(null);
 	isAiEnabled.mockReturnValue(false);
+	testSendConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 });
 
 function formRequest(fields: Record<string, string>): Request {
@@ -52,7 +58,7 @@ interface NormalizedResult {
 async function runTestSend(fields: Record<string, string>): Promise<NormalizedResult> {
 	const raw = (await actions['test-send']({
 		request: formRequest(fields),
-		locals: { requestId: 'req-1' }
+		locals: { requestId: 'req-1', authorSession: { id: 'session-1' } }
 	} as unknown as Parameters<(typeof actions)['test-send']>[0])) as Record<string, unknown>;
 
 	if (raw && typeof raw === 'object' && 'data' in raw) {
@@ -196,6 +202,25 @@ describe('test-send action', () => {
 		expect(result.sent).toBe(true);
 		expect(result.message).toContain('me@example.com');
 		expect(sendMail).toHaveBeenCalledOnce();
+	});
+
+	it('is rate-limited per author session: keys on the session id and consumes before send', async () => {
+		sendMail.mockResolvedValue({ messageId: '<id@relay>' });
+
+		await runTestSend({ to: 'me@example.com' });
+
+		expect(testSendConsume).toHaveBeenCalledWith('session-1:/test-send');
+	});
+
+	it('returns the 429 problem shape and sends no mail when throttled', async () => {
+		testSendConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 720 });
+
+		const result = await runTestSend({ to: 'me@example.com' });
+
+		expect(result.status).toBe(429);
+		expect(result.sent).toBe(false);
+		expect(result.message).toBe('Rate limit exceeded, retry later.');
+		expect(sendMail).not.toHaveBeenCalled();
 	});
 
 	it('rejects a malformed address before contacting the relay', async () => {

@@ -6,7 +6,8 @@ import { mailerConfig } from '$lib/server/mail/mailer';
 import { sendMail } from '$lib/server/mail/send';
 import { testEmail } from '$lib/server/mail/templates/test-email';
 import { aiConfig, chatComplete, isAiEnabled } from '$lib/server/ai/connector';
-import { AppError } from '$lib/server/problem';
+import { testSendLimiter } from '$lib/server/auth/rate-limit';
+import { AppError, rateLimited } from '$lib/server/problem';
 
 // Surfaces whether SMTP is configured so the page can explain the absent case
 // instead of offering a test-send that always 503s. The address itself is not
@@ -39,6 +40,15 @@ export const actions: Actions = {
 	// silent drop - the AppError detail (already redacted of host/credentials) is
 	// handed to the page.
 	'test-send': async ({ request, locals }) => {
+		// Spam/reputation brake (3.1 QA): the action sends to an arbitrary
+		// author-chosen recipient, so cap it per author session BEFORE any send. A
+		// hijacked session cannot turn this into a mail cannon.
+		const decision = testSendLimiter.consume(`${locals.authorSession!.id}:/test-send`);
+		if (!decision.allowed) {
+			const limited = rateLimited(decision.retryAfterSeconds);
+			return fail(429, { sent: false, message: limited.detail ?? limited.title });
+		}
+
 		const data = await request.formData();
 		const to = data.get('to');
 		if (typeof to !== 'string' || !isEmailLike(to.trim())) {
