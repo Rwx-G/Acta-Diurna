@@ -86,6 +86,14 @@ export {
 } from './blocks/code.ts';
 export type { CodeAnnotation, CodeBlock } from './blocks/code.ts';
 
+export {
+	cardGridBlockSchema,
+	cardItemSchema,
+	MAX_CARD_COLUMNS,
+	MAX_CARD_ITEMS
+} from './blocks/card-grid.ts';
+export type { CardGridBlock, CardItem } from './blocks/card-grid.ts';
+
 export { ICON_NAMES, iconNameSchema } from './icons.ts';
 export type { IconName } from './icons.ts';
 
