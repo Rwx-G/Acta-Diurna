@@ -64,7 +64,7 @@ describe('author cookie', () => {
 		expect(cookies.jar.get(AUTHOR_COOKIE_NAME)).not.toBe('the-session-token'); // signed
 	});
 
-	it('sets HttpOnly, SameSite=Lax, Path=/ and the session expiry', () => {
+	it('sets HttpOnly, SameSite=Lax, Path=/, Secure and the session expiry', () => {
 		const cookies = fakeCookies();
 		setAuthorCookie(cookies, 'token', expiresAt);
 
@@ -72,17 +72,25 @@ describe('author cookie', () => {
 			httpOnly: true,
 			sameSite: 'lax',
 			path: '/',
-			secure: false,
+			secure: true,
 			expires: expiresAt
 		});
 	});
 
-	it('marks the cookie Secure when ORIGIN is https', () => {
-		env.ORIGIN = 'https://reports.example.com';
+	it('always marks the cookie Secure, even on an http (localhost) ORIGIN', () => {
+		// The `__Host-` prefix requires Secure; localhost is a browser secure
+		// context so a Secure cookie is still accepted there, and production forces
+		// https via the env guard. ORIGIN scheme no longer drives the flag.
+		env.ORIGIN = 'http://localhost:3000';
 		const cookies = fakeCookies();
 		setAuthorCookie(cookies, 'token', expiresAt);
 
 		expect(cookies.lastSetOptions).toMatchObject({ secure: true });
+	});
+
+	it('names the cookie with the __Host- prefix (browser-enforced hardening)', () => {
+		expect(AUTHOR_COOKIE_NAME).toBe('__Host-acta_author');
+		expect(READER_COOKIE_NAME).toBe('__Host-acta_reader');
 	});
 
 	it('rejects a tampered token (signature mismatch)', () => {

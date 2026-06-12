@@ -6,8 +6,16 @@ import { serverEnv } from '../env';
 // author cookie can never be presented as a reader credential or vice versa.
 // Both are HMAC-signed with the same SESSION_SECRET and read the same way; only
 // the name and which validator consumes the token differ.
-export const AUTHOR_COOKIE_NAME = 'acta_author';
-export const READER_COOKIE_NAME = 'acta_reader';
+//
+// The `__Host-` prefix is a browser-enforced hardening: a cookie so named is
+// REJECTED by the browser unless it is Secure, has Path=/, and carries NO Domain
+// attribute - which structurally prevents a sibling subdomain (or a response over
+// a downgraded channel) from planting a cookie that shadows the session. It works
+// on http://localhost (a secure context, so Secure cookies are accepted there)
+// and, in production, the env guard forces a https ORIGIN, so the always-Secure
+// flag below is never sent over a plaintext non-loopback connection.
+export const AUTHOR_COOKIE_NAME = '__Host-acta_author';
+export const READER_COOKIE_NAME = '__Host-acta_reader';
 
 // Browser hard cap on cookie lifetime: a Set-Cookie `Expires`/`Max-Age` beyond
 // ~400 days is clamped by the browser (Chrome/Firefox), so there is no point
@@ -23,22 +31,19 @@ function sign(token: string): string {
 	return createHmac('sha256', serverEnv().SESSION_SECRET).update(token).digest('base64url');
 }
 
-function isSecureOrigin(): boolean {
-	return serverEnv().ORIGIN.startsWith('https://');
-}
-
 /**
  * Sets a realm session cookie. The value is `<token>.<hmac>`: the HMAC (keyed by
  * SESSION_SECRET) rejects forged or corrupted cookies before any database
- * lookup. HttpOnly + SameSite=Lax always; Secure when the instance is served
- * over https (ORIGIN).
+ * lookup. HttpOnly + SameSite=Lax + Path=/ + Secure, always: the `__Host-` cookie
+ * name prefix REQUIRES Secure and Path=/, and the production env guard forces a
+ * https ORIGIN so Secure is never sent over a plaintext non-loopback channel.
  */
 function setSessionCookie(cookies: Cookies, name: string, token: string, expiresAt: Date): void {
 	cookies.set(name, `${token}.${sign(token)}`, {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
-		secure: isSecureOrigin(),
+		secure: true,
 		expires: expiresAt
 	});
 }
@@ -71,7 +76,7 @@ export function readAuthorCookie(cookies: Cookies): string | null {
 }
 
 export function deleteAuthorCookie(cookies: Cookies): void {
-	cookies.delete(AUTHOR_COOKIE_NAME, { path: '/' });
+	cookies.delete(AUTHOR_COOKIE_NAME, { path: '/', secure: true });
 }
 
 /**
@@ -92,5 +97,5 @@ export function readReaderCookie(cookies: Cookies): string | null {
 }
 
 export function deleteReaderCookie(cookies: Cookies): void {
-	cookies.delete(READER_COOKIE_NAME, { path: '/' });
+	cookies.delete(READER_COOKIE_NAME, { path: '/', secure: true });
 }

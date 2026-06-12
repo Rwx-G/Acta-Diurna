@@ -215,7 +215,7 @@ describe('apiAuth (PAT bearer realm)', () => {
 	it('a COOKIE never authenticates the API (only the Authorization header is consulted)', async () => {
 		const { response } = await runApiAuth('/api/v1/whoami', {
 			address: '203.0.113.13',
-			headers: { cookie: 'acta_author=forged.value' },
+			headers: { cookie: '__Host-acta_author=forged.value' },
 			authorSession: AUTHENTICATED
 		});
 		expect(response.status).toBe(401);
