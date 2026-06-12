@@ -92,6 +92,76 @@ describe('computeChartGeometry', () => {
 		expect(serialized).not.toContain('"y":14');
 	});
 
+	it('produces a well-formed path for a single-point line/area', () => {
+		const block = {
+			type: 'chart',
+			id: 'single',
+			kind: 'area',
+			series: [{ name: 'One', points: [{ x: 'only', y: 7 }] }]
+		} as ChartBlock;
+		const geo = computeChartGeometry(block)!;
+		expect(geo.series[0].points).toHaveLength(1);
+		expect(geo.series[0].linePath).toMatch(/^M/);
+		expect(geo.series[0].linePath).not.toMatch(/NaN/);
+		expect(geo.series[0].areaPath).toMatch(/^M/);
+		expect(geo.series[0].areaPath).toMatch(/Z$/);
+		expect(geo.series[0].areaPath).not.toMatch(/NaN/);
+	});
+
+	it('keeps bar heights non-negative and crosses zero on negative values', () => {
+		const block = {
+			type: 'chart',
+			id: 'neg',
+			kind: 'bar',
+			series: [
+				{
+					name: 'Delta',
+					points: [
+						{ x: 'up', y: 8 },
+						{ x: 'down', y: -5 }
+					]
+				}
+			]
+		} as ChartBlock;
+		const geo = computeChartGeometry(block)!;
+		const bars = geo.series[0].bars!;
+		expect(bars).toHaveLength(2);
+		for (const bar of bars) expect(bar.height).toBeGreaterThanOrEqual(0);
+		// The y=0 baseline sits inside the plot, between the positive bar's top and
+		// the negative bar's bottom: the two bars straddle it.
+		const zeroTick = geo.yTicks.find((t) => t.value === '0');
+		expect(zeroTick).toBeDefined();
+		const up = bars[0];
+		const down = bars[1];
+		expect(up.y).toBeLessThan(zeroTick!.position);
+		expect(down.y + down.height).toBeGreaterThan(zeroTick!.position);
+	});
+
+	it('builds NaN-free slices for an all-zero pie', () => {
+		const block = {
+			type: 'chart',
+			id: 'zero',
+			kind: 'pie',
+			series: [
+				{
+					name: 'Share',
+					points: [
+						{ x: 'A', y: 0 },
+						{ x: 'B', y: 0 }
+					]
+				}
+			]
+		} as ChartBlock;
+		const geo = computeChartGeometry(block)!;
+		expect(geo.pieSlices).toHaveLength(2);
+		for (const slice of geo.pieSlices!) {
+			expect(slice.percent).toBe(0);
+			expect(Number.isFinite(slice.labelX)).toBe(true);
+			expect(Number.isFinite(slice.labelY)).toBe(true);
+			expect(slice.path).not.toMatch(/NaN|undefined/);
+		}
+	});
+
 	it('handles a flat series without collapsing the axis', () => {
 		const block = {
 			type: 'chart',

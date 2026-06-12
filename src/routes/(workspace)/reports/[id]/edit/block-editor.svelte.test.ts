@@ -4,8 +4,11 @@ import type { Block } from '$lib/schema';
 import BlockEditor from './BlockEditor.svelte';
 
 function renderBlock(block: Block, issues: { path: string; message: string; hint?: string }[]) {
+	// BlockEditor declares block = $bindable(); a $state source keeps the bind:
+	// target reactive (silences binding_property_non_reactive in the test).
+	const reactiveBlock = $state(block);
 	return render(BlockEditor, {
-		block,
+		block: reactiveBlock,
 		sectionIndex: 0,
 		blockIndex: 0,
 		count: 1,

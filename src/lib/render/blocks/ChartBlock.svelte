@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ChartBlock } from '$lib/schema';
 	import { computeChartGeometry } from './chart-geometry.ts';
+	import BlockPlaceholder from './BlockPlaceholder.svelte';
 
 	// SSR-only SVG (zero hydration). The geometry is pure math (d3-scale/d3-shape)
 	// computed once; this component emits a static <svg> and never hydrates, so
@@ -27,7 +28,7 @@
 </script>
 
 {#if !geometry}
-	<div class="chart-placeholder">Awaiting data binding.</div>
+	<BlockPlaceholder />
 {:else}
 	<figure class="chart-block">
 		<svg
@@ -188,13 +189,13 @@
 
 	.tick {
 		font-family: var(--font-sans);
-		font-size: 12px;
+		font-size: var(--text-tick);
 		fill: var(--report-text-muted);
 	}
 
 	.slice-label {
 		font-family: var(--font-sans);
-		font-size: 12px;
+		font-size: var(--text-tick);
 		font-weight: 600;
 		fill: var(--report-accent-contrast);
 	}
@@ -219,15 +220,5 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 2px;
-	}
-
-	.chart-placeholder {
-		padding: var(--space-4);
-		font-family: var(--font-sans);
-		font-size: var(--text-sm);
-		color: var(--report-text-muted);
-		background: var(--report-surface);
-		border: 1px dashed var(--report-rule-strong);
-		border-radius: var(--radius-md);
 	}
 </style>

@@ -78,6 +78,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 			ORIGIN: `http://localhost:${PORT}`,
 			LOG_LEVEL: 'warn',
 			DATABASE_URL: databaseUrl,
+			// test-only; never a production secret
 			SESSION_SECRET: 'e2e-session-secret-at-least-32-characters-long',
 			AUTHOR_PASSWORD_HASH: authorPasswordHash
 		}

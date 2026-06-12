@@ -78,6 +78,43 @@ describe('toPreviewView (transiently-invalid tolerance)', () => {
 		expect(toPreviewView(null).sections).toEqual([]);
 	});
 
+	it('flags an empty-title section with no blocks as a frame problem', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Draft',
+			sections: [{ id: 'sec-1', title: '', blocks: [] }]
+		};
+		const view = toPreviewView(snapshot);
+		expect(view.sections[0].invalid).toBe(true);
+		expect(view.sections[0].invalidNotice).toBeTruthy();
+		expect(view.sections[0].blocks).toEqual([]);
+	});
+
+	it('does not flag the frame when only its blocks are invalid', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Draft',
+			sections: [
+				{
+					id: 'sec-1',
+					title: 'Valid title',
+					// Every block is invalid; the frame itself is fine, so the section is
+					// not frame-invalid - each block surfaces its own notice instead.
+					blocks: [
+						{ type: 'image', id: 'a' },
+						{ type: 'image', id: 'b' }
+					]
+				}
+			]
+		};
+		const view = toPreviewView(snapshot);
+		expect(view.sections[0].invalid).toBe(false);
+		expect(view.sections[0].invalidNotice).toBeUndefined();
+		const blocks = view.sections[0].blocks;
+		expect(blocks.every((b) => b.block === null)).toBe(true);
+		expect(blocks.every((b) => b.invalidNotice)).toBe(true);
+	});
+
 	it('flags a section whose title is empty but blocks are valid', () => {
 		const snapshot = {
 			version: 1,

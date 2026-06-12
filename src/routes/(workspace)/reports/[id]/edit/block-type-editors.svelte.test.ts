@@ -12,7 +12,9 @@ import TableBlockEditor from './TableBlockEditor.svelte';
 
 describe('TableBlockEditor renameColumnKey', () => {
 	it('migrates static row values when a column key is renamed', async () => {
-		const block: TableBlock = {
+		// $state so the editor's bind: target is reactive (the component declares
+		// block = $bindable()); the proxy reads back the in-place mutations.
+		const block: TableBlock = $state({
 			type: 'table',
 			id: 'metrics',
 			columns: [
@@ -20,7 +22,7 @@ describe('TableBlockEditor renameColumnKey', () => {
 				{ key: 'value', label: 'Value' }
 			],
 			rows: [{ region: 'EU', value: '42' }]
-		};
+		});
 		const { getByLabelText } = render(TableBlockEditor, { block, onEdit: vi.fn() });
 
 		await getByLabelText('Column 1 key').fill('area');
@@ -34,11 +36,11 @@ describe('TableBlockEditor renameColumnKey', () => {
 
 describe('KpiBlockEditor trend', () => {
 	it('deletes the trend field when the selection is cleared to "no trend"', async () => {
-		const block: KpiBlock = {
+		const block: KpiBlock = $state({
 			type: 'kpi',
 			id: 'numbers',
 			items: [{ label: 'Uptime', value: '99.9', trend: 'up' }]
-		};
+		});
 		const { getByLabelText } = render(KpiBlockEditor, { block, onEdit: vi.fn() });
 
 		await getByLabelText('KPI 1 trend').selectOptions('');
@@ -49,12 +51,12 @@ describe('KpiBlockEditor trend', () => {
 
 describe('ChartBlockEditor y guard', () => {
 	it('stores a finite 0 when a point y is cleared to a non-numeric value', async () => {
-		const block: ChartBlock = {
+		const block: ChartBlock = $state({
 			type: 'chart',
 			id: 'trendline',
 			kind: 'line',
 			series: [{ name: 'Series 1', points: [{ x: 'Q1', y: 5 }] }]
-		};
+		});
 		const { getByLabelText } = render(ChartBlockEditor, { block, onEdit: vi.fn() });
 
 		// Clearing a number input yields valueAsNumber NaN; the guard keeps y finite.

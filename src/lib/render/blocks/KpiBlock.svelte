@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { KpiBlock } from '$lib/schema';
+	import BlockPlaceholder from './BlockPlaceholder.svelte';
 
 	let { block }: { block: KpiBlock } = $props();
 
@@ -12,7 +13,7 @@
 </script>
 
 {#if items.length === 0}
-	<div class="kpi-placeholder">Awaiting data binding.</div>
+	<BlockPlaceholder />
 {:else}
 	<dl class="kpi-row" style="--kpi-count: {Math.min(items.length, 4)}">
 		{#each items as item, index (index)}
@@ -93,25 +94,15 @@
 	}
 
 	.trend-up {
-		color: var(--color-green);
+		color: var(--report-trend-up);
 	}
 
 	.trend-down {
-		color: var(--color-danger);
+		color: var(--report-trend-down);
 	}
 
 	.trend-flat {
 		color: var(--report-text-muted);
-	}
-
-	.kpi-placeholder {
-		padding: var(--space-4);
-		font-family: var(--font-sans);
-		font-size: var(--text-sm);
-		color: var(--report-text-muted);
-		background: var(--report-surface);
-		border: 1px dashed var(--report-rule-strong);
-		border-radius: var(--radius-md);
 	}
 
 	.sr-only {

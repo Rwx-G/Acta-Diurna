@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { TableBlock, TableCell } from '$lib/schema';
+	import BlockPlaceholder from './BlockPlaceholder.svelte';
 
 	let { block }: { block: TableBlock } = $props();
 
@@ -18,7 +19,7 @@
 </script>
 
 {#if rows.length === 0}
-	<div class="table-placeholder">Awaiting data binding.</div>
+	<BlockPlaceholder />
 {:else}
 	<div class="table-scroll">
 		<table class:sticky={stickyHeader}>
@@ -89,15 +90,5 @@
 
 	tbody tr:nth-child(even) td {
 		background: color-mix(in srgb, var(--report-text) 3%, transparent);
-	}
-
-	.table-placeholder {
-		padding: var(--space-4);
-		font-family: var(--font-sans);
-		font-size: var(--text-sm);
-		color: var(--report-text-muted);
-		background: var(--report-surface);
-		border: 1px dashed var(--report-rule-strong);
-		border-radius: var(--radius-md);
 	}
 </style>

@@ -153,8 +153,11 @@ export function toPreviewView(snapshot: unknown): ReportView {
 			};
 		});
 
-		// Distinguish a frame-only failure (title/id) from block failures.
-		const frameInvalid = blocks.every((b) => b.block !== null) && rawBlocks.length > 0;
+		// Distinguish a frame-only failure (title/id) from block failures: the
+		// section failed validation AND every block is individually valid, so the
+		// problem is the frame, not a block (blocks carry their own notices). An
+		// empty-blocks section with a bad title still flags here (vacuous every()).
+		const frameInvalid = !sectionResult.success && blocks.every((b) => b.block !== null);
 		return {
 			id,
 			title: previewSectionTitle(raw, sectionIndex),
