@@ -26,16 +26,26 @@ describe('buildOpenApiDocument (D8)', () => {
 		expect(JSON.parse(serialized)).toEqual(doc);
 	});
 
-	it('describes every 4.1/4.2 path', () => {
+	it('describes every 4.1/4.2/4.3 path', () => {
 		expect(Object.keys(doc.paths).sort()).toEqual(
 			[
 				'/reports',
 				'/reports/{id}',
 				'/reports/{id}/publish',
 				'/reports/{id}/unpublish',
-				'/whoami'
+				'/whoami',
+				'/data-sets',
+				'/schema'
 			].sort()
 		);
+	});
+
+	it('covers the 4.3 data-push and schema operations', () => {
+		expect(doc.paths['/data-sets'].post).toBeDefined();
+		expect(doc.paths['/schema'].get).toBeDefined();
+		// The schema endpoint is public: it overrides the global security with an
+		// empty array (no bearer required).
+		expect((doc.paths['/schema'].get as { security: unknown[] }).security).toEqual([]);
 	});
 
 	it('covers the report CRUD + publish operations', () => {

@@ -163,7 +163,7 @@ export function isApiPath(pathname: string): boolean {
 // apiAuth lets these through with a null identity; the `/api/*` error boundary
 // still wraps them.
 export function isPublicApiPath(pathname: string): boolean {
-	return pathname === '/api/v1/openapi.json';
+	return pathname === '/api/v1/openapi.json' || pathname === '/api/v1/schema';
 }
 
 // Reads `Authorization: Bearer <token>`, returning the raw token or null. Only

@@ -88,6 +88,119 @@ function documentComponent(): Record<string, unknown> {
 	return schema;
 }
 
+/** A `data_sets` row as serialized by the push endpoint (story 4.3). */
+function dataSetSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['id', 'reportId', 'filename', 'sourceFormat', 'fields', 'injectedAt', 'storagePath'],
+		properties: {
+			id: { type: 'string', format: 'uuid' },
+			reportId: { type: ['string', 'null'], format: 'uuid' },
+			filename: { type: 'string' },
+			sourceFormat: { type: 'string', enum: ['csv', 'json', 'xlsx'] },
+			fields: {
+				type: 'array',
+				items: {
+					type: 'object',
+					required: ['name', 'type'],
+					properties: {
+						name: { type: 'string' },
+						type: { type: 'string' }
+					}
+				}
+			},
+			injectedAt: { type: 'string', format: 'date-time' },
+			dataAsOf: { type: ['string', 'null'], format: 'date-time' },
+			storagePath: { type: 'string' }
+		}
+	};
+}
+
+/** A per-block binding diagnostic (FR15): block, expected field, closest match. */
+function blockDiagnosticSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['blockId', 'blockType', 'label', 'state', 'drifts'],
+		properties: {
+			blockId: { type: 'string' },
+			blockType: { type: 'string', enum: ['table', 'chart', 'kpi'] },
+			label: { type: 'string' },
+			state: { type: 'string', enum: ['bound', 'drifted', 'unresolved'] },
+			drifts: {
+				type: 'array',
+				items: {
+					type: 'object',
+					required: ['expected', 'closest'],
+					properties: {
+						expected: { type: 'string' },
+						closest: { type: ['string', 'null'] },
+						distance: { type: 'integer' }
+					}
+				}
+			}
+		}
+	};
+}
+
+/** The aggregate binding summary (the workspace header counts). */
+function bindingSummarySchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['total', 'bound', 'drifted', 'unresolved', 'allGreen'],
+		properties: {
+			total: { type: 'integer' },
+			bound: { type: 'integer' },
+			drifted: { type: 'integer' },
+			unresolved: { type: 'integer' },
+			allGreen: { type: 'boolean' }
+		}
+	};
+}
+
+/**
+ * The data-push response (story 4.3): always the stored data set; the
+ * diagnostics + summary + rebound block ids are present when the push targeted a
+ * report (the auto-rebind ran), absent for an unbound push.
+ */
+function dataPushResponseSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['dataSet'],
+		properties: {
+			dataSet: { $ref: '#/components/schemas/DataSet' },
+			diagnostics: {
+				type: 'array',
+				items: { $ref: '#/components/schemas/BlockDiagnostic' }
+			},
+			summary: { $ref: '#/components/schemas/BindingSummary' },
+			rebound: { type: 'array', items: { type: 'string' } }
+		}
+	};
+}
+
+/** The published-schema response (story 4.3): version, schema, examples. */
+function schemaResponseSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['version', 'schema', 'examples'],
+		properties: {
+			version: { type: 'integer' },
+			schema: {
+				type: 'object',
+				description: 'The published JSON Schema (draft 2020-12) of the current document version.'
+			},
+			examples: {
+				type: 'object',
+				required: ['minimal', 'full'],
+				properties: {
+					minimal: { $ref: '#/components/schemas/Document' },
+					full: { $ref: '#/components/schemas/Document' }
+				}
+			}
+		}
+	};
+}
+
 function problemResponse(description: string): Record<string, unknown> {
 	return {
 		description,
@@ -134,6 +247,11 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 				Report: reportSchema(),
 				ReportSummary: reportSummarySchema(),
 				Problem: problemSchema(),
+				DataSet: dataSetSchema(),
+				BlockDiagnostic: blockDiagnosticSchema(),
+				BindingSummary: bindingSummarySchema(),
+				DataPushResponse: dataPushResponseSchema(),
+				SchemaResponse: schemaResponseSchema(),
 				CreateReportRequest: {
 					type: 'object',
 					description:
@@ -312,6 +430,82 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 							}
 						},
 						'401': UNAUTHORIZED
+					}
+				}
+			},
+			'/data-sets': {
+				post: {
+					summary: 'Push a data set onto a report',
+					operationId: 'pushDataSet',
+					description:
+						'Pushes raw file bytes (the request body) through the SAME ingestion + binding pipeline the workspace upload uses (FR13). The format comes from `Content-Type` (`text/csv` or `application/json`; an Excel content-type gets the honest 415). With `?reportId` the push auto-rebinds the target draft report and returns the per-block diagnostics + binding summary (FR14/15 parity); without it the data set is stored unbound. The 50 MB cap is enforced before the body is read.',
+					parameters: [
+						{
+							name: 'reportId',
+							in: 'query',
+							required: false,
+							description: 'The target draft report to bind the data set onto.',
+							schema: { type: 'string', format: 'uuid' }
+						},
+						{
+							name: 'X-Filename',
+							in: 'header',
+							required: false,
+							description:
+								'A label for the data set (metadata only; bytes are stored under a UUID).',
+							schema: { type: 'string' }
+						}
+					],
+					requestBody: {
+						required: true,
+						description: 'The raw file bytes; the format is taken from `Content-Type`.',
+						content: {
+							'text/csv': { schema: { type: 'string' } },
+							'application/json': { schema: { type: 'string' } }
+						}
+					},
+					responses: {
+						'201': {
+							description:
+								'The stored data set; the diagnostics, summary, and rebound block ids are present when a report was targeted.',
+							content: {
+								'application/json': {
+									schema: { $ref: '#/components/schemas/DataPushResponse' }
+								}
+							}
+						},
+						'400': problemResponse('Malformed request (empty body or bad `reportId`).'),
+						'401': UNAUTHORIZED,
+						'404': problemResponse('The target report was not found.'),
+						'409': problemResponse('The target report is published (binding targets a draft).'),
+						'413': problemResponse('The body exceeds the 50 MB upload cap.'),
+						'415': problemResponse('Unsupported Content-Type, or Excel ingestion is not enabled.'),
+						'422': problemResponse('The file could not be parsed (encoding/format).')
+					}
+				}
+			},
+			'/schema': {
+				get: {
+					summary: 'Fetch the published document schema',
+					operationId: 'getSchema',
+					description:
+						'Returns the published JSON Schema (draft 2020-12) of the current document version, with the minimal and full example documents (AR2; FR31). PUBLIC - no PAT required - as a discovery surface that leaks no report data. Cacheable per version.',
+					security: [],
+					responses: {
+						'200': {
+							description: 'The published schema and its examples.',
+							headers: {
+								'Cache-Control': {
+									description: 'The schema is immutable per version.',
+									schema: { type: 'string' }
+								}
+							},
+							content: {
+								'application/json': {
+									schema: { $ref: '#/components/schemas/SchemaResponse' }
+								}
+							}
+						}
 					}
 				}
 			}
