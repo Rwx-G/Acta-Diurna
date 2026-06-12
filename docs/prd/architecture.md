@@ -274,13 +274,13 @@ Acta-Diurna/
     └── routes/
         ├── +layout.svelte
         ├── healthz/+server.ts         # app + db status (D14)
+        ├── login/                     # author gateway - top-level = public realm (login, r/[token]); (workspace) = author realm
         ├── r/[token]/                 # READER surface
         │   ├── +page.server.ts        #   gate: verified session or verification prompt
         │   ├── +page.svelte           #   SSR report view (FR3, FR25-27)
         │   └── verify/+server.ts      #   magic-link landing, single-use token check
         ├── (workspace)/               # AUTHOR surface (guarded group layout)
         │   ├── +layout.server.ts      #   author-session guard
-        │   ├── login/
         │   ├── reports/               #   list, new, [id]/edit, [id]/preview, [id]/share
         │   ├── skeletons/             #   compose, save, list
         │   └── settings/
