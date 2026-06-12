@@ -37,6 +37,39 @@ describe('fieldGridBlockSchema - valid shapes', () => {
 		expect(result.success).toBe(true);
 	});
 
+	it('treats layout as optional (an existing field-grid with no layout validates)', () => {
+		const parsed = validBlock();
+		expect('layout' in parsed).toBe(false);
+		const result = fieldGridBlockSchema.safeParse(parsed);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.layout).toBeUndefined();
+		}
+	});
+
+	it('accepts the explicit grid layout (the default behaviour)', () => {
+		const result = fieldGridBlockSchema.safeParse(validBlock({ layout: 'grid' }));
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.layout).toBe('grid');
+		}
+	});
+
+	it('accepts the strip layout variant', () => {
+		const result = fieldGridBlockSchema.safeParse(validBlock({ layout: 'strip' }));
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.layout).toBe('strip');
+		}
+	});
+
+	it('rejects an unknown layout value', () => {
+		const result = fieldGridBlockSchema.safeParse(
+			validBlock({ layout: 'banner' as FieldGridBlock['layout'] })
+		);
+		expect(result.success).toBe(false);
+	});
+
 	it('assembles into a valid document (no scales needed)', () => {
 		expect(validateDocument(documentWith(validBlock())).ok).toBe(true);
 	});

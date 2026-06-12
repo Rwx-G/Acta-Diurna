@@ -25,10 +25,22 @@ export const fieldItemSchema = z.object({
 
 export type FieldItem = z.infer<typeof fieldItemSchema>;
 
+/**
+ * Layout variant (Story 7.12). `grid` is the default two-column metadata grid;
+ * `strip` is a horizontal, centred meta-strip of divided cells for a report
+ * header (the correlation report's strip under the title). The field is additive
+ * and OPTIONAL: a block with no `layout` (or `layout: 'grid'`) validates and
+ * renders exactly as before, no schema-version bump and no new block type.
+ */
+export const fieldGridLayoutSchema = z.enum(['grid', 'strip']);
+
+export type FieldGridLayout = z.infer<typeof fieldGridLayoutSchema>;
+
 export const fieldGridBlockSchema = z.object({
 	type: z.literal('field-grid'),
 	id: idSchema,
 	audiences: audiencesSchema.optional(),
+	layout: fieldGridLayoutSchema.optional(),
 	items: z
 		.array(fieldItemSchema)
 		.min(1, 'A field grid needs at least one item.')

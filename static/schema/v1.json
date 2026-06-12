@@ -891,6 +891,13 @@
 												]
 											}
 										},
+										"layout": {
+											"type": "string",
+											"enum": [
+												"grid",
+												"strip"
+											]
+										},
 										"items": {
 											"minItems": 1,
 											"maxItems": 24,

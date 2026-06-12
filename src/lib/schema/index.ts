@@ -57,8 +57,13 @@ export type {
 	TreatmentStatus
 } from './blocks/comparison-matrix.ts';
 
-export { fieldGridBlockSchema, fieldItemSchema, MAX_FIELD_ITEMS } from './blocks/field-grid.ts';
-export type { FieldGridBlock, FieldItem } from './blocks/field-grid.ts';
+export {
+	fieldGridBlockSchema,
+	fieldGridLayoutSchema,
+	fieldItemSchema,
+	MAX_FIELD_ITEMS
+} from './blocks/field-grid.ts';
+export type { FieldGridBlock, FieldGridLayout, FieldItem } from './blocks/field-grid.ts';
 
 export { legendBlockSchema } from './blocks/legend.ts';
 export type { LegendBlock } from './blocks/legend.ts';
