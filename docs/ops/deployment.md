@@ -33,6 +33,30 @@ reader-verification, and API-auth paths. Even when per-IP keying degrades behind
 a proxy, one flood cannot mint unlimited buckets past the global ceiling, and one
 share's flood cannot starve verification on other shares.
 
+### Bundled Caddy profile (turnkey)
+
+If you do not already run an ingress, the compose file ships an opt-in Caddy proxy
+that satisfies this whole contract out of the box - automatic HTTPS plus inbound
+XFF stripping. Set the three values in `.env`:
+
+```bash
+CADDY_DOMAIN=reports.example.com
+ORIGIN=https://reports.example.com
+ADDRESS_HEADER=x-forwarded-for
+```
+
+then bring the stack up with the profile:
+
+```bash
+docker compose --profile proxy up -d --build
+```
+
+Caddy provisions a certificate for `CADDY_DOMAIN`, overwrites any client-supplied
+`X-Forwarded-For` with the real peer IP (see `Caddyfile`), and proxies to the app
+on the internal network. Do not also publish the app port to the public network
+when you run this profile. If you already operate nginx, Traefik, or another
+ingress, skip the profile and use the manual snippets below instead.
+
 ### nginx
 
 ```nginx
@@ -79,10 +103,16 @@ Caddy terminates TLS automatically and writes a trusted `X-Forwarded-For`; the
 `ORIGIN` under `NODE_ENV=production` would ship cookies without `Secure`, sendable
 over plaintext.
 
-Env validation now **refuses to boot** on an `http://` `ORIGIN` in production.
+Env validation now **refuses to boot** on an `http://` `ORIGIN` in production
+(loopback hosts like `localhost` are exempt - they are browser secure contexts).
 Behind a TLS-terminating proxy, `ORIGIN` is still the public `https://` URL (the
 proxy speaks plaintext to the app on the internal network, but the cookie scheme
 follows the public origin). Contract: `ORIGIN=https://reports.example.com`.
+
+Session cookies additionally carry the `__Host-` name prefix, which the browser
+honours only for a `Secure`, `Path=/`, no-`Domain` cookie - so a sibling subdomain
+or a downgraded channel cannot plant a cookie that shadows the session. The cookie
+is always `Secure`; this is why a non-loopback `http://` origin is refused.
 
 ## Body size limit
 

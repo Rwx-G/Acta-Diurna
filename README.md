@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.7.1-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.8.0-brightgreen.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-v1%20in%20development-yellow.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
