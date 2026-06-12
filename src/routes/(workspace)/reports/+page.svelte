@@ -100,15 +100,18 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: var(--space-4);
+		max-width: 1040px;
 		margin-bottom: var(--space-5);
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 20px;
+		font-size: var(--text-xl);
 	}
 
 	.problem {
+		max-width: 1040px;
 		padding: var(--space-3) var(--space-4);
 		color: var(--color-danger);
 		background: var(--color-danger-08);
@@ -116,6 +119,7 @@
 	}
 
 	.report-list {
+		max-width: 1040px;
 		margin: 0;
 		padding: 0;
 		list-style: none;

@@ -12,6 +12,22 @@
 	let uploading = $state(false);
 	let message = $state<string | null>(null);
 	let messageVariant = $state<'ok' | 'error'>('ok');
+	let selectedName = $state<string | null>(null);
+	let dragOver = $state(false);
+
+	function syncSelected(): void {
+		selectedName = fileInput?.files?.[0]?.name ?? null;
+	}
+
+	function onDrop(event: DragEvent): void {
+		event.preventDefault();
+		dragOver = false;
+		const files = event.dataTransfer?.files;
+		if (files && files.length && fileInput) {
+			fileInput.files = files;
+			syncSelected();
+		}
+	}
 
 	// Upload with visible progress (UX Flow): a plain form action gives no
 	// progress events, so the JS path posts via XHR and reads upload.onprogress.
@@ -104,14 +120,45 @@
 	enctype="multipart/form-data"
 	onsubmit={upload}
 >
-	<input
-		bind:this={fileInput}
-		type="file"
-		name="file"
-		accept=".csv,.json,text/csv,application/json"
-		aria-label="Data file"
-		disabled={uploading}
-	/>
+	<label
+		class="dropzone"
+		class:dragover={dragOver}
+		ondragover={(event) => {
+			event.preventDefault();
+			dragOver = true;
+		}}
+		ondragleave={() => (dragOver = false)}
+		ondrop={onDrop}
+	>
+		<input
+			bind:this={fileInput}
+			type="file"
+			name="file"
+			accept=".csv,.json,text/csv,application/json"
+			aria-label="Data file"
+			disabled={uploading}
+			onchange={syncSelected}
+		/>
+		<svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true" width="22" height="22">
+			<path
+				d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 19h14"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
+		</svg>
+		<span class="dz-text">
+			{#if selectedName}
+				<strong>{selectedName}</strong>
+				<span class="dz-hint">Click to choose a different file</span>
+			{:else}
+				<strong>Drop a CSV or JSON file here</strong>
+				<span class="dz-hint">or click to choose - up to 50 MB</span>
+			{/if}
+		</span>
+	</label>
 	<Button type="submit" variant="primary" disabled={uploading}>
 		{uploading ? 'Uploading...' : 'Upload'}
 	</Button>
@@ -178,10 +225,65 @@
 
 	.uploader {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
+		align-items: flex-start;
 		gap: var(--space-3);
 		max-width: 880px;
 		margin-bottom: var(--space-4);
+	}
+
+	.dropzone {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		width: 100%;
+		padding: var(--space-5);
+		color: var(--color-ink-65);
+		background: var(--color-surface);
+		border: 1.5px dashed var(--color-ink-25);
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition:
+			border-color 120ms ease,
+			background 120ms ease,
+			color 120ms ease;
+	}
+
+	.dropzone:hover,
+	.dropzone.dragover {
+		color: var(--color-purple);
+		border-color: var(--color-purple);
+		background: var(--color-purple-08);
+	}
+
+	/* The native input stays in the tab order and accessible; the label is the
+	   visible control (clicking it opens the picker). */
+	.dropzone input {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.dz-icon {
+		flex-shrink: 0;
+	}
+
+	.dz-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.dz-text strong {
+		color: var(--color-ink);
+		font-weight: 600;
+	}
+
+	.dz-hint {
+		font-size: var(--text-sm);
+		color: var(--color-ink-65);
 	}
 
 	.progress {
