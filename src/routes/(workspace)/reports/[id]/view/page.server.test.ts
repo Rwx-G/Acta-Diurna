@@ -19,12 +19,18 @@ describe('reader view load', () => {
 		if (!result.ok) throw new Error('fixture invalid');
 		getReportMock.mockResolvedValueOnce({
 			id: 'r1',
+			title: result.document.title,
+			schemaVersion: result.document.version,
 			document: result.document,
-			status: 'draft'
+			status: 'draft',
+			createdAt: new Date(),
+			updatedAt: new Date()
 		});
 		const data = await load(loadEvent('r1'));
-		expect(data.document.title).toBe('Quarterly Security Report');
-		expect(data.status).toBe('draft');
+		// load() returns the data object on the happy path (it only throws via
+		// error() on the AppError branch, exercised separately below).
+		expect(data?.document.title).toBe('Quarterly Security Report');
+		expect(data?.status).toBe('draft');
 	});
 
 	it('maps an AppError to a SvelteKit error with its status', async () => {

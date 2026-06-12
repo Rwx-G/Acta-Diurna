@@ -20,12 +20,20 @@
 	let { section, index, total, mode, cover }: Props = $props();
 </script>
 
+<!-- In slide mode the section is its own scroll container (content taller than
+     the viewport scrolls within the card). A scrollable region must be
+     keyboard-reachable so a keyboard user can scroll it, hence tabindex="0"
+     (axe scrollable-region-focusable). In scroll mode the page scrolls, so no
+     tabindex is needed. The section is a scroll container, a recognized
+     exception to the non-interactive-tabindex rule. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <section
 	id={section.id}
 	class="section {mode}"
 	class:annex={section.annex}
 	aria-labelledby="{section.id}-heading"
 	aria-roledescription={mode === 'slide' ? 'slide' : undefined}
+	tabindex={mode === 'slide' ? 0 : undefined}
 >
 	<div class="section-inner">
 		{#if cover}

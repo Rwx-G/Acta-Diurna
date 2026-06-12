@@ -62,10 +62,12 @@
 	.frame-id {
 		margin: 0;
 		font-family: var(--font-sans);
-		font-size: var(--text-xs);
+		font-size: var(--text-sm);
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		opacity: 0.7;
+		/* Full muted color, no opacity: --report-text-muted holds 7:1 on stone,
+		   so the placeholder label clears the AAA report-content bar. */
+		color: var(--report-text-muted);
 	}
 
 	figcaption {

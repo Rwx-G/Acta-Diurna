@@ -11,7 +11,27 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// Strict CSP (D7): zero third-party assets. Fonts are self-hosted via
+			// Fontsource (bundled into the build), so no font/style/script origin
+			// other than 'self' is permitted. SvelteKit hashes its own inline
+			// hydration scripts and styles; nonce/hash injection is automatic in
+			// `auto` mode. No external connect/img/font is allowed - the renderer
+			// never phones home (images resolve to local asset paths in Epic 2).
+			csp: {
+				mode: 'auto',
+				directives: {
+					'default-src': ['self'],
+					'script-src': ['self'],
+					'style-src': ['self', 'unsafe-inline'],
+					'font-src': ['self'],
+					'img-src': ['self', 'data:'],
+					'connect-src': ['self'],
+					'base-uri': ['self'],
+					'object-src': ['none'],
+					'frame-ancestors': ['self']
+				}
+			}
 		})
 	],
 	test: {
