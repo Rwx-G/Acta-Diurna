@@ -11,6 +11,9 @@
 	const isPublished = $derived(data.report.status === 'published');
 
 	let copied = $state(false);
+	// Mirror the create-form mode selector so the recipient field shows only for a
+	// restricted share (open shares have no allow-list, FR19).
+	let createMode = $state<'restricted' | 'open'>('restricted');
 
 	async function copyLink(url: string): Promise<void> {
 		// The raw token lives only in this URL and only on this action result; the
@@ -57,11 +60,30 @@
 			</div>
 			<div class="field">
 				<label for="mode">Access</label>
-				<select id="mode" name="mode">
-					<option value="restricted" selected>Restricted (recipient list)</option>
+				<select id="mode" name="mode" bind:value={createMode}>
+					<option value="restricted">Restricted (recipient list)</option>
 					<option value="open">Open (anyone with the link)</option>
 				</select>
 			</div>
+			{#if createMode === 'restricted'}
+				<div class="field">
+					<label for="recipients">Recipients</label>
+					<textarea
+						id="recipients"
+						name="recipients"
+						rows="3"
+						placeholder="alice@example.com, bob@example.com"
+					></textarea>
+					<p class="hint">
+						One email per line or comma-separated. Only these addresses can verify and read. You can
+						edit this list later.
+					</p>
+				</div>
+			{:else}
+				<p class="hint open-note">
+					Anyone with the link who verifies their email may read. Their identity is recorded.
+				</p>
+			{/if}
 			<Button variant="primary" type="submit">Generate link</Button>
 		</form>
 
@@ -94,16 +116,45 @@
 			<ul class="share-list">
 				{#each data.shares as share (share.id)}
 					<li>
-						<span class="chip {share.status}">{share.status}</span>
-						<span class="mode">{share.mode}</span>
-						<span class="meta">Created {formatUtcDateTime(share.createdAt)}</span>
-						<span class="meta">
-							{#if share.expiresAt}
-								Expires {formatUtcDateTime(share.expiresAt)}
-							{:else}
-								No expiry
-							{/if}
-						</span>
+						<div class="share-row">
+							<span class="chip {share.status}">{share.status}</span>
+							<span class="mode">{share.mode}</span>
+							<span class="meta">Created {formatUtcDateTime(share.createdAt)}</span>
+							<span class="meta">
+								{#if share.expiresAt}
+									Expires {formatUtcDateTime(share.expiresAt)}
+								{:else}
+									No expiry
+								{/if}
+							</span>
+							<form method="POST" action="?/set-mode" use:enhance class="mode-toggle">
+								<input type="hidden" name="shareId" value={share.id} />
+								<input
+									type="hidden"
+									name="mode"
+									value={share.mode === 'restricted' ? 'open' : 'restricted'}
+								/>
+								<button type="submit" class="link-action">
+									Switch to {share.mode === 'restricted' ? 'open' : 'restricted'}
+								</button>
+							</form>
+						</div>
+
+						{#if share.mode === 'restricted'}
+							<form method="POST" action="?/set-recipients" use:enhance class="recipients-editor">
+								<input type="hidden" name="shareId" value={share.id} />
+								<label for="recipients-{share.id}">Recipient allow-list</label>
+								<textarea id="recipients-{share.id}" name="recipients" rows="3"
+									>{share.recipients.join('\n')}</textarea
+								>
+								<div class="recipients-actions">
+									<Button variant="secondary" type="submit">Save recipients</Button>
+									<span class="meta">{share.recipients.length} listed</span>
+								</div>
+							</form>
+						{:else}
+							<p class="hint open-note">Open: anyone with the link who verifies may read.</p>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -223,13 +274,74 @@
 
 	.share-list li {
 		display: flex;
-		align-items: center;
-		gap: var(--space-4);
+		flex-direction: column;
+		gap: var(--space-3);
 		padding: var(--space-3) var(--space-4);
 		background: var(--color-surface);
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-sm);
 		margin-bottom: var(--space-2);
+	}
+
+	.share-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+		flex-wrap: wrap;
+	}
+
+	.mode-toggle {
+		margin-left: auto;
+	}
+
+	.link-action {
+		padding: 0;
+		font: inherit;
+		font-size: 12px;
+		color: var(--color-purple);
+		background: none;
+		border: none;
+		cursor: pointer;
+		text-decoration: underline;
+	}
+
+	.recipients-editor {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+
+	.recipients-editor label {
+		font-size: 12px;
+	}
+
+	.recipients-editor textarea {
+		padding: var(--space-2) var(--space-3);
+		font: inherit;
+		font-size: 13px;
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		resize: vertical;
+	}
+
+	.recipients-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+	}
+
+	.open-note {
+		margin: 0;
+	}
+
+	textarea {
+		padding: var(--space-2) var(--space-3);
+		font: inherit;
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		resize: vertical;
 	}
 
 	.chip {

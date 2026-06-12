@@ -2,33 +2,65 @@ import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import type { ReportStatus } from '$lib/server/documents/reports';
 import { getReport } from '$lib/server/documents/reports';
-import { createShare, listShares, shareUrl, type ShareSummary } from '$lib/server/sharing';
+import {
+	createShare,
+	listShares,
+	setShareMode,
+	shareUrl,
+	type ShareMode,
+	type ShareSummary
+} from '$lib/server/sharing';
+import { listShareRecipients, setShareRecipients } from '$lib/server/sharing';
+import { isPlausibleEmail, normalizeEmail } from '$lib/server/reader';
 import { AppError, errorPageShape } from '$lib/server/problem';
+
+/** A share plus its restricted-mode recipient list (empty for open shares). */
+interface ShareView extends ShareSummary {
+	recipients: string[];
+}
 
 interface SharePageData {
 	report: { id: string; title: string; status: ReportStatus };
-	shares: ShareSummary[];
+	shares: ShareView[];
 }
 
 /**
- * Share management for one report (FR17/FR21). Loads the report (for its
- * publish status: a draft cannot be shared, FR6) and its existing shares. The
- * `create-share` action mints a link and returns the RAW URL exactly once - the
- * raw token is never persisted and never reloaded, so the page surfaces it on
- * the action result and on nothing else.
+ * Share management for one report (FR17/FR19/FR21). Loads the report (for its
+ * publish status: a draft cannot be shared, FR6), its existing shares, and -
+ * for each share - its recipient allow-list so the restricted-mode editor can
+ * render the current list. The `create-share` action mints a link and returns
+ * the RAW URL exactly once. `set-mode` flips a share restricted<->open;
+ * `set-recipients` replaces a restricted share's allow-list (FR19).
  */
 export const load: PageServerLoad = async ({ params }): Promise<SharePageData> => {
 	try {
 		const report = await getReport(params.id);
+		const summaries = await listShares(report.id);
+		const shares = await Promise.all(
+			summaries.map(async (share) => ({
+				...share,
+				recipients: await listShareRecipients(share.id)
+			}))
+		);
 		return {
 			report: { id: report.id, title: report.title, status: report.status },
-			shares: await listShares(report.id)
+			shares
 		};
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));
 		throw thrown;
 	}
 };
+
+/** Parses a textarea/CSV blob of emails into a normalized, deduped, valid list. */
+function parseRecipients(raw: string): string[] {
+	const candidates = raw
+		.split(/[\n,;]+/)
+		.map((value) => normalizeEmail(value))
+		.filter((value) => value.length > 0);
+	const valid = candidates.filter((value) => isPlausibleEmail(value));
+	return Array.from(new Set(valid));
+}
 
 export const actions: Actions = {
 	'create-share': async ({ params, request, url }) => {
@@ -55,10 +87,18 @@ export const actions: Actions = {
 			expiresAt = parsed;
 		}
 
-		const mode = rawMode === 'open' ? 'open' : 'restricted';
+		const mode: ShareMode = rawMode === 'open' ? 'open' : 'restricted';
+		const recipients =
+			typeof data.get('recipients') === 'string'
+				? parseRecipients(data.get('recipients') as string)
+				: [];
 
 		try {
 			const { token, share } = await createShare(params.id, { mode, expiresAt });
+			// A restricted share with an initial recipient list set in one gesture.
+			if (mode === 'restricted' && recipients.length > 0) {
+				await setShareRecipients(share.id, recipients);
+			}
 			return { created: { url: shareUrl(url.origin, token), share } };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
@@ -66,5 +106,30 @@ export const actions: Actions = {
 			}
 			throw thrown;
 		}
+	},
+
+	'set-mode': async ({ request }) => {
+		const data = await request.formData();
+		const shareId = data.get('shareId');
+		const rawMode = data.get('mode');
+		if (typeof shareId !== 'string' || shareId.length === 0) {
+			return fail(400, { message: 'Missing share.' });
+		}
+		const mode: ShareMode = rawMode === 'open' ? 'open' : 'restricted';
+		const updated = await setShareMode(shareId, mode);
+		if (updated === 0) return fail(404, { message: 'Share not found.' });
+		return { modeSet: { shareId, mode } };
+	},
+
+	'set-recipients': async ({ request }) => {
+		const data = await request.formData();
+		const shareId = data.get('shareId');
+		const raw = data.get('recipients');
+		if (typeof shareId !== 'string' || shareId.length === 0) {
+			return fail(400, { message: 'Missing share.' });
+		}
+		const recipients = typeof raw === 'string' ? parseRecipients(raw) : [];
+		await setShareRecipients(shareId, recipients);
+		return { recipientsSet: { shareId, count: recipients.length } };
 	}
 };

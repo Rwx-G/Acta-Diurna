@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createShare, listShares, shareUrl } from '$lib/server/sharing';
+import {
+	createShare,
+	listShareRecipients,
+	listShares,
+	setShareMode,
+	setShareRecipients,
+	shareUrl
+} from '$lib/server/sharing';
 import { getReport, type Report } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
@@ -7,12 +14,23 @@ import { actions, load } from './+page.server';
 vi.mock('$lib/server/sharing', () => ({
 	createShare: vi.fn(),
 	listShares: vi.fn(),
+	setShareMode: vi.fn(),
+	listShareRecipients: vi.fn(),
+	setShareRecipients: vi.fn(),
 	shareUrl: (origin: string, token: string) => `${origin}/r/${token}`
 }));
 vi.mock('$lib/server/documents/reports', () => ({ getReport: vi.fn() }));
+// Use the real email helpers so recipient parsing/normalization is exercised.
+vi.mock('$lib/server/reader', async () => {
+	const actual = await vi.importActual<typeof import('$lib/server/reader')>('$lib/server/reader');
+	return { normalizeEmail: actual.normalizeEmail, isPlausibleEmail: actual.isPlausibleEmail };
+});
 
 const createShareMock = vi.mocked(createShare);
 const listSharesMock = vi.mocked(listShares);
+const setShareModeMock = vi.mocked(setShareMode);
+const listShareRecipientsMock = vi.mocked(listShareRecipients);
+const setShareRecipientsMock = vi.mocked(setShareRecipients);
 const getReportMock = vi.mocked(getReport);
 
 const REPORT_ID = '0197b300-0000-7000-8000-000000000aaa';
@@ -40,8 +58,19 @@ function createEvent(
 	} as unknown as Parameters<(typeof actions)['create-share']>[0];
 }
 
+function actionEvent(fields: Record<string, string>): never {
+	return {
+		params: { id: REPORT_ID },
+		request: formRequest(fields),
+		url: new URL('http://localhost/reports/x/share')
+	} as never;
+}
+
 beforeEach(() => {
 	vi.clearAllMocks();
+	listShareRecipientsMock.mockResolvedValue([]);
+	setShareRecipientsMock.mockResolvedValue(undefined);
+	setShareModeMock.mockResolvedValue(1);
 });
 
 describe('load', () => {
@@ -158,6 +187,116 @@ describe('create-share action', () => {
 
 		expect(result).toMatchObject({ status: 400 });
 		expect(createShareMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('load with recipients', () => {
+	it('attaches each share recipient allow-list', async () => {
+		getReportMock.mockResolvedValue(publishedReport());
+		listSharesMock.mockResolvedValue([
+			{
+				id: 's1',
+				mode: 'restricted',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active'
+			}
+		]);
+		listShareRecipientsMock.mockResolvedValue(['a@example.com', 'b@example.com']);
+
+		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+
+		expect(listShareRecipientsMock).toHaveBeenCalledWith('s1');
+		expect(result!.shares[0].recipients).toEqual(['a@example.com', 'b@example.com']);
+	});
+});
+
+describe('create-share with an initial recipient list', () => {
+	it('sets the list for a restricted share', async () => {
+		createShareMock.mockResolvedValue({
+			token: 't',
+			share: {
+				id: 's9',
+				mode: 'restricted',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active'
+			}
+		});
+
+		await actions['create-share'](
+			createEvent({ mode: 'restricted', recipients: 'On@List.com, other@x.org' })
+		);
+
+		expect(setShareRecipientsMock).toHaveBeenCalledWith('s9', ['on@list.com', 'other@x.org']);
+	});
+
+	it('does not set a list for an open share', async () => {
+		createShareMock.mockResolvedValue({
+			token: 't',
+			share: {
+				id: 's10',
+				mode: 'open',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active'
+			}
+		});
+
+		await actions['create-share'](createEvent({ mode: 'open', recipients: 'a@example.com' }));
+
+		expect(setShareRecipientsMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('set-mode action', () => {
+	it('flips a share to open', async () => {
+		const result = await actions['set-mode'](actionEvent({ shareId: 's1', mode: 'open' }));
+		expect(setShareModeMock).toHaveBeenCalledWith('s1', 'open');
+		expect(result).toMatchObject({ modeSet: { shareId: 's1', mode: 'open' } });
+	});
+
+	it('defaults an unknown mode value to restricted', async () => {
+		await actions['set-mode'](actionEvent({ shareId: 's1', mode: 'garbage' }));
+		expect(setShareModeMock).toHaveBeenCalledWith('s1', 'restricted');
+	});
+
+	it('404s when the share id is unknown', async () => {
+		setShareModeMock.mockResolvedValue(0);
+		const result = await actions['set-mode'](actionEvent({ shareId: 'gone', mode: 'open' }));
+		expect(result).toMatchObject({ status: 404 });
+	});
+
+	it('400s when the share id is missing', async () => {
+		const result = await actions['set-mode'](actionEvent({ mode: 'open' }));
+		expect(result).toMatchObject({ status: 400 });
+		expect(setShareModeMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('set-recipients action', () => {
+	it('parses, normalizes and dedups the submitted list', async () => {
+		const result = await actions['set-recipients'](
+			actionEvent({ shareId: 's1', recipients: 'A@X.com\nb@x.com; A@X.com, not-an-email' })
+		);
+
+		expect(setShareRecipientsMock).toHaveBeenCalledWith('s1', ['a@x.com', 'b@x.com']);
+		expect(result).toMatchObject({ recipientsSet: { shareId: 's1', count: 2 } });
+	});
+
+	it('an empty submission clears the list', async () => {
+		const result = await actions['set-recipients'](actionEvent({ shareId: 's1', recipients: '' }));
+		expect(setShareRecipientsMock).toHaveBeenCalledWith('s1', []);
+		expect(result).toMatchObject({ recipientsSet: { shareId: 's1', count: 0 } });
+	});
+
+	it('400s when the share id is missing', async () => {
+		const result = await actions['set-recipients'](actionEvent({ recipients: 'a@x.com' }));
+		expect(result).toMatchObject({ status: 400 });
+		expect(setShareRecipientsMock).not.toHaveBeenCalled();
 	});
 });
 
