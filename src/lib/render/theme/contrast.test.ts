@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { AA_CONTRAST, AAA_CONTRAST, contrastRatio, relativeLuminance } from './contrast.ts';
-import { DEFAULT_THEME, MIDNIGHT_THEME, THEME_PALETTES, type ThemePalette } from './palette.ts';
+import {
+	AA_CONTRAST,
+	AAA_CONTRAST,
+	contrastRatio,
+	isBelowAA,
+	isBelowAAA,
+	relativeLuminance
+} from './contrast.ts';
+import {
+	CATEGORICAL_PALETTES,
+	DEFAULT_THEME,
+	MIDNIGHT_THEME,
+	THEME_PALETTES,
+	type ThemePalette
+} from './palette.ts';
 
 describe('contrastRatio', () => {
 	it('is 21 for black on white', () => {
@@ -21,6 +34,32 @@ describe('contrastRatio', () => {
 	it('rejects a malformed hex', () => {
 		expect(() => relativeLuminance('purple')).toThrow();
 	});
+
+	it('thresholds AA and AAA', () => {
+		expect(isBelowAA(4.4)).toBe(true);
+		expect(isBelowAA(4.5)).toBe(false);
+		expect(isBelowAAA(6.9)).toBe(true);
+		expect(isBelowAAA(7)).toBe(false);
+	});
+});
+
+/**
+ * The categorical swatches (Epic 7 scale default colours) are decorative fills -
+ * a severity pill, a chart series - not prose, so the AA floor is their contract
+ * on every theme's report background (same stance as `accentContrast` on
+ * `accent` above). A scale entry left without an explicit colour resolves to one
+ * of these, so it never raises the workspace contrast warning: defaults are not
+ * fed to `scaleContrastWarnings`, only explicit author hexes are.
+ */
+describe('categorical palette contrast (AA floor)', () => {
+	for (const [theme, palette] of Object.entries(CATEGORICAL_PALETTES)) {
+		const bg = THEME_PALETTES[theme].bg;
+		palette.forEach((swatch, index) => {
+			it(`${theme}: --report-chart-${index + 1} holds AA floor on background`, () => {
+				expect(contrastRatio(swatch, bg)).toBeGreaterThanOrEqual(AA_CONTRAST);
+			});
+		});
+	}
 });
 
 /**

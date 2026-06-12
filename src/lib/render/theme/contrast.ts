@@ -34,3 +34,13 @@ export const AAA_CONTRAST = 7;
 
 /** WCAG AA normal-text threshold. */
 export const AA_CONTRAST = 4.5;
+
+/** True when `ratio` sits below the WCAG AA normal-text floor (4.5:1). */
+export function isBelowAA(ratio: number): boolean {
+	return ratio < AA_CONTRAST;
+}
+
+/** True when `ratio` sits below the WCAG AAA normal-text floor (7:1). */
+export function isBelowAAA(ratio: number): boolean {
+	return ratio < AAA_CONTRAST;
+}
