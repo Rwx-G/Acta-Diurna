@@ -83,6 +83,29 @@ describe('GET /r/[token]/verify', () => {
 		expect(mocks.completeVerification).toHaveBeenCalledWith('good', 'share-1', 'report-1');
 	});
 
+	it('when the per-IP limiter denies: does not consume the token, returns the indistinguishable expired bounce', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.verificationConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 30 });
+
+		await expect(GET(event('?t=good'))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+		expect(mocks.completeVerification).not.toHaveBeenCalled();
+		expect(mocks.setReaderCookie).not.toHaveBeenCalled();
+	});
+
+	it('when the global brake denies: same expired bounce, no consume (proxy-collapse second line)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.globalConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 10 });
+
+		await expect(GET(event('?t=good'))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+		expect(mocks.completeVerification).not.toHaveBeenCalled();
+	});
+
 	it('engages the rate limiter on every landing (forged ?t= floods)', async () => {
 		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
 		mocks.completeVerification.mockResolvedValue(null);

@@ -41,9 +41,14 @@ export const GET: RequestHandler = async ({
 	}
 
 	// Same rate-limit envelope as the email submission: a flood of magic-link
-	// guesses (forged `?t=` values) engages the limiter.
-	verificationRateLimiter.consume(`${getClientAddress()}:${share.id}`);
-	verificationFailureLimiter.consume(GLOBAL_VERIFICATION_KEY);
+	// guesses (forged `?t=` values) engages the limiter. When either bucket
+	// denies, short-circuit BEFORE consuming the token so the throttle takes
+	// effect (the buckets are not bookkeeping-only). A throttled landing returns
+	// the IDENTICAL expired bounce as a failed consume, never a distinct 429 page,
+	// so no new enumeration oracle is introduced (NFR9).
+	if (!withinVerificationLimit(getClientAddress(), share.id)) {
+		redirect(303, `/r/${params.token}?expired=1`);
+	}
 
 	const rawVerification = url.searchParams.get('t') ?? '';
 	const result = await completeVerification(rawVerification, share.id, share.reportId);
@@ -57,3 +62,16 @@ export const GET: RequestHandler = async ({
 	setReaderCookie(cookies, result.session.token, result.session.expiresAt);
 	redirect(303, `/r/${params.token}`);
 };
+
+/**
+ * Per-(IP, share) limit plus the IP-independent global brake (the reverse-proxy
+ * second line), mirroring the email-submission action. Both buckets are consumed
+ * on every landing; either tripping throttles the reader. Keyed by share so a
+ * flood against one share does not starve verification on another.
+ */
+function withinVerificationLimit(clientAddress: string, shareId: string): boolean {
+	const perIp = verificationRateLimiter.consume(`${clientAddress}:${shareId}`);
+	if (!perIp.allowed) return false;
+	const global = verificationFailureLimiter.consume(GLOBAL_VERIFICATION_KEY);
+	return global.allowed;
+}

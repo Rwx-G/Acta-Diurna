@@ -68,6 +68,10 @@ export const load: PageServerLoad = async ({
 	return { state: expired ? 'expired' : 'prompt' };
 };
 
+/** The problem type `notShareable()` produces (reports.ts) when a report has no
+ * live published snapshot. */
+const NOT_PUBLISHED_PROBLEM_TYPE = '/problems/report-not-published';
+
 async function serveReport(
 	reportId: string,
 	setHeaders: (headers: Record<string, string>) => void
@@ -77,11 +81,23 @@ async function serveReport(
 		const document = await getPublishedDocument(reportId);
 		return { state: 'verified', document, renderError: null };
 	} catch (thrown) {
-		// A published snapshot that fails version dispatch is the same neutral
-		// render-error state the author view shows (FR7), never a crash.
-		if (thrown instanceof AppError && thrown.errors) {
-			return { state: 'verified', document: null, renderError: thrown.errors };
+		if (thrown instanceof AppError) {
+			// A published snapshot that fails version dispatch is the same neutral
+			// render-error state the author view shows (FR7), never a crash.
+			if (thrown.errors) {
+				return { state: 'verified', document: null, renderError: thrown.errors };
+			}
+			// The share is live but its report was unpublished (or its snapshot
+			// cleared) AFTER the share was created: `getPublishedDocument` throws a
+			// 409 not-shareable. Surfacing that 409 would be an enumeration oracle
+			// (a real share whose report just went away, distinguishable from the
+			// byte-identical neutral 404 a revoked/expired/unknown share serves).
+			// Route it through the same neutral closed-share exit instead (NFR9).
+			if (thrown.type === NOT_PUBLISHED_PROBLEM_TYPE) {
+				serveNeutralClosed(setHeaders);
+			}
 		}
+		// Only a genuine, unexpected 5xx escapes to the SvelteKit error page.
 		throw thrown;
 	}
 }

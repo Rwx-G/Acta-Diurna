@@ -44,6 +44,7 @@ vi.mock('$lib/server/reader', async () => {
 	};
 });
 
+import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
 const ACTIVE_SHARE = {
@@ -118,6 +119,27 @@ describe('load (the gate)', () => {
 
 		expect(mocks.validateReaderSession).toHaveBeenCalledWith('reader-token', 'share-1');
 		expect(result).toMatchObject({ state: 'verified', renderError: null });
+	});
+
+	it('serves the neutral 404 (not a 409) when the report was unpublished after the share went live', async () => {
+		// Active share, valid session, but the report has no live published snapshot:
+		// getPublishedDocument throws the 409 not-shareable AppError. The gate must
+		// route that through the SAME neutral 404 as a revoked/expired/unknown share,
+		// not surface a distinguishable 409 (NFR9 enumeration oracle).
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.readReaderCookie.mockReturnValue('reader-token');
+		mocks.validateReaderSession.mockResolvedValue({ id: 's', shareId: 'share-1' });
+		mocks.getPublishedDocument.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Report is not published',
+				type: '/problems/report-not-published'
+			})
+		);
+		const { event, setHeaders } = loadEvent();
+
+		await expect(load(event)).rejects.toMatchObject({ __neutral404: true });
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
 	});
 
 	it('prompts for email when active and no session', async () => {
