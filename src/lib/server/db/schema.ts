@@ -76,3 +76,36 @@ export const skeletons = pgTable(
 );
 
 export type SkeletonRow = typeof skeletons.$inferSelect;
+
+/** One inspected column of an uploaded data set: name + inferred type. */
+export interface DataSetField {
+	name: string;
+	type: 'string' | 'number' | 'date' | 'boolean';
+}
+
+// An uploaded data file (FR12): the bytes live on the uploads volume, the
+// metadata row lives here (D2/D12). `fields` is the inspected column list
+// (name + inferred type) the binding UI and resolver read without re-parsing
+// the file. `report_id` is the report the upload happened in (nullable: a data
+// set can outlive or precede a report). `injected_at` is the upload time;
+// `data_as_of` is the FR16 "as of" timestamp (carried now, rendered in Epic 6).
+// `storage_path` is the uploads-volume path of the stored file (a UUIDv7 name,
+// never the user filename, to defeat path traversal).
+export const dataSets = pgTable(
+	'data_sets',
+	{
+		id: uuid('id').primaryKey(),
+		reportId: uuid('report_id').references(() => reports.id, { onDelete: 'set null' }),
+		filename: text('filename').notNull(),
+		sourceFormat: text('source_format').notNull(),
+		fields: jsonb('fields').$type<DataSetField[]>().notNull(),
+		injectedAt: timestamp('injected_at', { withTimezone: true }).notNull().defaultNow(),
+		dataAsOf: timestamp('data_as_of', { withTimezone: true }),
+		storagePath: text('storage_path').notNull()
+	},
+	(table) => [
+		check('data_sets_format_check', sql`${table.sourceFormat} in ('csv', 'json', 'xlsx')`)
+	]
+);
+
+export type DataSetRow = typeof dataSets.$inferSelect;
