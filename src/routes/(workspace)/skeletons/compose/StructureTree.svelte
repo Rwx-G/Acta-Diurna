@@ -74,7 +74,7 @@
 						aria-label="Move section down">Down</Button
 					>
 					<Button
-						variant="danger"
+						variant="ghost"
 						onclick={() => {
 							removeSection(sections, sectionIndex);
 							onChange();
@@ -108,7 +108,7 @@
 								aria-label="Move block down">Down</Button
 							>
 							<Button
-								variant="danger"
+								variant="ghost"
 								onclick={() => {
 									section.blocks.splice(blockIndex, 1);
 									onChange();

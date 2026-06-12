@@ -56,7 +56,7 @@
 					{/each}
 				</select>
 				<Button
-					variant="danger"
+					variant="ghost"
 					onclick={() => {
 						fields.splice(fieldIndex, 1);
 						onEdit();

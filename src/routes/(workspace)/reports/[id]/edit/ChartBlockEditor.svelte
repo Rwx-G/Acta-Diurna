@@ -40,7 +40,7 @@
 				aria-label={`Series ${seriesIndex + 1} name`}
 			/>
 			<Button
-				variant="danger"
+				variant="ghost"
 				onclick={() => {
 					block.series!.splice(seriesIndex, 1);
 					if (block.series!.length === 0) delete block.series;
@@ -75,7 +75,7 @@
 					aria-label={`Series ${seriesIndex + 1} point ${pointIndex + 1} y`}
 				/>
 				<Button
-					variant="danger"
+					variant="ghost"
 					onclick={() => {
 						series.points.splice(pointIndex, 1);
 						onEdit();

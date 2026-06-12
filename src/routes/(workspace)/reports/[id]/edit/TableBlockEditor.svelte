@@ -55,7 +55,7 @@
 			aria-label={`Column ${columnIndex + 1} label`}
 		/>
 		<Button
-			variant="danger"
+			variant="ghost"
 			onclick={() => {
 				removeColumn(columnIndex);
 				onEdit();
@@ -94,7 +94,7 @@
 			/>
 		{/each}
 		<Button
-			variant="danger"
+			variant="ghost"
 			onclick={() => {
 				block.rows!.splice(rowIndex, 1);
 				if (block.rows!.length === 0) delete block.rows;

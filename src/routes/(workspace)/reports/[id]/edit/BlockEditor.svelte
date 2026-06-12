@@ -52,7 +52,7 @@
 			>
 				Down
 			</Button>
-			<Button variant="danger" onclick={onRemove} aria-label="Remove block">Remove</Button>
+			<Button variant="ghost" onclick={onRemove} aria-label="Remove block">Remove</Button>
 		</div>
 	</header>
 

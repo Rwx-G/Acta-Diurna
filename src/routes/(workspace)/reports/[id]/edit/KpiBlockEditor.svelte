@@ -65,7 +65,7 @@
 			{/each}
 		</select>
 		<Button
-			variant="danger"
+			variant="ghost"
 			onclick={() => {
 				block.items!.splice(itemIndex, 1);
 				if (block.items!.length === 0) delete block.items;

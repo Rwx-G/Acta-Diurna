@@ -26,7 +26,7 @@
 			aria-label={`Paragraph ${paragraphIndex + 1}`}
 		></textarea>
 		<Button
-			variant="danger"
+			variant="ghost"
 			onclick={() => {
 				block.paragraphs.splice(paragraphIndex, 1);
 				onEdit();
