@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { formatUtcTime } from '$lib/format';
 	import type { DocumentV1 } from '$lib/schema';
@@ -110,6 +111,13 @@
 	function savedAtLabel(iso: string): string {
 		return `Saved at ${formatUtcTime(iso)}`;
 	}
+
+	// Keyed remount per report id (the page wraps this in {#key report.id}), so
+	// reading the id once at init is the intended lifecycle.
+	// svelte-ignore state_referenced_locally
+	const previewPath = resolve('/(workspace)/reports/[id]/preview', { id: report.id });
+	// svelte-ignore state_referenced_locally
+	const viewPath = resolve('/(workspace)/reports/[id]/view', { id: report.id });
 </script>
 
 <svelte:head>
@@ -121,6 +129,13 @@
 		if (dirty) event.preventDefault();
 	}}
 />
+
+<div class="editor-toolbar">
+	<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
+	<a class="toolbar-link primary" href={viewPath} data-sveltekit-preload-data="off"
+		>View as reader</a
+	>
+</div>
 
 <form method="POST" action="?/save" use:enhance={submitSave} bind:this={saveFormElement}>
 	<fieldset class="editor" disabled={!editable}>
@@ -191,6 +206,40 @@
 </form>
 
 <style>
+	.editor-toolbar {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-3);
+		max-width: 880px;
+		margin-bottom: var(--space-4);
+	}
+
+	.toolbar-link {
+		padding: var(--space-2) var(--space-4);
+		font-weight: 600;
+		font-size: var(--text-sm);
+		color: var(--color-ink);
+		text-decoration: none;
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+	}
+
+	.toolbar-link:hover {
+		border-color: var(--color-purple);
+		color: var(--color-purple);
+	}
+
+	.toolbar-link.primary {
+		color: var(--color-stone);
+		background: var(--color-purple);
+		border-color: var(--color-purple);
+	}
+
+	.toolbar-link.primary:hover {
+		color: var(--color-stone);
+		background: color-mix(in srgb, var(--color-purple) 88%, var(--color-ink));
+	}
+
 	.editor {
 		margin: 0;
 		padding: 0;

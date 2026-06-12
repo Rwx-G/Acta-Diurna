@@ -21,6 +21,7 @@
 		"test:setup": "playwright install chromium",
 		"test": "vitest run && pnpm run test:e2e",
 		"schema:export": "node scripts/export-schema.ts",
+		"reader:budget": "node scripts/reader-bundle-size.ts",
 		"auth:hash": "node scripts/hash-password.ts"
 	},
 	"devDependencies": {
