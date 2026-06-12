@@ -29,6 +29,11 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 # node:22-alpine = Node 22.22.3 at pin time
 FROM node:22-alpine@sha256:9385cd9f3001dfc3431e8ead12c43e9e1f87cc1b9b5c6cfd0f73865d405b27c4
 
+# Patch OS packages (openssl/libssl3/libcrypto3 and friends) to the latest
+# alpine point releases so the shipped image carries no fixed HIGH/CRITICAL CVE
+# the pinned base still happens to ship. The Trivy CI gate enforces this.
+RUN apk upgrade --no-cache
+
 ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 
@@ -36,7 +41,7 @@ LABEL org.opencontainers.image.title="Acta Diurna" \
       org.opencontainers.image.description="Self-hosted authoring and sharing of periodic data reports" \
       org.opencontainers.image.source="https://github.com/Rwx-G/Acta-Diurna" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="0.7.1" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_DATE}"
 
