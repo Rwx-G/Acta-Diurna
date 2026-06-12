@@ -1,8 +1,20 @@
 <script lang="ts">
-	import type { TableBlock, TableCell } from '$lib/schema';
+	import type { Scale, Scales, TableBlock, TableCell } from '$lib/schema';
+	import { resolveScaleRef } from '$lib/schema';
+	import Badge from './Badge.svelte';
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
 
-	let { block }: { block: TableBlock } = $props();
+	// `scales`/`theme` are threaded for conditional column formatting (Epic 7,
+	// Story 7.5): a column declaring a `scaleRef` renders its cells as scale-driven
+	// badges (colour + label from the referenced scale, computed at render). A
+	// column with no `scaleRef` renders plain escaped text exactly as before, so an
+	// existing table is byte-identical. `scales` is undefined for documents that
+	// declare no scales, in which case every column is plain text.
+	let {
+		block,
+		scales,
+		theme = 'default'
+	}: { block: TableBlock; scales?: Scales; theme?: string } = $props();
 
 	const rows = $derived(block.rows ?? []);
 	const stickyHeader = $derived(block.options?.stickyHeader ?? true);
@@ -15,6 +27,20 @@
 
 	function isNumeric(cell: TableCell | undefined): boolean {
 		return typeof cell === 'number';
+	}
+
+	// A column renders as badges only when it declares a `scaleRef` AND that scale
+	// resolves. A dangling `scaleRef` is a validation error on the reader path; in
+	// the workspace preview it falls back to plain text rather than blanking.
+	function columnScale(scaleRef: string | undefined): Scale | undefined {
+		return scaleRef ? resolveScaleRef(scales, scaleRef) : undefined;
+	}
+
+	// A cell renders a badge only when its column is scale-formatted and the cell
+	// carries a non-empty value (an empty cell renders blank, not a badge).
+	function badgeKey(cell: TableCell | undefined): string | undefined {
+		if (cell === undefined || cell === null || cell === '') return undefined;
+		return String(cell);
 	}
 </script>
 
@@ -34,7 +60,17 @@
 				{#each rows as row, rowIndex (rowIndex)}
 					<tr>
 						{#each block.columns as column (column.key)}
-							<td class:numeric={isNumeric(row[column.key])}>{display(row[column.key])}</td>
+							{@const scale = columnScale(column.scaleRef)}
+							{#if scale}
+								{@const key = badgeKey(row[column.key])}
+								<td class="badge-cell">
+									{#if key !== undefined}
+										<Badge {scale} entryKey={key} {theme} />
+									{/if}
+								</td>
+							{:else}
+								<td class:numeric={isNumeric(row[column.key])}>{display(row[column.key])}</td>
+							{/if}
 						{/each}
 					</tr>
 				{/each}
