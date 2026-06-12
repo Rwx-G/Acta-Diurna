@@ -400,6 +400,30 @@ describe('updateReportDocument', () => {
 		expect(dbState.updates).toHaveLength(0);
 	});
 
+	it('rejects an over-budget document with 413 and persists nothing', async () => {
+		const row = seedReport();
+		// A SCHEMA-VALID document whose serialized size exceeds MAX_DOCUMENT_BYTES
+		// (1 MB): a table well within the 10000-row / 5000-char-cell caps, but big
+		// enough to blow the byte budget. This is the bind-path bypass the QA audit
+		// flagged - the write chokepoint rejects it AFTER validation.
+		const cell = 'x'.repeat(5000);
+		const huge = validDocument('Over Budget');
+		huge.sections[0].blocks = [
+			{
+				type: 'table',
+				id: 'big-table',
+				columns: [{ key: 'c', label: 'C' }],
+				rows: Array.from({ length: 300 }, () => ({ c: cell }))
+			}
+		];
+
+		const error = await expectAppError(updateReportDocument(row.id, huge), 413);
+		expect(error.type).toBe('/problems/document-too-large');
+		expect(dbState.updates).toHaveLength(0);
+		// The stored row is untouched.
+		expect(dbState.rowsById.get(row.id)?.title).toBe('Quarterly Review');
+	});
+
 	it('throws 404 for an unknown id', async () => {
 		await expectAppError(
 			updateReportDocument('01970000-0000-7000-8000-00000000dead', validDocument()),

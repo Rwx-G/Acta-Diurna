@@ -10,6 +10,7 @@ import {
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { reports, type ReportRow } from '$lib/server/db/schema';
+import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError } from '$lib/server/problem';
 
 export type ReportStatus = 'draft' | 'published';
@@ -68,6 +69,15 @@ function publishedConflict(detail: string): AppError {
 		title: 'Report is published',
 		type: '/problems/report-published',
 		detail
+	});
+}
+
+function documentTooLarge(): AppError {
+	return new AppError({
+		status: 413,
+		title: 'Document too large',
+		type: '/problems/document-too-large',
+		detail: `The report document exceeds the ${Math.floor(MAX_DOCUMENT_BYTES / 1_000_000)} MB size budget.`
 	});
 }
 
@@ -244,6 +254,13 @@ async function writeDocument(
 		throw publishedConflict('Published reports are read-only.');
 	}
 	const document = validateOrThrow(documentInput);
+	// Size budget enforced at the single write chokepoint, so EVERY writer (save,
+	// title update, bind) is bounded - not just the save action's pre-parse
+	// guard. A bind that resolves a large data set into the document is rejected
+	// here before it reaches JSONB (DoS budget).
+	if (JSON.stringify(document).length > MAX_DOCUMENT_BYTES) {
+		throw documentTooLarge();
+	}
 	const updatedAt = new Date();
 	const where =
 		expectedUpdatedAt === undefined
