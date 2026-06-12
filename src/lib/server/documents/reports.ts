@@ -178,6 +178,39 @@ export async function createReportWithDocument(documentInput: unknown): Promise<
 	return toReport(row);
 }
 
+/**
+ * Duplicates a report to start the next issue (FR10): mints a fresh draft from a
+ * deep copy of the source document, regardless of the source's status. The copy
+ * goes through `structuredClone` (the same deep-copy the editor uses on load) so
+ * the new row never aliases the source document - mutating one leaves the other
+ * untouched (the 1.7 snapshot-isolation lesson: no shared mutable reference).
+ *
+ * The status is forced to `draft` and the publish snapshot is cleared
+ * (`publishedDocument`/`publishedAt` null) so duplicating a published report
+ * yields an editable draft, never a second published edition. Share links are
+ * not carried: shares do not exist until Epic 3, and a fresh report id has none.
+ * This stays correct when Epic 3 lands a shares table - duplicate keys only the
+ * new report id, so it must never copy share rows from the source.
+ */
+export async function duplicateReport(id: string): Promise<Report> {
+	const source = await getRow(id);
+	const document = structuredClone(source.document);
+	const now = new Date();
+	const row: ReportRow = {
+		id: uuidv7(),
+		title: document.title,
+		status: 'draft',
+		schemaVersion: document.version,
+		document,
+		publishedDocument: null,
+		publishedAt: null,
+		createdAt: now,
+		updatedAt: now
+	};
+	await getDb().insert(reports).values(row);
+	return toReport(row);
+}
+
 /** Loads one report; 404 when the id is unknown or malformed. */
 export async function getReport(id: string): Promise<Report> {
 	return toReport(await getRow(id));

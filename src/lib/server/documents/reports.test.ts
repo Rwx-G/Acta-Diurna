@@ -5,6 +5,7 @@ import {
 	syntheticV0Document,
 	syntheticV0Migration
 } from '$lib/schema/versions/__fixtures__/synthetic-v0.fixture';
+import { structurallyEqual } from '$lib/skeletons/structural-equality';
 import { AppError } from '$lib/server/problem';
 import type { ReportRow } from '../db/schema';
 import {
@@ -12,6 +13,7 @@ import {
 	createReport,
 	createReportWithDocument,
 	deleteDraft,
+	duplicateReport,
 	getPublishedDocument,
 	getReport,
 	listReports,
@@ -245,6 +247,66 @@ describe('createReportWithDocument', () => {
 
 	it('rejects an invalid document with a 422 before touching the database', async () => {
 		await expectAppError(createReportWithDocument({ version: 1, title: '', sections: [] }), 422);
+		expect(dbState.inserted).toHaveLength(0);
+	});
+});
+
+describe('duplicateReport', () => {
+	it('duplicates a draft into a fresh draft with a distinct id', async () => {
+		const source = seedReport();
+
+		const copy = await duplicateReport(source.id);
+
+		expect(copy.id).toMatch(UUIDV7_PATTERN);
+		expect(copy.id).not.toBe(source.id);
+		expect(copy.status).toBe('draft');
+		expect(copy.schemaVersion).toBe(source.schemaVersion);
+		expect(dbState.inserted).toHaveLength(1);
+		expect(dbState.inserted[0].id).toBe(copy.id);
+	});
+
+	it('forces a published source to a draft and clears the publish snapshot', async () => {
+		const source = seedReport({
+			status: 'published',
+			publishedDocument: seedDocument(),
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+
+		const copy = await duplicateReport(source.id);
+
+		expect(copy.status).toBe('draft');
+		expect(copy.publishedDocument).toBeNull();
+		expect(copy.publishedAt).toBeNull();
+		// The source is untouched: still the published report it was.
+		expect(dbState.rowsById.get(source.id)?.status).toBe('published');
+	});
+
+	it('copies the source structure, bindings, and content', async () => {
+		const source = seedReport();
+
+		const copy = await duplicateReport(source.id);
+
+		expect(copy.document).toEqual(source.document);
+		expect(structurallyEqual(copy.document, source.document)).toBe(true);
+	});
+
+	it('deep-copies the document so mutating the copy never touches the source', async () => {
+		const source = seedReport();
+
+		const copy = await duplicateReport(source.id);
+		copy.document.sections[0].title = 'Mutated In The Copy';
+
+		const storedSource = dbState.rowsById.get(source.id) as ReportRow;
+		expect(storedSource.document.sections[0].title).toBe('Overview');
+	});
+
+	it('throws 404 for an unknown id', async () => {
+		await expectAppError(duplicateReport('01970000-0000-7000-8000-00000000dead'), 404);
+		expect(dbState.inserted).toHaveLength(0);
+	});
+
+	it('throws 404 for a malformed id without querying', async () => {
+		await expectAppError(duplicateReport('not-a-uuid'), 404);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 });
