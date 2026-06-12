@@ -13,6 +13,7 @@ All notable changes to Acta Diurna are documented here. The format follows [Keep
 - **Report authoring (story 1.5):** create and edit reports with an ordered section/block editor for all five block types, validate-on-write, inline error feedback at the failing block, autosave with a no-JS fallback, and optimistic concurrency.
 - **The reader render (story 1.6):** publication-quality "Modern Gazette" renderer (slide + scroll, keyboard and touch navigation, table of contents, deep links), server-side SVG charts (zero hydration), a complete design-token system with a second built-in theme, self-hosted fonts under a strict CSP, and WCAG AAA report content (AA chrome floor) gated by axe-core in CI. Reader-path JS budget: 62.8 KB.
 - **Publish lifecycle (story 1.7):** explicit draft/publish with a frozen document snapshot at publish time, unpublish-to-edit, version-aware rendering (FR7), and `assertShareable`/`getPublishedDocument` for the upcoming sharing surface.
+- **Duplicate a report (story 2.3):** a "Duplicate" action on the reports list copies any report (draft or published) into a fresh editable draft, deep-copying its structure, bindings, and content, then opens it in the editor (FR10).
 
 ### Security
 

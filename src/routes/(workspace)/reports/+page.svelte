@@ -70,6 +70,10 @@
 				</a>
 				<StatusChip status={report.status} />
 				<span class="updated">Updated {formatUtcDateTime(report.updatedAt)}</span>
+				<form method="POST" action="?/duplicate" use:enhance>
+					<input type="hidden" name="id" value={report.id} />
+					<Button variant="secondary" type="submit">Duplicate</Button>
+				</form>
 				{#if report.status === 'draft'}
 					<form method="POST" action="?/delete" use:enhance={confirmDelete}>
 						<input type="hidden" name="id" value={report.id} />

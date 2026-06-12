@@ -1,18 +1,26 @@
 import { isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { performLogout } from '$lib/server/auth/logout';
-import { deleteDraft, listReports, type ReportSummary } from '$lib/server/documents/reports';
+import {
+	deleteDraft,
+	duplicateReport,
+	listReports,
+	type Report,
+	type ReportSummary
+} from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 vi.mock('$lib/server/documents/reports', () => ({
 	deleteDraft: vi.fn(),
+	duplicateReport: vi.fn(),
 	listReports: vi.fn()
 }));
 
 const logoutMock = vi.mocked(performLogout);
 const deleteDraftMock = vi.mocked(deleteDraft);
+const duplicateReportMock = vi.mocked(duplicateReport);
 const listReportsMock = vi.mocked(listReports);
 
 type DeleteAction = typeof actions.delete;
@@ -21,6 +29,14 @@ function deleteEvent(formData: FormData): Parameters<DeleteAction>[0] {
 	return {
 		request: new Request('http://localhost/reports?/delete', { method: 'POST', body: formData })
 	} as Parameters<DeleteAction>[0];
+}
+
+type DuplicateAction = typeof actions.duplicate;
+
+function duplicateEvent(formData: FormData): Parameters<DuplicateAction>[0] {
+	return {
+		request: new Request('http://localhost/reports?/duplicate', { method: 'POST', body: formData })
+	} as Parameters<DuplicateAction>[0];
 }
 
 beforeEach(() => {
@@ -83,6 +99,58 @@ describe('delete action', () => {
 
 		expect(result.status).toBe(409);
 		expect(result.data.message).toBe('Published reports cannot be deleted.');
+	});
+});
+
+describe('duplicate action', () => {
+	it('duplicates the report named by the posted id and redirects to its editor', async () => {
+		duplicateReportMock.mockResolvedValue({
+			id: '01970000-0000-7000-8000-0000000000ff'
+		} as Report);
+		const data = new FormData();
+		data.set('id', '01970000-0000-7000-8000-000000000001');
+
+		try {
+			await actions.duplicate(duplicateEvent(data));
+			expect.unreachable('duplicate must redirect');
+		} catch (thrown) {
+			expect(
+				isRedirect(thrown) &&
+					thrown.status === 303 &&
+					thrown.location === '/reports/01970000-0000-7000-8000-0000000000ff/edit'
+			).toBe(true);
+		}
+		expect(duplicateReportMock).toHaveBeenCalledExactlyOnceWith(
+			'01970000-0000-7000-8000-000000000001'
+		);
+	});
+
+	it('fails 400 when the id is missing', async () => {
+		const result = (await actions.duplicate(duplicateEvent(new FormData()))) as ActionFailure<{
+			message: string;
+		}>;
+
+		expect(result.status).toBe(400);
+		expect(duplicateReportMock).not.toHaveBeenCalled();
+	});
+
+	it('surfaces the service 404 for an unknown id', async () => {
+		duplicateReportMock.mockRejectedValue(
+			new AppError({
+				status: 404,
+				title: 'Report not found',
+				type: '/problems/report-not-found'
+			})
+		);
+		const data = new FormData();
+		data.set('id', '01970000-0000-7000-8000-00000000dead');
+
+		const result = (await actions.duplicate(duplicateEvent(data))) as ActionFailure<{
+			message: string;
+		}>;
+
+		expect(result.status).toBe(404);
+		expect(result.data.message).toBe('Report not found');
 	});
 });
 
