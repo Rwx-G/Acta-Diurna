@@ -56,6 +56,10 @@ const securityHeaders: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'no-referrer');
+	// CSP is delivered via SvelteKit's meta-tag mode, and browsers ignore
+	// frame-ancestors from a meta-delivered policy. This header-delivered
+	// fallback is what actually blocks clickjacking of report content.
+	response.headers.set('X-Frame-Options', 'SAMEORIGIN');
 	if (isNoindexReportPath(event.url.pathname)) {
 		response.headers.set('X-Robots-Tag', 'noindex, nofollow');
 	}
