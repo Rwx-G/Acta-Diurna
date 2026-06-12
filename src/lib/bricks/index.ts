@@ -189,13 +189,35 @@ function kpiRowBrick(): SkeletonSection {
 // document resolves the block's severity/source references. Module-level
 // constants so the section factory and the scales factory agree on the keys.
 const MATRIX_SEVERITY_SCALE_KEY = 'severity';
-const MATRIX_SOURCE_SCALE_KEY = 'sources';
+// The sources scale is shared: both the comparison-matrix brick (its source
+// columns) and the legend brick (it explains those columns) reference the SAME
+// `sources` scale, so composing both yields one shared scale, not two near
+// duplicates. The composer's append merges companion scales by key, collapsing
+// the two identical declarations into one.
+const SOURCE_SCALE_KEY = 'sources';
+
+// The shared sources scale, declared once so the matrix and legend bricks are
+// identical by construction. Sublabels are harmless on the matrix (it ignores
+// them) and meaningful on the legend (it renders them), so one definition serves
+// both. A fresh object via the factory each call so the composer owns a mutable
+// copy.
+function sharedSourceScale(): Scales[number] {
+	return {
+		key: SOURCE_SCALE_KEY,
+		label: 'Sources',
+		kind: 'nominal',
+		entries: [
+			{ key: 'review', label: 'Manual review', sublabel: 'Analyst-confirmed' },
+			{ key: 'scanner', label: 'Automated scan', sublabel: 'Tool-reported' }
+		]
+	};
+}
 
 /**
  * Companion scales for the comparison-matrix brick: a severity scale (ordinal,
- * no explicit colours so the palette resolves them AAA-safe) and a sources scale
- * (nominal). The entry keys match the placeholder finding below. A fresh array
- * each call so the composer owns a mutable copy.
+ * no explicit colours so the palette resolves them AAA-safe) and the shared
+ * sources scale (nominal). The entry keys match the placeholder finding below. A
+ * fresh array each call so the composer owns a mutable copy.
  */
 function comparisonMatrixScales(): Scales {
 	return [
@@ -209,15 +231,7 @@ function comparisonMatrixScales(): Scales {
 				{ key: 'low', label: 'Low' }
 			]
 		},
-		{
-			key: MATRIX_SOURCE_SCALE_KEY,
-			label: 'Sources',
-			kind: 'nominal',
-			entries: [
-				{ key: 'review', label: 'Manual review' },
-				{ key: 'scanner', label: 'Automated scan' }
-			]
-		}
+		sharedSourceScale()
 	];
 }
 
@@ -237,7 +251,7 @@ function comparisonMatrixBrick(): SkeletonSection {
 				type: 'comparison-matrix',
 				id: newId(),
 				severityScale: MATRIX_SEVERITY_SCALE_KEY,
-				sourceScale: MATRIX_SOURCE_SCALE_KEY,
+				sourceScale: SOURCE_SCALE_KEY,
 				findings: [
 					{
 						category: 'Access control',
@@ -280,31 +294,18 @@ function fieldGridBrick(): SkeletonSection {
 	};
 }
 
-// Stable placeholder scale key the legend brick references. Distinct from the
-// comparison-matrix brick's `sources` key so assembling both bricks into one
-// document does not collide on a duplicate scale key.
-const LEGEND_SOURCE_SCALE_KEY = 'legend-sources';
-
 /**
- * Companion scale for the legend brick: a sources scale (nominal, no explicit
- * colours so the palette resolves them). The legend renders one swatch per entry.
+ * Companion scale for the legend brick: the SAME shared sources scale the
+ * comparison-matrix brick declares. The legend explains the matrix's source
+ * columns, so author intent is one shared scale - composing both bricks merges
+ * the two identical `sources` declarations into one (the composer dedups by key).
  */
 function legendScales(): Scales {
-	return [
-		{
-			key: LEGEND_SOURCE_SCALE_KEY,
-			label: 'Sources',
-			kind: 'nominal',
-			entries: [
-				{ key: 'review', label: 'Manual review', sublabel: 'Analyst-confirmed' },
-				{ key: 'scanner', label: 'Automated scan', sublabel: 'Tool-reported' }
-			]
-		}
-	];
+	return [sharedSourceScale()];
 }
 
 /**
- * Legend: a section with a legend block referencing the companion sources scale
+ * Legend: a section with a legend block referencing the shared `sources` scale
  * by key (seeded by the composer from `legendScales`), so the assembled document
  * resolves the reference. The swatches derive entirely from the scale.
  */
@@ -316,7 +317,7 @@ function legendBrick(): SkeletonSection {
 			{
 				type: 'legend',
 				id: newId(),
-				scaleRef: LEGEND_SOURCE_SCALE_KEY,
+				scaleRef: SOURCE_SCALE_KEY,
 				title: 'Sources'
 			}
 		]

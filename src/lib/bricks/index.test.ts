@@ -2,10 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { sectionSchema, type DocumentV1Input, type Scales, validateDocument } from '$lib/schema';
 import { BRICKS, getBrick, type Brick } from './index.ts';
 
-/** Merges a brick's companion scales (Epic 7) so an assembled document resolves
- *  its scale references; a scale-free brick contributes none. */
+/** Merges every brick's companion scales (Epic 7) so an assembled document
+ *  resolves its scale references, deduping by key the way the real `appendBrick`
+ *  composer does - two bricks declaring the same scale (matrix + legend both use
+ *  `sources`) collapse to one, since scale keys are unique per document. A
+ *  scale-free brick contributes none. */
 function scalesFor(bricks: readonly Brick[]): Scales {
-	return bricks.flatMap((brick) => brick.scales?.() ?? []);
+	const byKey = new Map<string, Scales[number]>();
+	for (const brick of bricks) {
+		for (const scale of brick.scales?.() ?? []) {
+			if (!byKey.has(scale.key)) byKey.set(scale.key, scale);
+		}
+	}
+	return [...byKey.values()];
 }
 
 describe('brick library', () => {
@@ -135,6 +144,25 @@ describe('brick library', () => {
 			sections: [brick.factory()]
 		});
 		expect(dangling.ok).toBe(false);
+	});
+
+	it('the matrix and legend bricks share one sources scale when assembled together', () => {
+		const matrix = getBrick('comparisonMatrix')!;
+		const legend = getBrick('legend')!;
+
+		const scales = scalesFor([matrix, legend]);
+		const sourcesScales = scales.filter((scale) => scale.key === 'sources');
+		expect(sourcesScales, 'matrix + legend collapse to one sources scale').toHaveLength(1);
+
+		const document: DocumentV1Input = {
+			version: 1,
+			title: 'Matrix and legend skeleton',
+			scales,
+			sections: [matrix.factory(), legend.factory()]
+		};
+		// A valid document means both the matrix source columns and the legend
+		// scaleRef resolved against the single shared `sources` scale.
+		expect(validateDocument(document).ok).toBe(true);
 	});
 
 	it('getBrick returns undefined for an unknown id', () => {

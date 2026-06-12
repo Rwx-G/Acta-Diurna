@@ -12,6 +12,7 @@ import {
 const cover = getBrick('cover')!;
 const dataTable = getBrick('dataTable')!;
 const comparisonMatrix = getBrick('comparisonMatrix')!;
+const legend = getBrick('legend')!;
 
 describe('composer state', () => {
 	it('opens with a starter Cover section', () => {
@@ -41,6 +42,17 @@ describe('composer state', () => {
 		appendBrick(draft, comparisonMatrix);
 		appendBrick(draft, comparisonMatrix);
 		expect(draft.scales).toHaveLength(2);
+		expect(validateDocument(draft).ok).toBe(true);
+	});
+
+	it('appendBrick shares one sources scale across the matrix and legend bricks', () => {
+		const draft = newSkeletonDraft(cover);
+		appendBrick(draft, comparisonMatrix);
+		appendBrick(draft, legend);
+		// The legend reuses the matrix's `sources` scale, so its companion scale
+		// merges by key rather than adding a second near-duplicate.
+		expect(draft.scales?.map((scale) => scale.key)).toEqual(['severity', 'sources']);
+		expect(draft.scales?.filter((scale) => scale.key === 'sources')).toHaveLength(1);
 		expect(validateDocument(draft).ok).toBe(true);
 	});
 

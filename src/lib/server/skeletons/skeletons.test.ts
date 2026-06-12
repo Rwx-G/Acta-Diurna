@@ -1,7 +1,8 @@
 import { Column, getTableName, Param, StringChunk, type SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getBrick, BRICKS } from '$lib/bricks';
+import { getBrick, BRICKS, type Brick } from '$lib/bricks';
 import { structurallyEqual } from '$lib/skeletons/structural-equality';
+import type { Scales } from '$lib/schema';
 import { AppError } from '$lib/server/problem';
 import {
 	deleteSkeleton,
@@ -111,6 +112,19 @@ function draftFrom(title: string, ...brickIds: string[]) {
 	};
 }
 
+/** Merges every brick's companion scales (Epic 7), deduping by key like the real
+ *  `appendBrick` composer: matrix + legend both declare the `sources` scale, and
+ *  scale keys are unique per document, so the duplicate collapses to one. */
+function companionScales(bricks: readonly Brick[]): Scales {
+	const byKey = new Map<string, Scales[number]>();
+	for (const brick of bricks) {
+		for (const scale of brick.scales?.() ?? []) {
+			if (!byKey.has(scale.key)) byKey.set(scale.key, scale);
+		}
+	}
+	return [...byKey.values()];
+}
+
 async function expectAppError(promise: Promise<unknown>, status: number): Promise<AppError> {
 	try {
 		await promise;
@@ -146,8 +160,9 @@ describe('saveSkeleton', () => {
 		const draft = {
 			version: 1 as const,
 			title: 'Everything',
-			// Seed companion scales the matrix brick references (Epic 7).
-			scales: BRICKS.flatMap((brick) => brick.scales?.() ?? []),
+			// Seed companion scales the matrix + legend bricks reference (Epic 7),
+			// deduped by key so the shared `sources` scale appears once.
+			scales: companionScales(BRICKS),
 			sections: BRICKS.map((brick) => brick.factory())
 		};
 		await expect(saveSkeleton(draft)).resolves.toBeDefined();

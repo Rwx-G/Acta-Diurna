@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { getBrick, BRICKS } from '$lib/bricks';
-import { validateDocument, type DocumentV1 } from '$lib/schema';
+import { validateDocument, type DocumentV1, type Scales } from '$lib/schema';
 import { fingerprintStructure, structurallyEqual } from './structural-equality.ts';
 
 function documentFrom(title: string, ...brickIds: string[]): DocumentV1 {
 	// Seed any companion scales the chosen bricks reference (Epic 7) so the
-	// assembled document resolves its scale references.
-	const scales = brickIds.flatMap((id) => getBrick(id)!.scales?.() ?? []);
+	// assembled document resolves its scale references, deduping by key like the
+	// real `appendBrick` composer (matrix + legend share the `sources` scale).
+	const byKey = new Map<string, Scales[number]>();
+	for (const id of brickIds) {
+		for (const scale of getBrick(id)!.scales?.() ?? []) {
+			if (!byKey.has(scale.key)) byKey.set(scale.key, scale);
+		}
+	}
+	const scales = [...byKey.values()];
 	const result = validateDocument({
 		version: 1 as const,
 		title,
