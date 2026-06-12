@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Brand from '$lib/ui/Brand.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -10,8 +11,8 @@
 
 <main class="gateway">
 	<form method="POST" class="card">
-		<p class="wordmark">Acta Diurna</p>
-		<h1>Author sign-in</h1>
+		<Brand layout="stacked" markSize={52} wordmarkSize={20} />
+		<h1>Sign in to your workspace</h1>
 
 		<label for="password">Password</label>
 		<input id="password" name="password" type="password" required autocomplete="current-password" />
@@ -43,22 +44,13 @@
 		box-shadow: var(--shadow-card);
 	}
 
-	/* Wordmark in Cinzel arrives self-hosted in 1.6; serif fallback until then. */
-	.wordmark {
-		margin: 0;
-		font-family: var(--font-wordmark);
-		font-size: 22px;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		text-align: center;
-		color: var(--color-purple);
-	}
-
 	h1 {
 		margin: 0 0 var(--space-3);
-		font-size: 16px;
-		font-weight: 600;
+		font-size: var(--text-sm);
+		font-weight: 500;
 		text-align: center;
+		letter-spacing: 0.01em;
+		color: var(--color-ink-65);
 	}
 
 	label {

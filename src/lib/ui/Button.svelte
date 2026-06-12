@@ -3,9 +3,11 @@
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 
 	// UX button hierarchy: primary = purple filled (one per view, the morphing
-	// CTA), secondary = outline ink, danger = destructive text button.
+	// CTA), secondary = outline ink, ghost = quiet neutral text button for
+	// routine structural actions (remove a block, reorder) so they do not shout,
+	// danger = destructive text button reserved for real deletion/revocation.
 	interface Props extends HTMLButtonAttributes {
-		variant?: 'primary' | 'secondary' | 'danger';
+		variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
 		children: Snippet;
 	}
 
@@ -49,6 +51,17 @@
 	.secondary:hover:not(:disabled) {
 		border-color: var(--color-purple);
 		color: var(--color-purple);
+	}
+
+	.ghost {
+		color: var(--color-ink-65);
+		background: none;
+		border: 1px solid transparent;
+	}
+
+	.ghost:hover:not(:disabled) {
+		color: var(--color-purple);
+		background: var(--color-purple-08);
 	}
 
 	.danger {

@@ -7,7 +7,9 @@ describe('login page', () => {
 		const { getByRole, getByLabelText, getByText } = render(Page, { form: null });
 
 		await expect.element(getByText('Acta Diurna')).toBeVisible();
-		await expect.element(getByRole('heading', { level: 1 })).toHaveTextContent('Author sign-in');
+		await expect
+			.element(getByRole('heading', { level: 1 }))
+			.toHaveTextContent('Sign in to your workspace');
 		await expect.element(getByLabelText('Password')).toBeVisible();
 		await expect.element(getByRole('button', { name: 'Sign in' })).toBeVisible();
 	});
