@@ -28,6 +28,8 @@ export type BrickId =
 	| 'chartSection'
 	| 'kpiRow'
 	| 'comparisonMatrix'
+	| 'fieldGrid'
+	| 'legend'
 	| 'annex';
 
 /** A library entry: metadata for the BrickCard plus the section factory. */
@@ -258,6 +260,69 @@ function comparisonMatrixBrick(): SkeletonSection {
 	};
 }
 
+/** Field grid: a section with a metadata field-grid block (Author/Date/Scope/Status). */
+function fieldGridBrick(): SkeletonSection {
+	return {
+		id: newId(),
+		title: 'Report metadata',
+		blocks: [
+			{
+				type: 'field-grid',
+				id: newId(),
+				items: [
+					{ label: 'Author', value: 'Name the report author.' },
+					{ label: 'Date', value: 'State the period this report covers.' },
+					{ label: 'Scope', value: 'Describe what is in and out of scope.' },
+					{ label: 'Status', value: 'Draft, in review, or final.' }
+				]
+			}
+		]
+	};
+}
+
+// Stable placeholder scale key the legend brick references. Distinct from the
+// comparison-matrix brick's `sources` key so assembling both bricks into one
+// document does not collide on a duplicate scale key.
+const LEGEND_SOURCE_SCALE_KEY = 'legend-sources';
+
+/**
+ * Companion scale for the legend brick: a sources scale (nominal, no explicit
+ * colours so the palette resolves them). The legend renders one swatch per entry.
+ */
+function legendScales(): Scales {
+	return [
+		{
+			key: LEGEND_SOURCE_SCALE_KEY,
+			label: 'Sources',
+			kind: 'nominal',
+			entries: [
+				{ key: 'review', label: 'Manual review', sublabel: 'Analyst-confirmed' },
+				{ key: 'scanner', label: 'Automated scan', sublabel: 'Tool-reported' }
+			]
+		}
+	];
+}
+
+/**
+ * Legend: a section with a legend block referencing the companion sources scale
+ * by key (seeded by the composer from `legendScales`), so the assembled document
+ * resolves the reference. The swatches derive entirely from the scale.
+ */
+function legendBrick(): SkeletonSection {
+	return {
+		id: newId(),
+		title: 'Source legend',
+		blocks: [
+			{
+				type: 'legend',
+				id: newId(),
+				scaleRef: LEGEND_SOURCE_SCALE_KEY,
+				title: 'Sources'
+			}
+		]
+	};
+}
+
 /** Annex: an annex-flagged section with a placeholder note. */
 function annexBrick(): SkeletonSection {
 	return {
@@ -319,6 +384,19 @@ export const BRICKS: readonly Brick[] = [
 		description: 'A findings-by-sources coverage matrix with severity and treatment.',
 		factory: comparisonMatrixBrick,
 		scales: comparisonMatrixScales
+	},
+	{
+		id: 'fieldGrid',
+		label: 'Report metadata',
+		description: 'A compact label/value grid for the report header.',
+		factory: fieldGridBrick
+	},
+	{
+		id: 'legend',
+		label: 'Source legend',
+		description: 'A swatch-per-entry legend derived from a document scale.',
+		factory: legendBrick,
+		scales: legendScales
 	},
 	{
 		id: 'annex',

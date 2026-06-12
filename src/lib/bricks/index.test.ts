@@ -105,6 +105,38 @@ describe('brick library', () => {
 		expect(danglingResult.ok).toBe(false);
 	});
 
+	it('the field-grid brick yields a validating scale-free section', () => {
+		const brick = getBrick('fieldGrid')!;
+		expect(brick.scales).toBeUndefined();
+		const document: DocumentV1Input = {
+			version: 1,
+			title: 'Field grid skeleton',
+			sections: [brick.factory()]
+		};
+		expect(validateDocument(document).ok).toBe(true);
+	});
+
+	it('the legend brick seeds the scale its block references', () => {
+		const brick = getBrick('legend')!;
+		expect(brick.scales).toBeDefined();
+		const document: DocumentV1Input = {
+			version: 1,
+			title: 'Legend skeleton',
+			scales: brick.scales!(),
+			sections: [brick.factory()]
+		};
+		expect(validateDocument(document).ok).toBe(true);
+
+		// Without the companion scale, the cross-reference pass flags the dangling
+		// legend scaleRef (FR2).
+		const dangling = validateDocument({
+			version: 1,
+			title: 'Legend skeleton',
+			sections: [brick.factory()]
+		});
+		expect(dangling.ok).toBe(false);
+	});
+
 	it('getBrick returns undefined for an unknown id', () => {
 		expect(getBrick('nope')).toBeUndefined();
 	});
