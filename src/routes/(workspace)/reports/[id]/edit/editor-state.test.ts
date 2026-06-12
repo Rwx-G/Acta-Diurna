@@ -1,0 +1,205 @@
+import { describe, expect, it } from 'vitest';
+import { validateDocument, type BlockType, type DocumentV1Input } from '$lib/schema';
+import {
+	applyNarrativeFields,
+	groupErrorsByLocation,
+	moveItem,
+	newBlock,
+	newSection,
+	paragraphText
+} from './editor-state';
+
+function documentWith(blocks: DocumentV1Input['sections'][number]['blocks']): DocumentV1Input {
+	return {
+		version: 1,
+		title: 'Editor State Fixture',
+		sections: [{ id: 'fixture', title: 'Fixture', blocks }]
+	};
+}
+
+describe('newBlock', () => {
+	it.each(['text', 'table', 'chart'] as BlockType[])(
+		'creates a schema-valid starter %s block',
+		(type) => {
+			const result = validateDocument(documentWith([newBlock(type)]));
+
+			expect(result.ok).toBe(true);
+		}
+	);
+
+	it('creates kpi and image starters whose validation errors name the empty fields', () => {
+		const kpi = validateDocument(documentWith([newBlock('kpi')]));
+		expect(kpi.ok).toBe(false);
+		if (!kpi.ok) {
+			expect(kpi.errors.map((error) => error.path)).toContain(
+				'sections[0].blocks[0].items[0].label'
+			);
+		}
+
+		const image = validateDocument(documentWith([newBlock('image')]));
+		expect(image.ok).toBe(false);
+		if (!image.ok) {
+			const paths = image.errors.map((error) => error.path);
+			expect(paths).toContain('sections[0].blocks[0].assetId');
+			expect(paths).toContain('sections[0].blocks[0].alt');
+		}
+	});
+
+	it('assigns a fresh slug-valid id per block', () => {
+		const first = newBlock('text');
+		const second = newBlock('text');
+
+		expect(first.id).not.toBe(second.id);
+		expect(first.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+	});
+});
+
+describe('newSection', () => {
+	it('creates a schema-valid section with one empty text block', () => {
+		const section = newSection();
+
+		const result = validateDocument({
+			version: 1,
+			title: 'Section Fixture',
+			sections: [section]
+		});
+
+		expect(result.ok).toBe(true);
+		expect(section.blocks).toHaveLength(1);
+		expect(section.blocks[0].type).toBe('text');
+	});
+});
+
+describe('moveItem', () => {
+	it('swaps an item with its neighbor', () => {
+		const items = ['a', 'b', 'c'];
+
+		moveItem(items, 0, 1);
+		expect(items).toEqual(['b', 'a', 'c']);
+
+		moveItem(items, 2, -1);
+		expect(items).toEqual(['b', 'c', 'a']);
+	});
+
+	it('ignores moves past either end', () => {
+		const items = ['a', 'b'];
+
+		moveItem(items, 0, -1);
+		moveItem(items, 1, 1);
+
+		expect(items).toEqual(['a', 'b']);
+	});
+});
+
+describe('paragraphText', () => {
+	it('concatenates run text, dropping formatting', () => {
+		expect(paragraphText([{ text: 'One ' }, { text: 'two', bold: true }])).toBe('One two');
+		expect(paragraphText([])).toBe('');
+	});
+});
+
+describe('groupErrorsByLocation', () => {
+	const document = {
+		sections: [
+			{ id: 'alpha', blocks: [{ id: 'alpha-1' }, { id: 'alpha-2' }] },
+			{ id: 'beta', blocks: [{ id: 'beta-1' }] }
+		]
+	};
+
+	it('maps block, section and document paths to stable ids', () => {
+		const grouped = groupErrorsByLocation(
+			[
+				{ path: 'sections[0].blocks[1].alt', message: 'Alt text must not be empty.' },
+				{ path: 'sections[1].title', message: 'A section needs a title.' },
+				{ path: 'title', message: 'A document needs a title.' },
+				{ path: 'sections', message: 'A document must contain at least one section.' }
+			],
+			document
+		);
+
+		expect(grouped['block:alpha-2']).toHaveLength(1);
+		expect(grouped['section:beta']).toHaveLength(1);
+		expect(grouped['document']).toHaveLength(2);
+	});
+
+	it('falls back to the document group when indices point nowhere', () => {
+		const grouped = groupErrorsByLocation(
+			[{ path: 'sections[9].blocks[9].id', message: 'gone' }],
+			document
+		);
+
+		expect(grouped['document']).toHaveLength(1);
+	});
+});
+
+describe('applyNarrativeFields', () => {
+	function baseDocument() {
+		const result = validateDocument({
+			version: 1,
+			title: 'Original',
+			sections: [
+				{
+					id: 'one',
+					title: 'Section One',
+					blocks: [
+						{
+							type: 'text',
+							id: 'narrative',
+							paragraphs: [
+								[{ text: 'First ' }, { text: 'paragraph', bold: true }],
+								[{ text: 'Second paragraph' }]
+							]
+						},
+						{
+							type: 'kpi',
+							id: 'numbers',
+							items: [{ label: 'Uptime', value: '99.9' }]
+						}
+					]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('fixture must be valid');
+		return result.document;
+	}
+
+	it('applies title, section titles and paragraphs, flattening edited runs only', () => {
+		const data = new FormData();
+		data.set('title', 'Updated');
+		data.set('section-title:0', 'Renamed');
+		data.set('paragraph:0:0:0', 'Rewritten first');
+
+		const next = applyNarrativeFields(baseDocument(), data);
+
+		expect(next.title).toBe('Updated');
+		expect(next.sections[0].title).toBe('Renamed');
+		const block = next.sections[0].blocks[0];
+		if (block.type !== 'text') throw new Error('expected text block');
+		expect(block.paragraphs[0]).toEqual([{ text: 'Rewritten first' }]);
+		// The untouched paragraph keeps its runs verbatim.
+		expect(block.paragraphs[1]).toEqual([{ text: 'Second paragraph' }]);
+	});
+
+	it('ignores unknown names and out-of-range or non-text targets', () => {
+		const data = new FormData();
+		data.set('paragraph:0:1:0', 'not a text block');
+		data.set('paragraph:0:0:9', 'no such paragraph');
+		data.set('section-title:5', 'no such section');
+		data.set('unrelated', 'ignored');
+
+		const original = baseDocument();
+		const next = applyNarrativeFields(original, data);
+
+		expect(next).toEqual(original);
+	});
+
+	it('does not mutate the input document', () => {
+		const original = baseDocument();
+		const data = new FormData();
+		data.set('title', 'Changed');
+
+		applyNarrativeFields(original, data);
+
+		expect(original.title).toBe('Original');
+	});
+});
