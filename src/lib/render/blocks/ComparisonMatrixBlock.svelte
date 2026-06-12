@@ -1,5 +1,11 @@
 <script lang="ts">
-	import type { ComparisonMatrixBlock, Scale, Scales, SourceState } from '$lib/schema';
+	import type {
+		ComparisonMatrixBlock,
+		Scale,
+		Scales,
+		SourceState,
+		TreatmentStatus
+	} from '$lib/schema';
 	import { resolveScaleRef } from '$lib/schema';
 	import { scaleEntryColor } from '../theme/scales.ts';
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
@@ -58,6 +64,14 @@
 		found: 'Found',
 		missing: 'Missed',
 		none: 'Not covered'
+	};
+
+	// Self-describing screen-reader phrasing for the closed treatment-status enum,
+	// so the visually-hidden label reads as a sentence fragment rather than the
+	// raw enum token. The visible cell tint/text is unchanged.
+	const TREATMENT_LABEL: Record<TreatmentStatus, string> = {
+		action: 'Action due',
+		deferred: 'Deferred'
 	};
 </script>
 
@@ -130,11 +144,11 @@
 							</td>
 						{/each}
 						<td class="treatment-cell {finding.treatment.status}">
-							<span class="visually-hidden">{finding.treatment.status}:</span>
+							<span class="visually-hidden">{TREATMENT_LABEL[finding.treatment.status]}:</span>
 							{finding.treatment.before}
 						</td>
 						<td class="treatment-cell {finding.treatment.status}">
-							<span class="visually-hidden">{finding.treatment.status}:</span>
+							<span class="visually-hidden">{TREATMENT_LABEL[finding.treatment.status]}:</span>
 							{finding.treatment.after}
 						</td>
 					</tr>
