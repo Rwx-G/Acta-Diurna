@@ -11,6 +11,7 @@
 	import ImageBlock from './ImageBlock.svelte';
 	import KpiBlock from './KpiBlock.svelte';
 	import LegendBlock from './LegendBlock.svelte';
+	import ListBlock from './ListBlock.svelte';
 	import SetMembershipBlock from './SetMembershipBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import TextBlock from './TextBlock.svelte';
@@ -69,6 +70,8 @@
 		/>
 	{:else if view.block.type === 'card-grid'}
 		<CardGridBlock block={view.block} />
+	{:else if view.block.type === 'list'}
+		<ListBlock block={view.block} />
 	{/if}
 </div>
 
