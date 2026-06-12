@@ -3,12 +3,25 @@
 
 	// Narrative content is data, never HTML (XSS rule, no exception). Inline runs
 	// render through Svelte text interpolation - which escapes - so a run reading
-	// "<script>" is shown literally. The only markup is the bold/italic/link
+	// "<script>" is shown literally. The only markup is the bold/italic/code/link
 	// elements the schema permits; link hrefs are http(s)-restricted by the
 	// schema and carry rel="external noopener noreferrer" + target="_blank" (the
 	// `external` token also tells the SvelteKit lint rule this is not a route).
+	import type { InlineRun } from '$lib/schema';
+
 	let { block }: { block: TextBlock } = $props();
 </script>
+
+<!-- One marked run: the text (always escaped interpolation) wrapped in the
+	bold/italic/code marks the schema permits. A code run is a monospace <code>
+	chip; the marks nest, so a bold inline-code run is <strong><code>. -->
+{#snippet markedRun(run: InlineRun)}{#if run.code}<code class="run-code"
+			>{#if run.bold && run.italic}<strong><em>{run.text}</em></strong>{:else if run.bold}<strong
+					>{run.text}</strong
+				>{:else if run.italic}<em>{run.text}</em>{:else}{run.text}{/if}</code
+		>{:else if run.bold && run.italic}<strong><em>{run.text}</em></strong>{:else if run.bold}<strong
+			>{run.text}</strong
+		>{:else if run.italic}<em>{run.text}</em>{:else}{run.text}{/if}{/snippet}
 
 <div class="text-block">
 	{#each block.paragraphs as paragraph, paragraphIndex (paragraphIndex)}
@@ -21,15 +34,9 @@
 						rel="external noopener noreferrer"
 						class="run-link"
 					>
-						{#if run.bold && run.italic}<strong><em>{run.text}</em></strong>
-						{:else if run.bold}<strong>{run.text}</strong>
-						{:else if run.italic}<em>{run.text}</em>
-						{:else}{run.text}{/if}
+						{@render markedRun(run)}
 					</a>
-				{:else if run.bold && run.italic}<strong><em>{run.text}</em></strong>
-				{:else if run.bold}<strong>{run.text}</strong>
-				{:else if run.italic}<em>{run.text}</em>
-				{:else}{run.text}{/if}
+				{:else}{@render markedRun(run)}{/if}
 			{/each}
 		</p>
 	{/each}
@@ -65,5 +72,14 @@
 
 	strong {
 		font-weight: 600;
+	}
+
+	.run-code {
+		padding: 0.1em 0.35em;
+		font-family: var(--font-mono);
+		font-size: 0.9em;
+		color: var(--report-text);
+		background: color-mix(in srgb, var(--report-text) 8%, var(--report-surface));
+		border-radius: var(--radius-sm);
 	}
 </style>

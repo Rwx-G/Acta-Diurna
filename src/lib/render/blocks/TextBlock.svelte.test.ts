@@ -44,4 +44,39 @@ describe('TextBlock', () => {
 		expect(link?.getAttribute('rel')).toBe('external noopener noreferrer');
 		expect(link?.getAttribute('target')).toBe('_blank');
 	});
+
+	it('renders an inline-code run as a monospace <code> chip', async () => {
+		const block: TextBlockType = {
+			type: 'text',
+			id: 't4',
+			paragraphs: [[{ text: 'Run ' }, { text: 'pnpm build', code: true }, { text: ' next.' }]]
+		};
+		const { container } = render(TextBlock, { block });
+		const chip = container.querySelector('code.run-code');
+		expect(chip?.textContent).toBe('pnpm build');
+		// The surrounding prose is untouched.
+		expect(container.querySelector('p')?.textContent).toContain('Run pnpm build next.');
+	});
+
+	it('escapes script-like inline-code text instead of rendering it (XSS rule)', async () => {
+		const block: TextBlockType = {
+			type: 'text',
+			id: 't5',
+			paragraphs: [[{ text: '<script>alert(1)</script>', code: true }]]
+		};
+		const { container } = render(TextBlock, { block });
+		expect(container.querySelector('code.run-code script')).toBeNull();
+		expect(container.querySelector('code.run-code')?.textContent).toBe('<script>alert(1)</script>');
+	});
+
+	it('leaves a run without the code mark unchanged (additive mark)', async () => {
+		const block: TextBlockType = {
+			type: 'text',
+			id: 't6',
+			paragraphs: [[{ text: 'plain prose' }]]
+		};
+		const { container } = render(TextBlock, { block });
+		expect(container.querySelector('code')).toBeNull();
+		expect(container.querySelector('p')?.textContent?.trim()).toBe('plain prose');
+	});
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CalloutBlock } from '$lib/schema';
+	import type { CalloutBlock, InlineRun } from '$lib/schema';
 	import Icon from './Icon.svelte';
 
 	// SSR-only, zero hydration (the renderer-purity boundary): a tinted,
@@ -20,6 +20,16 @@
 	let { block }: { block: CalloutBlock } = $props();
 </script>
 
+<!-- The body reuses the text block's inline-run vocabulary, including the 7.8
+	inline-code mark: a code run is a monospace <code> chip, and the marks nest. -->
+{#snippet markedRun(run: InlineRun)}{#if run.code}<code class="run-code"
+			>{#if run.bold && run.italic}<strong><em>{run.text}</em></strong>{:else if run.bold}<strong
+					>{run.text}</strong
+				>{:else if run.italic}<em>{run.text}</em>{:else}{run.text}{/if}</code
+		>{:else if run.bold && run.italic}<strong><em>{run.text}</em></strong>{:else if run.bold}<strong
+			>{run.text}</strong
+		>{:else if run.italic}<em>{run.text}</em>{:else}{run.text}{/if}{/snippet}
+
 <aside class="callout tone-{block.tone}">
 	{#if block.icon || block.kicker}
 		<div class="callout-header">
@@ -38,15 +48,9 @@
 							rel="external noopener noreferrer"
 							class="run-link"
 						>
-							{#if run.bold && run.italic}<strong><em>{run.text}</em></strong>
-							{:else if run.bold}<strong>{run.text}</strong>
-							{:else if run.italic}<em>{run.text}</em>
-							{:else}{run.text}{/if}
+							{@render markedRun(run)}
 						</a>
-					{:else if run.bold && run.italic}<strong><em>{run.text}</em></strong>
-					{:else if run.bold}<strong>{run.text}</strong>
-					{:else if run.italic}<em>{run.text}</em>
-					{:else}{run.text}{/if}
+					{:else}{@render markedRun(run)}{/if}
 				{/each}
 			</p>
 		{/each}
@@ -128,5 +132,14 @@
 
 	strong {
 		font-weight: 600;
+	}
+
+	.run-code {
+		padding: 0.1em 0.35em;
+		font-family: var(--font-mono);
+		font-size: 0.9em;
+		color: var(--report-text);
+		background: color-mix(in srgb, var(--report-text) 8%, var(--report-surface));
+		border-radius: var(--radius-sm);
 	}
 </style>
