@@ -1,6 +1,10 @@
 import { Column, Param, StringChunk, type SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateDocument, type DocumentV1, type DocumentV1Input } from '$lib/schema';
+import {
+	syntheticV0Document,
+	syntheticV0Migration
+} from '$lib/schema/versions/__fixtures__/synthetic-v0.fixture';
 import { AppError } from '$lib/server/problem';
 import type { ReportRow } from '../db/schema';
 import {
@@ -468,6 +472,15 @@ describe('unpublishToDraft', () => {
 		expect(dbState.updates).toHaveLength(0);
 	});
 
+	it('throws 404 for an unknown id', async () => {
+		const error = await expectAppError(
+			unpublishToDraft('01970000-0000-7000-8000-00000000dead'),
+			404
+		);
+
+		expect(error.type).toBe('/problems/report-not-found');
+	});
+
 	it('round-trips: publish then unpublish leaves the draft document authoritative', async () => {
 		const row = seedReport();
 
@@ -481,22 +494,32 @@ describe('unpublishToDraft', () => {
 });
 
 describe('publish snapshot isolation', () => {
-	it('keeps the published snapshot frozen when the draft is edited after publish', async () => {
+	it('serves the same published document throughout the published window, across re-reads', async () => {
 		const row = seedReport();
 		await publishReport(row.id);
-		const snapshot = dbState.rowsById.get(row.id)?.publishedDocument;
+
+		// Assert via the reader-served path (a re-read), not a captured local
+		// reference: while the report stays published, getPublishedDocument must
+		// return the publish-time document on every call.
+		const servedFirst = await getPublishedDocument(row.id);
+		const servedAgain = await getPublishedDocument(row.id);
+		expect(servedFirst.title).toBe('Quarterly Review');
+		expect(servedAgain.title).toBe('Quarterly Review');
 
 		// Editing requires unpublish first (1.5 guard), so flip to draft, edit, and
-		// re-read: the published snapshot must not have changed under the draft edit
-		// until a re-publish. Here we assert the snapshot captured the publish-time
-		// document, distinct from a subsequent draft mutation.
+		// re-publish a new edition. The previously served document never changed
+		// under the draft edit; only the next publish advances the snapshot.
 		await unpublishToDraft(row.id);
 		await updateReportDocument(row.id, validDocument('Draft Moved On'));
-		const afterEdit = await getReport(row.id);
+		const draft = await getReport(row.id);
+		expect(draft.document.title).toBe('Draft Moved On');
 
-		expect(afterEdit.document.title).toBe('Draft Moved On');
-		// The snapshot we captured at publish time was the original title.
-		expect((snapshot as DocumentV1Input | undefined)?.title).toBe('Quarterly Review');
+		await publishReport(row.id);
+		const servedAfterRepublish = await getPublishedDocument(row.id);
+		expect(servedAfterRepublish.title).toBe('Draft Moved On');
+		// The immutability guarantee: the document served during the first published
+		// window was never the in-progress draft.
+		expect(servedFirst.title).toBe('Quarterly Review');
 	});
 
 	it('re-publishing freezes the latest draft into a new snapshot', async () => {
@@ -528,6 +551,35 @@ describe('getPublishedDocument', () => {
 		const error = await expectAppError(getPublishedDocument(row.id), 409);
 
 		expect(error.type).toBe('/problems/report-not-published');
+	});
+
+	it('migrates a v(N-1) published snapshot forward before serving it (FR7 reader path)', async () => {
+		// A snapshot frozen under an earlier schema version: the synthetic v0 shape
+		// (version 0, `name` instead of `title`). This is the Epic 3 reader entry
+		// point, so the migration seam is exercised end to end through the service.
+		const row = seedReport({
+			status: 'published',
+			publishedDocument: syntheticV0Document as unknown as DocumentV1,
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+
+		const document = await getPublishedDocument(row.id, [syntheticV0Migration]);
+
+		expect(document.version).toBe(1);
+		expect(document.title).toBe('Legacy Quarterly Report');
+	});
+
+	it('returns the unsupported-version error when no migration reaches the snapshot version', async () => {
+		const row = seedReport({
+			status: 'published',
+			publishedDocument: syntheticV0Document as unknown as DocumentV1,
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+
+		const error = await expectAppError(getPublishedDocument(row.id), 422);
+
+		expect(error.type).toBe('/problems/document-validation');
+		expect(error.errors?.[0].path).toBe('version');
 	});
 });
 

@@ -3,6 +3,7 @@ import {
 	validateDocument,
 	validateStoredDocument,
 	toProblemDetails,
+	type DocumentMigration,
 	type DocumentV1,
 	type ValidationErrorDetail
 } from '$lib/schema';
@@ -333,11 +334,21 @@ export async function unpublishToDraft(id: string): Promise<Report> {
  * consumes this so the gating lives in the service, not the route.
  *
  * Distinct from the author `/view`, which renders the live DRAFT for preview.
+ *
+ * `migrations` is injectable for tests, matching {@link validateStoredDocument}.
  */
-export async function getPublishedDocument(id: string): Promise<DocumentV1> {
+export async function getPublishedDocument(
+	id: string,
+	migrations?: readonly DocumentMigration[]
+): Promise<DocumentV1> {
 	const row = await getRow(id);
 	if (row.status !== 'published' || row.publishedDocument === null) throw notShareable();
-	const result = validateStoredDocument(row.publishedDocument);
+	// The snapshot was validated at publish time, yet it is migrated-then-validated
+	// again here on every read. This is the FR7 version-tolerance path, not dead
+	// code: a snapshot frozen under schema v(N-1) is lifted to the current shape
+	// and re-validated so it still renders after a schema upgrade. This is the
+	// migration entry point Epic 3's reader (`/r/[token]`) consumes.
+	const result = validateStoredDocument(row.publishedDocument, migrations);
 	if (!result.ok) throw validationFailed(result.errors);
 	return result.document;
 }
