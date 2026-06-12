@@ -14,6 +14,12 @@ const envSchema = z
 		SESSION_SECRET: z
 			.string({ error: 'required - generate one with: openssl rand -hex 32' })
 			.min(32, 'must be at least 32 characters - generate one with: openssl rand -hex 32'),
+		AUTHOR_PASSWORD_HASH: z
+			.string({ error: 'required - generate one with: pnpm auth:hash -- <password>' })
+			.regex(
+				/^\$argon2id\$/,
+				'must be an argon2id PHC hash - generate one with: pnpm auth:hash -- <password>'
+			),
 		PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 		LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('info'),
 		UPLOADS_DIR: z.string().min(1).default('data/uploads'),

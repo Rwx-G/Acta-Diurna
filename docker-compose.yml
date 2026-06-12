@@ -9,6 +9,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-acta}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-acta_diurna}
       ORIGIN: ${ORIGIN:-http://localhost:3000}
       SESSION_SECRET: ${SESSION_SECRET}
+      AUTHOR_PASSWORD_HASH: ${AUTHOR_PASSWORD_HASH}
       NODE_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOADS_DIR: /data/uploads

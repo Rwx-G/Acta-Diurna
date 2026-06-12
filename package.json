@@ -20,7 +20,8 @@
 		"test:e2e": "playwright test --pass-with-no-tests",
 		"test:setup": "playwright install chromium",
 		"test": "vitest run && pnpm run test:e2e",
-		"schema:export": "node scripts/export-schema.ts"
+		"schema:export": "node scripts/export-schema.ts",
+		"auth:hash": "node scripts/hash-password.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "10.0.1",
@@ -48,6 +49,7 @@
 		"vitest-browser-svelte": "2.1.1"
 	},
 	"dependencies": {
+		"argon2": "0.44.0",
 		"drizzle-orm": "0.45.2",
 		"pg": "8.21.0",
 		"pino": "10.3.1",

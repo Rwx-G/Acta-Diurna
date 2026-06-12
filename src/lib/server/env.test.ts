@@ -4,7 +4,8 @@ import { parseEnv } from './env';
 const validEnv = {
 	DATABASE_URL: 'postgresql://acta:secret@db:5432/acta_diurna',
 	ORIGIN: 'http://localhost:3000',
-	SESSION_SECRET: 'a'.repeat(32)
+	SESSION_SECRET: 'a'.repeat(32),
+	AUTHOR_PASSWORD_HASH: '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$c29tZWhhc2g'
 };
 
 describe('parseEnv', () => {
@@ -57,6 +58,25 @@ describe('parseEnv', () => {
 		expect(() =>
 			parseEnv({ DATABASE_URL: validEnv.DATABASE_URL, ORIGIN: validEnv.ORIGIN })
 		).toThrowError(/SESSION_SECRET/);
+	});
+
+	it('names AUTHOR_PASSWORD_HASH when it is missing', () => {
+		expect(() =>
+			parseEnv({
+				DATABASE_URL: validEnv.DATABASE_URL,
+				ORIGIN: validEnv.ORIGIN,
+				SESSION_SECRET: validEnv.SESSION_SECRET
+			})
+		).toThrowError(/AUTHOR_PASSWORD_HASH: required - generate one with: pnpm auth:hash/);
+	});
+
+	it('names AUTHOR_PASSWORD_HASH when it is not an argon2id hash', () => {
+		expect(() => parseEnv({ ...validEnv, AUTHOR_PASSWORD_HASH: 'hunter2' })).toThrowError(
+			/AUTHOR_PASSWORD_HASH: must be an argon2id PHC hash/
+		);
+		expect(() =>
+			parseEnv({ ...validEnv, AUTHOR_PASSWORD_HASH: '$argon2i$v=19$m=65536' })
+		).toThrowError(/AUTHOR_PASSWORD_HASH/);
 	});
 
 	it('names SESSION_SECRET when it is too short', () => {

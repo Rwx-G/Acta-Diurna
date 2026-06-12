@@ -2,4 +2,7 @@
 # esbuild's postinstall validates its platform binary; required by vite and
 # drizzle-kit. Approved explicitly so installs stay non-interactive.
 allowBuilds:
+  # argon2 ships prebuilds (win32-x64, linux glibc/musl); its install script
+  # (node-gyp-build) is a no-op when a prebuild matches, compiles otherwise.
+  argon2: true
   esbuild: true
