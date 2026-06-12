@@ -178,6 +178,11 @@ Agents discover the published schema via MCP and author natively; built-in conne
 Readers pick their depth (summary/full/technical), presenters get a presenter view, authors get the audit log, data timestamps, themes, and retention controls.
 **FRs covered:** FR16, FR24, FR28, FR29, FR38, FR39
 
+### Epic 7: Rich Block Catalogue - Comparison & Coverage Reporting
+
+New scope, post-V1 (not in the original FR list). Two generic reporting primitives - a Comparison Matrix (findings x sources with conditional formatting computed from categorical scales) and a Set-Membership / UpSet matrix (which sources cover which findings) - plus document-level categorical scales, a metadata field grid, and a legend. Driven by the real multi-source security-audit correlation report, but the primitives are generic multi-source / coverage reporting, not bespoke: they enrich the catalogue so templates reuse them. Authored as structured JSON (document / API / MCP), not flat-CSV upload.
+**Capabilities (proposed FR40-FR44):** comparison-matrix block, set-membership (UpSet) block, field-grid block, legend block, document-level categorical scales.
+
 ## Epic 1: Foundation & First Beautiful Report
 
 The author deploys Acta Diurna in five minutes, logs in, creates a structured report, and sees it rendered presentation-ready - the product's core promise proven end to end.
@@ -757,3 +762,113 @@ So that different report series can carry different identities.
 **Given** any built-in theme
 **When** audited
 **Then** axe-core checks pass (NFR14); author customization below thresholds surfaces a contrast warning
+
+## Epic 7: Rich Block Catalogue - Comparison & Coverage Reporting
+
+Two generic reporting primitives that enrich the block catalogue: a Comparison Matrix (findings x sources, conditional formatting computed from categorical scales) and a Set-Membership / UpSet matrix (which sources cover which findings), plus document-level categorical scales, a metadata field grid, and a legend. The driver is the real multi-source security-audit correlation report (Synacktiv / PingCastle / PurpleKnight coverage of the same findings), but the primitives are generic multi-source / coverage reporting and stay free of any domain vocabulary. "Data in -> it builds": the author/agent enters the findings once and both matrices derive from them.
+
+### Foundational design (resolved at planning, confirm at kickoff)
+
+- **Data shape & authoring.** Findings are STRUCTURED, nested data (`finding.sources: { <sourceKey>: { state: found|missing|none, text? } }`), not a flat grid - so they do NOT use the Epic 2 flat-CSV upload + tabular binding. They are authored as JSON: in the document directly (workspace editor), or pushed via the REST API / MCP as structured JSON. The data-set upload flow (2.4) is untouched and remains for flat CSV/JSON.
+- **Author once, two views.** The findings live on the **Comparison Matrix block** (its content). The **Set-Membership block references that block by id** (`sourceBlockId`) and derives the intersections; it never re-enters findings. (Alternative considered and rejected for V1: a document-level shared findings registry - more schema surface for no MVP gain. Revisit only if a third block needs the same findings.)
+- **Categorical scales.** Severity and the source set are **document-level `scales`** (`{ key, label, entries: [{ key, label, color?, sublabel? }] }`), authored once and referenced by key from the matrices and the legend - never colors redefined per block. New optional document field.
+- **Colour & accessibility.** A scale entry's colour resolves from the **theme categorical palette by default** (deterministic by index, AAA-safe). An explicit per-entry hex override is allowed (the "AAA by default, author may degrade" stance) but renders a workspace **contrast warning** when below threshold. No raw hex scattered in cells; all cell formatting is computed at render from `state` / `severity` / `treatment.status` against the scales.
+- **Rendering.** All four blocks are SSR, Zod-validated, renderer-pure (no raw HTML, escaped bindings only), AAA on the default theme, within the reader JS budget (NFR3). The UpSet dot/line pattern is SSR **SVG built with d3-scale / d3-shape** - the project's chart approach since 1.6 (LayerChart was dropped; do not reintroduce it).
+- **Schema additivity.** The new block types are additive members of the block discriminated union and `scales` is an optional document field, so schema v1 stays valid for every existing document; bump the version only if a breaking change proves unavoidable, and document it.
+- **Build order (MVP-first).** 7.1 scales (foundation) -> 7.2 Comparison Matrix (~80% of the report's value) -> 7.3 Field grid + Legend (close the render) -> 7.4 Set-Membership (the only genuinely new viz). A useful correlation report exists after 7.3; UpSet is the bonus.
+
+### Story 7.1: Document-Level Categorical Scales
+
+As an author or agent,
+I want named scales of `{ key, label, colour }` entries (severity, source sets) declared once on the document,
+So that every matrix and the legend share one colour and label source instead of redefining it per block.
+
+**Acceptance Criteria:**
+
+**Given** a document declaring `scales` (e.g. a severity scale and a sources scale, each a list of `{ key, label, color?, sublabel? }`)
+**When** a block references a scale entry by key
+**Then** its label and colour resolve from the scale, and a missing/typed-wrong scale or key fails validation with an actionable problem-details error naming the offending reference (FR2 parity)
+
+**Given** a scale entry with no explicit colour
+**When** rendered
+**Then** a colour is assigned deterministically from the theme's categorical palette (stable by index, AAA-safe), so an author who supplies no colours still gets a legible report
+
+**Given** a scale entry with an explicit hex colour below the contrast threshold on the report background
+**When** rendered
+**Then** it renders in that colour but the workspace surfaces a contrast warning on the report (consistent with FR39 / the "AAA default, author may degrade" stance)
+
+**Given** the `scales` field is absent
+**When** an existing document (schema v1, no scales) is validated and rendered
+**Then** it validates and renders unchanged - `scales` is additive and optional
+
+### Story 7.2: Comparison Matrix Block
+
+As an author or agent,
+I want a findings-by-sources matrix with formatting computed from the scales,
+So that a multi-source audit reads as a single coverage table without hand-colouring cells.
+
+**Acceptance Criteria:**
+
+**Given** a Comparison Matrix block carrying findings (each: `category`, `label`, `severity` key, per-source `{ state: found|missing|none, text? }`, `treatment: { before, after, status: action|deferred }`) and referencing the severity + sources scales
+**When** rendered
+**Then** rows are grouped by `category` (a banner row), each finding shows a severity pill (colour+label from the severity scale) and a row of typed cells: one per source (source tint when `found`, hatched grey when `missing`, a neutral dash when `none`, with the optional `text`), then treatment-before and treatment-after cells tinted by `status` (FR41)
+
+**Given** the findings
+**When** any cell's `state` / `severity` / `treatment.status` changes
+**Then** the cell formatting is recomputed at render from the scales - no colour is authored per cell
+
+**Given** invalid findings (unknown `severity` key, unknown source key, malformed `state`)
+**When** validated
+**Then** an actionable problem-details error names the offending finding and field (FR2 parity)
+
+**Given** the rendered block
+**When** audited
+**Then** it is a pure SSR HTML table (no raw HTML, escaped values only), passes axe-core on the default theme (NFR14), and ships no per-block client JS beyond the reader budget (NFR3)
+
+### Story 7.3: Field Grid and Legend Blocks
+
+As an author,
+I want a metadata field grid and a source legend block,
+So that the report header and the matrix are self-explanatory without prose.
+
+**Acceptance Criteria:**
+
+**Given** a Field Grid block with `[{ label, value }]` items
+**When** rendered
+**Then** a compact metadata grid (e.g. Author / Date / Scope / Status) renders with escaped values, responsive down to the reader mobile breakpoint
+
+**Given** a Legend block referencing a scale (e.g. the sources scale)
+**When** rendered
+**Then** it renders one swatch per entry (colour + label + optional sublabel), derived entirely from the scale - no colour or label re-authored on the block
+
+**Given** a Legend referencing an unknown scale
+**When** validated
+**Then** a problem-details error names the missing scale (FR2 parity)
+
+**Given** either block
+**When** audited
+**Then** it is SSR, Zod-validated, AAA on the default theme, within the reader budget
+
+### Story 7.4: Set-Membership (UpSet) Matrix Block
+
+As an author or agent,
+I want an UpSet-style matrix derived from the same findings,
+So that coverage by source-combination is visible at a glance, with zero extra data entry.
+
+**Acceptance Criteria:**
+
+**Given** a Set-Membership block referencing a Comparison Matrix block by id (`sourceBlockId`)
+**When** rendered
+**Then** it derives one row per present intersection - findings grouped by the exact set of sources where `state != none` - and renders each row as a dot pattern (one dot per source in the sources scale, filled when the source is in that set, with a line connecting the filled dots) (FR42)
+
+**Given** an intersection row
+**When** rendered
+**Then** the findings in that intersection appear beside the pattern as severity-coloured pills (from the severity scale) carrying their short tag/label
+
+**Given** the dot-and-line pattern
+**When** rendered
+**Then** it is SSR SVG built with d3-scale / d3-shape (zero hydration, no LayerChart), within the reader budget (NFR3), and passes axe-core (the SVG carries an accessible text alternative summarising each intersection)
+
+**Given** a `sourceBlockId` that does not resolve to a Comparison Matrix block in the same document, or findings that are all `none`
+**When** validated or rendered
+**Then** validation flags the dangling reference (problem-details), and an all-`none` data set renders a neutral empty state rather than crashing
