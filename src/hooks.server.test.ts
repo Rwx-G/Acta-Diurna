@@ -266,6 +266,67 @@ async function runBoundary(
 	return await apiErrorBoundary({ event, resolve: resolveImpl });
 }
 
+// Drives the /api/* gate AS WIRED in `handle`: apiErrorBoundary (OUTER) wrapping
+// apiAuth (INNER), the exact nesting the sequence composes for `/api/mcp`. The
+// full `sequence(...)` cannot be invoked directly in a unit test (SvelteKit's
+// internal per-request store is only present during a real server request), so we
+// compose the two API-segment handles in their wired order. The resolve spy stands
+// in for the MCP route body: it must NEVER run when the PAT gate rejects, so no
+// handshake, tool list, or schema can leak past a 401.
+async function runApiGate(pathname: string, opts: EventOpts = {}) {
+	const event = eventFor(pathname, opts);
+	const resolve = vi.fn(
+		async () =>
+			new Response(JSON.stringify({ result: { serverInfo: { name: 'leak' } } }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			})
+	);
+	const response = await apiErrorBoundary({
+		event,
+		resolve: (innerEvent) => apiAuth({ event: innerEvent, resolve })
+	});
+	return { resolve, response };
+}
+
+describe('the /api/* gate (apiErrorBoundary + apiAuth) blocks /api/mcp end-to-end', () => {
+	it('401 problem+json on a MISSING bearer, and the MCP route body never runs', async () => {
+		const { resolve, response } = await runApiGate('/api/mcp', {
+			method: 'POST',
+			address: '203.0.113.40'
+		});
+
+		expect(response.status).toBe(401);
+		expect(response.headers.get('content-type')).toBe('application/problem+json');
+		expect(response.headers.get('www-authenticate')).toBe('Bearer');
+		const body = await response.json();
+		expect(body.type).toBe('/problems/unauthorized');
+		// The MCP route never executed: no handshake/tool-list leaked past the gate.
+		expect(resolve).not.toHaveBeenCalled();
+		expect(JSON.stringify(body)).not.toContain('serverInfo');
+		expect(body.result).toBeUndefined();
+	});
+
+	it('401 problem+json on an INVALID bearer, and the MCP route body never runs', async () => {
+		authenticateApiToken.mockResolvedValue(null);
+		const { resolve, response } = await runApiGate('/api/mcp', {
+			method: 'POST',
+			address: '203.0.113.41',
+			headers: { authorization: 'Bearer acta_pat_bad' }
+		});
+
+		expect(response.status).toBe(401);
+		expect(response.headers.get('content-type')).toBe('application/problem+json');
+		expect(response.headers.get('www-authenticate')).toBe('Bearer');
+		const body = await response.json();
+		expect(body.type).toBe('/problems/unauthorized');
+		expect(authenticateApiToken).toHaveBeenCalledWith('acta_pat_bad');
+		expect(resolve).not.toHaveBeenCalled();
+		expect(JSON.stringify(body)).not.toContain('serverInfo');
+		expect(body.result).toBeUndefined();
+	});
+});
+
 describe('apiErrorBoundary (/api/* error boundary)', () => {
 	it('passes non-/api requests straight through (no try/catch wrapping)', async () => {
 		const ok = new Response('ok', { status: 200 });
