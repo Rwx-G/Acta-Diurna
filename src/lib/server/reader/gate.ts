@@ -11,7 +11,11 @@
  *   - `completeVerification`: consume the token, find-or-create the identity,
  *     write the access-audit row, and open a per-share reader session.
  */
-import { consumeVerificationToken, issueVerificationToken } from './verification';
+import {
+	consumeVerificationToken,
+	hasLiveVerification,
+	issueVerificationToken
+} from './verification';
 import { findOrCreateIdentity, recordAccess } from './identities';
 import { magicLinkEmail } from '$lib/server/mail/templates/magic-link';
 import { sendMail } from '$lib/server/mail/send';
@@ -24,6 +28,15 @@ import { createReaderSession, type CreatedSession } from '$lib/server/auth/sessi
  * propagates as the `sendMail` AppError so the operator is not left thinking a
  * link was delivered (NFR16); the caller decides how to surface it WITHOUT
  * leaking whether the email was on any list.
+ *
+ * Dedup-before-issue (mail-amplification guard): if a LIVE (unconsumed,
+ * unexpired) verification already exists for this (share, email), no new token
+ * is issued and no second mail is sent. This caps the pair to one pending
+ * verification per 15-min TTL, blunting amplification by an attacker who holds
+ * one open-mode share link and POSTs arbitrary victim emails. The suppression is
+ * silent: the function still returns void exactly as on a real send, so the
+ * caller's neutral `{state:'sent'}` is identical whether mail was sent or
+ * suppressed (enumeration-safety, the dedup is never revealed).
  */
 export async function requestVerification(
 	shareId: string,
@@ -31,6 +44,7 @@ export async function requestVerification(
 	verifyUrlFor: (rawToken: string) => string,
 	requestId?: string
 ): Promise<void> {
+	if (await hasLiveVerification(shareId, normalizedEmail)) return;
 	const { token } = await issueVerificationToken(shareId, normalizedEmail);
 	const url = verifyUrlFor(token);
 	await sendMail(magicLinkEmail(normalizedEmail, url), requestId);

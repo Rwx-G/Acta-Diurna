@@ -4,6 +4,7 @@ import type { VerificationTokenRow } from '$lib/server/db/schema';
 import {
 	VERIFICATION_TOKEN_TTL_MS,
 	consumeVerificationToken,
+	hasLiveVerification,
 	issueVerificationToken
 } from './verification';
 
@@ -20,7 +21,9 @@ const dbState = vi.hoisted(() => ({
 interface DecodedFilter {
 	tokenHash?: string;
 	shareId?: string;
+	email?: string;
 	requireUnconsumed: boolean;
+	requireLiveExpiry?: Date;
 }
 
 function decodeWhere(filter: unknown): DecodedFilter {
@@ -37,11 +40,16 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 	// mock can read without re-implementing drizzle's chunk decoding.
 	const tag = (descriptor: Partial<DecodedFilter>) =>
 		Object.assign({}, { __descriptor: descriptor });
+	const eqDescriptor = (name: string, value: unknown): Partial<DecodedFilter> => {
+		if (name === 'token_hash') return { tokenHash: String(value) };
+		if (name === 'email') return { email: String(value) };
+		return { shareId: String(value) };
+	};
 	return {
 		...actual,
-		eq: (col: { name: string }, value: unknown) =>
-			tag(col.name === 'token_hash' ? { tokenHash: String(value) } : { shareId: String(value) }),
+		eq: (col: { name: string }, value: unknown) => tag(eqDescriptor(col.name, value)),
 		isNull: () => tag({ requireUnconsumed: true }),
+		gt: (_col: { name: string }, value: unknown) => tag({ requireLiveExpiry: value as Date }),
 		and: (...parts: { __descriptor: Partial<DecodedFilter> }[]) => {
 			const merged: DecodedFilter = { requireUnconsumed: false };
 			for (const p of parts) Object.assign(merged, p.__descriptor);
@@ -52,6 +60,26 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
+		select: () => ({
+			from: () => ({
+				where: (filter: unknown) => {
+					const decoded = decodeWhere(filter);
+					return {
+						limit: () => {
+							const matches = dbState.rows.filter(
+								(r) =>
+									r.shareId === decoded.shareId &&
+									r.email === decoded.email &&
+									(!decoded.requireUnconsumed || r.consumedAt === null) &&
+									(decoded.requireLiveExpiry === undefined ||
+										r.expiresAt.getTime() > decoded.requireLiveExpiry.getTime())
+							);
+							return Promise.resolve(matches.slice(0, 1).map((r) => ({ id: r.id })));
+						}
+					};
+				}
+			})
+		}),
 		insert: () => ({
 			values: (row: Record<string, unknown>) => {
 				dbState.inserted.push(row);
@@ -146,5 +174,43 @@ describe('consumeVerificationToken (single-use, TTL, binding)', () => {
 
 	it('rejects an unknown token', async () => {
 		await expect(consumeVerificationToken('never-issued', 'share-1')).resolves.toBeNull();
+	});
+});
+
+describe('hasLiveVerification (dedup-before-issue, mail-amplification guard)', () => {
+	it('is false when no token exists for the (share, email) pair', async () => {
+		await expect(hasLiveVerification('share-1', 'reader@example.com')).resolves.toBe(false);
+	});
+
+	it('is true while an unconsumed, unexpired token exists for the pair', async () => {
+		await issueVerificationToken('share-1', 'reader@example.com');
+
+		await expect(hasLiveVerification('share-1', 'reader@example.com')).resolves.toBe(true);
+	});
+
+	it('does not match a different email on the same share', async () => {
+		await issueVerificationToken('share-1', 'reader@example.com');
+
+		await expect(hasLiveVerification('share-1', 'other@example.com')).resolves.toBe(false);
+	});
+
+	it('does not match a different share for the same email', async () => {
+		await issueVerificationToken('share-A', 'reader@example.com');
+
+		await expect(hasLiveVerification('share-B', 'reader@example.com')).resolves.toBe(false);
+	});
+
+	it('is false once the live token has been consumed (a fresh one may issue)', async () => {
+		const { token } = await issueVerificationToken('share-1', 'reader@example.com');
+		await consumeVerificationToken(token, 'share-1');
+
+		await expect(hasLiveVerification('share-1', 'reader@example.com')).resolves.toBe(false);
+	});
+
+	it('is false once the token has expired (a fresh one may issue)', async () => {
+		await issueVerificationToken('share-1', 'reader@example.com');
+		dbState.rows[0].expiresAt = new Date(Date.now() - 1);
+
+		await expect(hasLiveVerification('share-1', 'reader@example.com')).resolves.toBe(false);
 	});
 });

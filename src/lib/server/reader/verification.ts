@@ -16,7 +16,7 @@
  * no usable link.
  */
 import { randomBytes } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { hashToken } from '$lib/server/crypto/hash-token';
@@ -62,6 +62,34 @@ export async function issueVerificationToken(
 		});
 
 	return { token, expiresAt };
+}
+
+/**
+ * Reports whether a LIVE (unconsumed, unexpired) verification token already
+ * exists for (shareId, email). Used by the gate to dedup before issuing: a
+ * (share, email) pair is capped to one pending verification within the 15-min
+ * TTL, so an attacker holding one open-mode share link cannot amplify mail to a
+ * victim address by repeating the request - the victim is emailed at most once
+ * per TTL window per share, regardless of request volume.
+ *
+ * The email must already be normalized by the caller (boundary concern). The
+ * query keys on (share, email) - the same binding `issueVerificationToken`
+ * writes - plus `consumed_at IS NULL` and a live `expires_at`.
+ */
+export async function hasLiveVerification(shareId: string, email: string): Promise<boolean> {
+	const rows = await getDb()
+		.select({ id: verificationTokens.id })
+		.from(verificationTokens)
+		.where(
+			and(
+				eq(verificationTokens.shareId, shareId),
+				eq(verificationTokens.email, email),
+				isNull(verificationTokens.consumedAt),
+				gt(verificationTokens.expiresAt, new Date())
+			)
+		)
+		.limit(1);
+	return rows.length > 0;
 }
 
 /**

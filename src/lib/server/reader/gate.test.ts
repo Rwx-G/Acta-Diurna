@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
 	issueVerificationToken: vi.fn(),
 	consumeVerificationToken: vi.fn(),
+	hasLiveVerification: vi.fn(),
 	findOrCreateIdentity: vi.fn(),
 	recordAccess: vi.fn(),
 	createReaderSession: vi.fn(),
@@ -17,7 +18,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./verification', () => ({
 	issueVerificationToken: mocks.issueVerificationToken,
-	consumeVerificationToken: mocks.consumeVerificationToken
+	consumeVerificationToken: mocks.consumeVerificationToken,
+	hasLiveVerification: mocks.hasLiveVerification
 }));
 vi.mock('./identities', () => ({
 	findOrCreateIdentity: mocks.findOrCreateIdentity,
@@ -33,6 +35,7 @@ import { completeVerification, requestVerification } from './gate';
 
 beforeEach(() => {
 	for (const m of Object.values(mocks)) m.mockReset();
+	mocks.hasLiveVerification.mockResolvedValue(false);
 	mocks.issueVerificationToken.mockResolvedValue({ token: 'raw-token', expiresAt: new Date() });
 	mocks.magicLinkEmail.mockReturnValue({ to: 'x', subject: 's', text: 't' });
 	mocks.sendMail.mockResolvedValue({ messageId: 'id' });
@@ -57,6 +60,45 @@ describe('requestVerification (enumeration-safety)', () => {
 			'share-1',
 			'someone-else@example.com'
 		);
+		expect(mocks.sendMail).toHaveBeenCalledOnce();
+	});
+
+	it('dedup: a live verification already pending for (share, email) issues no new token and sends no second mail', async () => {
+		mocks.hasLiveVerification.mockResolvedValue(true);
+
+		await requestVerification('share-1', 'reader@example.com', (t) => `https://x/v?t=${t}`);
+
+		expect(mocks.hasLiveVerification).toHaveBeenCalledWith('share-1', 'reader@example.com');
+		expect(mocks.issueVerificationToken).not.toHaveBeenCalled();
+		expect(mocks.sendMail).not.toHaveBeenCalled();
+	});
+
+	it('dedup: suppression returns the same void result as a real send (enumeration-safe, no leak)', async () => {
+		mocks.hasLiveVerification.mockResolvedValue(true);
+
+		const suppressed = await requestVerification(
+			'share-1',
+			'reader@example.com',
+			(t) => `https://x/v?t=${t}`
+		);
+
+		mocks.hasLiveVerification.mockResolvedValue(false);
+		const sent = await requestVerification(
+			'share-1',
+			'reader@example.com',
+			(t) => `https://x/v?t=${t}`
+		);
+
+		expect(suppressed).toBe(sent);
+		expect(suppressed).toBeUndefined();
+	});
+
+	it('issues a fresh token once no live verification remains (consumed or expired)', async () => {
+		mocks.hasLiveVerification.mockResolvedValue(false);
+
+		await requestVerification('share-1', 'reader@example.com', (t) => `https://x/v?t=${t}`);
+
+		expect(mocks.issueVerificationToken).toHaveBeenCalledWith('share-1', 'reader@example.com');
 		expect(mocks.sendMail).toHaveBeenCalledOnce();
 	});
 });
