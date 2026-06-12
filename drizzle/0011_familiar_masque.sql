@@ -1,0 +1,1 @@
+CREATE INDEX "data_sets_report_id_idx" ON "data_sets" USING btree ("report_id");

@@ -105,6 +105,7 @@ export const dataSets = pgTable(
 		storagePath: text('storage_path').notNull()
 	},
 	(table) => [
+		index('data_sets_report_id_idx').on(table.reportId),
 		check('data_sets_format_check', sql`${table.sourceFormat} in ('csv', 'json', 'xlsx')`)
 	]
 );

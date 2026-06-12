@@ -78,6 +78,13 @@
       "when": 1781270138325,
       "tag": "0010_reader_session_no_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781287867446,
+      "tag": "0011_familiar_masque",
+      "breakpoints": true
     }
   ]
 }
