@@ -44,17 +44,21 @@ import { createReaderSession, type CreatedSession } from '$lib/server/auth/sessi
  * verification per 15-min TTL. Like the allow-list refusal, the suppression is
  * silent (same void result).
  *
- * Timing-equivalence (NFR9, the parked 3.4 constant-work constraint): the mail
- * send is FIRE-AND-FORGET on the authorized path - the function returns WITHOUT
- * awaiting `sendMail`, so the slow, attacker-observable SMTP round-trip is never
- * in the response timing on EITHER path. The off-list path returns after one
- * allow-list read; the on-list path returns after the allow-list read, the
- * dedup read, and a token insert - all fast, bounded DB work in the same timing
- * class, with NO network I/O on the response path. Removing the SMTP latency (the
- * one large, variable cost that would have made the two paths separable) is what
- * closes the timing oracle. The send error is logged server-side (NFR16) inside
- * the catch so a fire-and-forget rejection is never unhandled and never leaks to
- * the reader.
+ * Timing-equivalence (NFR9): the mail send is FIRE-AND-FORGET on the authorized
+ * path - the function returns WITHOUT awaiting `sendMail`, so the slow,
+ * attacker-observable SMTP round-trip is never in the response timing on EITHER
+ * path. The two paths are NOT strictly identical work: the off-list path returns
+ * after one allow-list read, while the on-list path adds a dedup read and a token
+ * insert. They are indistinguishable in practice over the network - the SMTP
+ * round-trip (the only network-scale separator) is removed from both paths, and
+ * the residual is sub-millisecond local DB work below the network noise floor,
+ * the same residual band NFR9 accepts from 3.3's dedup-suppressed-vs-sent split.
+ * Removing the SMTP latency (the one large, variable cost that would have made
+ * the two paths separable) is what closes the timing oracle; the local-DB delta
+ * is not, on its own, an observable separator. A dummy-write constant-time
+ * mitigation is not required for V1. The send error is logged server-side (NFR16)
+ * inside the catch so a fire-and-forget rejection is never unhandled and never
+ * leaks to the reader.
  */
 export async function requestVerification(
 	share: ResolvedShare,
