@@ -109,6 +109,33 @@ describe('load (the gate)', () => {
 		await expect(load(loadEvent().event)).rejects.toMatchObject({ __neutral404: true });
 	});
 
+	it('cuts off a live reader session the moment the share is revoked (per-load liveness)', async () => {
+		// A reader who verified earlier still holds a valid acta_reader cookie. The
+		// share has since been revoked. The gate re-checks share.status on EVERY load
+		// and short-circuits to the neutral 404 BEFORE it even reads the session - so
+		// a persistent session cannot outlive its share (FR23 "while the share remains
+		// valid"). The session validator is never consulted.
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'revoked' });
+		mocks.readReaderCookie.mockReturnValue('still-live-reader-token');
+		mocks.validateReaderSession.mockResolvedValue({ id: 's', shareId: 'share-1' });
+		const { event, setHeaders } = loadEvent();
+
+		await expect(load(event)).rejects.toMatchObject({ __neutral404: true });
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
+		// The liveness check fires before the session is read - no published doc served.
+		expect(mocks.validateReaderSession).not.toHaveBeenCalled();
+		expect(mocks.getPublishedDocument).not.toHaveBeenCalled();
+	});
+
+	it('cuts off a live reader session the moment the share expires', async () => {
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'expired' });
+		mocks.readReaderCookie.mockReturnValue('still-live-reader-token');
+		mocks.validateReaderSession.mockResolvedValue({ id: 's', shareId: 'share-1' });
+
+		await expect(load(loadEvent().event)).rejects.toMatchObject({ __neutral404: true });
+		expect(mocks.getPublishedDocument).not.toHaveBeenCalled();
+	});
+
 	it('FR23: a valid reader session for THIS share serves the report, no re-verify', async () => {
 		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
 		mocks.readReaderCookie.mockReturnValue('reader-token');

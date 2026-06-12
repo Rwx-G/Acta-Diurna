@@ -29,6 +29,12 @@
 	<!-- Reader reports are private artifacts; keep them out of search indexes
 	     (NFR10). The X-Robots-Tag header on /r/* covers header-only crawlers. -->
 	<meta name="robots" content="noindex, nofollow" />
+	<!-- Leak-free link previews (NFR10/FR20): NO og:/twitter: tags are emitted on
+	     this route, so a link-unfurler (Slack/Teams/iMessage fetching the URL)
+	     reads nothing about the report. An unfurler is unauthenticated, so it never
+	     gets a reader session and `title` resolves to the neutral "Acta Diurna" -
+	     the report title is only ever in the <title> for a verified reader's own
+	     tab, never in a preview. Do not add og:/twitter: metadata here. -->
 </svelte:head>
 
 {#if data.state === 'verified' && view !== null && data.document !== null}
