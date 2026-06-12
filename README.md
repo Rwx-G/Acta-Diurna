@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/status-design%20phase-orange.svg" alt="Status">
+  <img src="https://img.shields.io/badge/status-v1%20in%20development-yellow.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-TypeScript-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/deploy-docker%20compose-2496ED.svg" alt="Docker">
@@ -21,7 +21,7 @@ Acta Diurna replaces the slide deck for recurring reporting. One declarative rep
 
 The tool carries the skeleton - structure, templates, rendering, sharing. Connected AI assistants build the content and data into it. *Acta Diurna* were the daily public gazettes of ancient Rome: the original recurring report.
 
-> **Status: design phase.** The product brief is consolidated in [`docs/brief.md`](docs/brief.md), the PRD is in progress, and no code has shipped yet. The feature set below is the v1 target.
+> **Status: v1 in development.** The product brief is in [`docs/brief.md`](docs/brief.md). Most of the v1 surface below is implemented and being hardened toward release: the declarative document model and hybrid renderer, templates and data binding, file upload and authenticated API push, the REST API and the MCP server, outline-first AI generation, and magic-link sharing with link hardening. The remaining planned epic is multi-audience reading and governance (audience levels, presenter view, access audit and retention, theme selection).
 
 ## Key Features (v1 target)
 
@@ -77,7 +77,7 @@ docker compose up -d
 
 | Version | Features | Status |
 |---------|----------|--------|
-| v1 | Document model + hybrid renderer, audience levels, presenter view, templates + data binding, file upload + API push, REST API, MCP server, outline-first AI connectors (OpenAI, Anthropic), magic link auth with hardening, docker compose distribution | Design |
+| v1 | Document model + hybrid renderer, audience levels, presenter view, templates + data binding, file upload + API push, REST API, MCP server, outline-first AI connectors (OpenAI, Anthropic), magic link auth with hardening, docker compose distribution | In development |
 | v2 | In-browser WYSIWYG editor, report series with auto-diff between issues, scheduled email delivery with KPI digest, viewer analytics, synced blocks, block comments, SQL connectors, PDF/PPTX export, multi-tenant spaces | Planned |
 
 ## Documentation
