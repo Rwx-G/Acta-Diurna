@@ -1,0 +1,19 @@
+/*
+ * Self-hosted fonts via Fontsource (D7, CSP: zero third-party assets).
+ * Vite resolves these @import specifiers, bundles the woff2 files into the
+ * build, and rewrites the embedded url() references to local /_app/ paths - no
+ * request ever leaves for a CDN at render time.
+ *
+ * Weights are imported deliberately, not via the package index, to keep the
+ * font payload lean (the reader-path budget, NFR3):
+ *   Source Serif 4 - report body prose: 400/600 + 400 italic
+ *   Inter          - headings, UI, tables, KPIs: 400/500/600
+ *   Cinzel         - wordmark only: 600
+ */
+@import '@fontsource/source-serif-4/400.css';
+@import '@fontsource/source-serif-4/400-italic.css';
+@import '@fontsource/source-serif-4/600.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/cinzel/600.css';

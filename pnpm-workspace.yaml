@@ -6,3 +6,10 @@ allowBuilds:
   # (node-gyp-build) is a no-op when a prebuild matches, compiles otherwise.
   argon2: true
   esbuild: true
+  # testcontainers transitive deps (dev-only, e2e DB fixture). Their build
+  # scripts are not needed: testcontainers drives the local Docker socket, so
+  # the SSH transport (ssh2/cpu-features) and protobuf codegen never run here.
+  # Declared false so installs stay non-interactive and verify-deps passes.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
