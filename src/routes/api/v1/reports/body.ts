@@ -9,6 +9,15 @@
  * helpers only parse transport; the service owns every business rule.
  */
 import { AppError } from '$lib/server/problem';
+import { MAX_DOCUMENT_BYTES } from '$lib/editor';
+
+// Transport cap on the JSON request body, ABOVE MAX_DOCUMENT_BYTES so a
+// legitimately-max document plus its `{ title, expectedUpdatedAt }` envelope still
+// passes, while bounding the JSON.parse cost far below the adapter's
+// BODY_SIZE_LIMIT (50 MB). The document inside is separately capped at
+// MAX_DOCUMENT_BYTES by the documents service (validate-on-write), so this is the
+// pre-parse DoS guard, not the document-size rule.
+const MAX_JSON_BODY_BYTES = MAX_DOCUMENT_BYTES * 2;
 
 function malformedBody(detail: string): AppError {
 	return new AppError({
@@ -19,11 +28,36 @@ function malformedBody(detail: string): AppError {
 	});
 }
 
-/** Reads the request body as a JSON object; a non-object or unparseable body is a 400. */
+function bodyTooLarge(): AppError {
+	return new AppError({
+		status: 413,
+		title: 'Request body too large',
+		type: '/problems/request-too-large',
+		detail: `The JSON request body exceeds the ${MAX_JSON_BODY_BYTES / 1_000_000} MB limit.`
+	});
+}
+
+/**
+ * Reads the request body as text within the JSON body cap, BEFORE any parse. A
+ * declared over-cap `Content-Length` is rejected without reading; an absent or
+ * under-reported length is caught by the post-read length check, so the expensive
+ * JSON.parse never runs on an oversized body (the body is still bounded by the
+ * adapter's BODY_SIZE_LIMIT while being read).
+ */
+async function readBodyWithinCap(request: Request): Promise<string> {
+	const declared = Number(request.headers.get('content-length'));
+	if (Number.isFinite(declared) && declared > MAX_JSON_BODY_BYTES) throw bodyTooLarge();
+	const text = await request.text();
+	if (text.length > MAX_JSON_BODY_BYTES) throw bodyTooLarge();
+	return text;
+}
+
+/** Reads the request body as a JSON object; a non-object or unparseable body is a 400, an oversized body a 413. */
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+	const text = await readBodyWithinCap(request);
 	let parsed: unknown;
 	try {
-		parsed = await request.json();
+		parsed = JSON.parse(text);
 	} catch {
 		throw malformedBody('The request body must be valid JSON.');
 	}
@@ -63,7 +97,7 @@ export function readExpectedUpdatedAt(body: Record<string, unknown>): Date | und
  * must not fail on an absent body.
  */
 export async function readOptionalExpectedUpdatedAt(request: Request): Promise<Date | undefined> {
-	const text = await request.text();
+	const text = await readBodyWithinCap(request);
 	if (text.trim() === '') return undefined;
 	let parsed: unknown;
 	try {
