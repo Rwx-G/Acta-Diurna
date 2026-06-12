@@ -53,9 +53,11 @@
 				summary = payload.summary ?? null;
 				rebound = payload.rebound ?? [];
 				message =
-					summary && summary.allGreen
-						? `Rebound ${rebound.length} block(s) - all green.`
-						: `Rebound ${rebound.length} block(s); some bindings need a remap.`;
+					summary && summary.total === 0
+						? 'No bound blocks to refill.'
+						: summary && summary.allGreen
+							? `Rebound ${rebound.length} block(s) - all green.`
+							: `Rebound ${rebound.length} block(s); some bindings need a remap.`;
 				messageVariant = 'ok';
 				await invalidateAll();
 			} else if (result.type === 'failure') {
