@@ -28,3 +28,6 @@ Thumbs.db
 # Editors
 .idea/
 *.swp
+
+# e2e auth storage state (session cookie), never committed
+e2e/.auth/

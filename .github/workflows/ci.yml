@@ -43,10 +43,27 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Chromium is required by the Vitest browser-mode component tests.
       - run: pnpm exec playwright install --with-deps chromium
-      # Playwright e2e runs with --pass-with-no-tests until the first e2e
-      # spec lands (later story); the harness stays wired meanwhile.
       - run: pnpm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # The e2e harness boots a real `node build` server against an ephemeral
+      # Postgres testcontainer (started by Playwright globalSetup) and runs the
+      # reader navigation + axe-core a11y specs. GitHub-hosted runners ship a
+      # working Docker daemon, which testcontainers uses out of the box.
+      - run: pnpm build
+      - run: pnpm test:e2e
 
   build:
     runs-on: ubuntu-latest

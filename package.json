@@ -17,9 +17,10 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
-		"test:e2e": "playwright test --pass-with-no-tests",
+		"test:e2e": "playwright test",
+		"test:e2e:build": "vite build && playwright test",
 		"test:setup": "playwright install chromium",
-		"test": "vitest run && pnpm run test:e2e",
+		"test": "vitest run",
 		"schema:export": "node scripts/export-schema.ts",
 		"reader:budget": "node scripts/reader-bundle-size.ts",
 		"auth:hash": "node scripts/hash-password.ts"
