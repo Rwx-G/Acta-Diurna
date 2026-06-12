@@ -19,6 +19,12 @@
 	--color-ink-25: color-mix(in srgb, var(--color-ink) 25%, transparent);
 	--color-ink-65: color-mix(in srgb, var(--color-ink) 65%, transparent);
 
+	/* Status green (UX "all bindings green" family) + tints for chips */
+	--color-green: #2f6b4a;
+	--color-green-12: color-mix(in srgb, var(--color-green) 12%, transparent);
+	--color-purple-08: color-mix(in srgb, var(--color-purple) 8%, transparent);
+	--color-danger-08: color-mix(in srgb, var(--color-danger) 8%, transparent);
+
 	/* Typography */
 	--font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
 	--font-sans:
@@ -38,6 +44,7 @@
 	/* Radii and elevation - flat, editorial */
 	--radius-sm: 4px;
 	--radius-md: 8px;
+	--radius-pill: 999px;
 	--shadow-card: 0 1px 2px rgb(28 27 46 / 8%), 0 4px 16px rgb(28 27 46 / 6%);
 }
 
