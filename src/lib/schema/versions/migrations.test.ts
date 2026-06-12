@@ -5,7 +5,7 @@ import {
 	migrateToVersion,
 	MigrationPathError
 } from './migrations.ts';
-import { syntheticV0Document, syntheticV0Migration } from './synthetic-v0.fixture.ts';
+import { syntheticV0Document, syntheticV0Migration } from './__fixtures__/synthetic-v0.fixture.ts';
 
 describe('document migration chain', () => {
 	it('returns a current-version document unchanged (identity, no registered migrations)', () => {

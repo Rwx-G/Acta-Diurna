@@ -7,7 +7,10 @@ import {
 	type ValidationErrorDetail
 } from './errors.ts';
 import { documentSchemaV1 } from './versions/v1.ts';
-import { syntheticV0Document, syntheticV0Migration } from './versions/synthetic-v0.fixture.ts';
+import {
+	syntheticV0Document,
+	syntheticV0Migration
+} from './versions/__fixtures__/synthetic-v0.fixture.ts';
 
 function documentWithBlocks(blocks: unknown[]): unknown {
 	return {

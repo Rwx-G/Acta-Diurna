@@ -10,7 +10,7 @@
  *   - the document title field is named `name`, not `title`
  * The migration renames `name -> title` and stamps `version: 1`.
  */
-import type { DocumentMigration } from './migrations.ts';
+import type { DocumentMigration } from '../migrations.ts';
 
 /** A v0 document: same as v1 but `version: 0` and `name` instead of `title`. */
 export const syntheticV0Document = {
