@@ -18,6 +18,8 @@ export interface ThemePalette {
 	heading: string;
 	accent: string;
 	accentContrast: string;
+	trendUp: string;
+	trendDown: string;
 }
 
 export const DEFAULT_THEME: ThemePalette = {
@@ -27,7 +29,9 @@ export const DEFAULT_THEME: ThemePalette = {
 	textMuted: '#4a4960', // --report-text-muted
 	heading: '#1c1b2e', // --report-heading
 	accent: '#66023c', // --report-accent (imperial purple)
-	accentContrast: '#f5f1e8' // --report-accent-contrast
+	accentContrast: '#f5f1e8', // --report-accent-contrast
+	trendUp: '#2f6b4a', // --report-trend-up
+	trendDown: '#a23b3b' // --report-trend-down
 };
 
 export const MIDNIGHT_THEME: ThemePalette = {
@@ -37,7 +41,9 @@ export const MIDNIGHT_THEME: ThemePalette = {
 	textMuted: '#b9b4c4', // --report-text-muted
 	heading: '#fbf8f0', // --report-heading
 	accent: '#e090b8', // --report-accent (lightened for AAA on dark)
-	accentContrast: '#14131f' // --report-accent-contrast
+	accentContrast: '#14131f', // --report-accent-contrast
+	trendUp: '#6fbf95', // --report-trend-up (lightened for AA on dark)
+	trendDown: '#f08a8a' // --report-trend-down (lightened for AA on dark)
 };
 
 export const THEME_PALETTES: Record<string, ThemePalette> = {

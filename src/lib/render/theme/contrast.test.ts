@@ -51,6 +51,17 @@ function assertReportContentAAA(name: string, theme: ThemePalette): void {
 		// surface; the AA floor is the contract there, prose AAA is on background.
 		expect(contrastRatio(theme.accentContrast, theme.accent)).toBeGreaterThanOrEqual(AA_CONTRAST);
 	});
+
+	// KPI trend glyphs are small report content tinted by direction. They are
+	// part of the theme surface (not the workspace-chrome --color-* tokens), so
+	// each theme must keep both above the AA floor on its own report background.
+	it(`${name}: trend-up holds AA floor on background`, () => {
+		expect(contrastRatio(theme.trendUp, theme.bg)).toBeGreaterThanOrEqual(AA_CONTRAST);
+	});
+
+	it(`${name}: trend-down holds AA floor on background`, () => {
+		expect(contrastRatio(theme.trendDown, theme.bg)).toBeGreaterThanOrEqual(AA_CONTRAST);
+	});
 }
 
 describe('report theme contrast (AAA)', () => {

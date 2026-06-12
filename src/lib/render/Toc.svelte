@@ -75,7 +75,7 @@
 	.scrim {
 		position: fixed;
 		inset: 0;
-		background: color-mix(in srgb, var(--color-ink) 55%, transparent);
+		background: var(--report-scrim);
 		z-index: 40;
 	}
 

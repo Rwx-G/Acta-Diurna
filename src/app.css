@@ -58,6 +58,7 @@
 	--text-2xl: 1.953rem; /* 31.25px - report title on cover (h1) small screens */
 	--text-3xl: 2.441rem; /* 39px    - cover title */
 	--text-4xl: 3.052rem; /* 48.8px  - cover title, large screens */
+	--text-tick: 0.75rem; /* 12px    - SVG chart tick / slice labels */
 
 	--leading-tight: 1.15;
 	--leading-snug: 1.3;
@@ -117,6 +118,16 @@
 	--report-chart-4: #8a5a13;
 	--report-chart-5: #5a4a78;
 	--report-chart-6: #7a2e3a;
+
+	/* KPI trend direction, report content. Distinct from the workspace-chrome
+	   --color-green/--color-danger (which are never used inside report content):
+	   these are part of the theme surface so every theme keeps them above the AA
+	   floor on its own report background (asserted in the contrast tests). */
+	--report-trend-up: #2f6b4a; /* 5.6:1 on stone */
+	--report-trend-down: #a23b3b; /* 5.8:1 on stone */
+
+	/* Overlay scrim (TOC backdrop). Dark-ink veil on the light theme. */
+	--report-scrim: color-mix(in srgb, var(--color-ink) 55%, transparent);
 }
 
 /*
@@ -147,6 +158,13 @@
 	--report-chart-4: #d6a85a;
 	--report-chart-5: #a99bd0;
 	--report-chart-6: #e08a96;
+	/* Lightened trend colors so they clear the AA floor on the dark report bg
+	   (the light-theme greens/reds would be near-invisible here). */
+	--report-trend-up: #6fbf95; /* 8.4:1 on #14131f */
+	--report-trend-down: #f08a8a; /* 7.6:1 on #14131f */
+	/* An ink veil is invisible on an already-dark page; use a light-text wash so
+	   the backdrop still reads as dimmed behind the TOC panel. */
+	--report-scrim: color-mix(in srgb, #f3efe4 22%, transparent);
 }
 
 body {
