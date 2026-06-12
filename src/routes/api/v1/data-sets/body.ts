@@ -6,7 +6,7 @@
  * `ingestBytes` takes. Every business rule (parse, inspect, store, bind,
  * rebind, diagnostics) stays in the reused services.
  */
-import { MAX_UPLOAD_BYTES, type SourceFormat } from '$lib/server/ingestion';
+import { MAX_UPLOAD_BYTES, readStreamToCap, type SourceFormat } from '$lib/server/ingestion';
 import { excelNotEnabled, tooLarge, unsupportedFormat } from '$lib/server/ingestion/errors';
 import { AppError } from '$lib/server/problem';
 
@@ -80,11 +80,11 @@ export function readFilename(request: Request, format: SourceFormat): string {
  * The declared `Content-Length` is a cheap fast-path early rejection: above the
  * cap, a 413 with no read at all. But Content-Length is client-supplied and
  * omittable (a chunked request can lie or omit it), so it is NOT the real bound.
- * The real bound is the STREAMING read below: chunks are pulled one at a time
- * and the cumulative byte count is checked after each; the instant it exceeds
- * the cap the reader is cancelled and a 413 is thrown, so an oversized body is
- * never fully buffered (the DoS guard). `ingestBytes` re-checks the assembled
- * length as the second line. An empty body is a 400.
+ * The real bound is the shared streaming read (`readStreamToCap`): chunks are
+ * pulled one at a time and the cumulative byte count is checked after each; the
+ * instant it exceeds the cap the reader is cancelled and a 413 is thrown, so an
+ * oversized body is never fully buffered (the DoS guard). `ingestBytes` re-checks
+ * the assembled length as the second line. An empty body is a 400.
  */
 export async function readBodyBytes(request: Request): Promise<Uint8Array> {
 	const declared = request.headers.get('content-length');
@@ -99,36 +99,10 @@ export async function readBodyBytes(request: Request): Promise<Uint8Array> {
 		throw malformedRequest('The request body is empty; send the file bytes.');
 	}
 
-	const reader = request.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let total = 0;
-	try {
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			if (value === undefined) continue;
-			total += value.byteLength;
-			if (total > MAX_UPLOAD_BYTES) {
-				// Stop AT the cap: cancel the stream so the remaining (potentially
-				// unbounded) body is never pulled into memory.
-				await reader.cancel();
-				throw tooLarge(MAX_UPLOAD_BYTES);
-			}
-			chunks.push(value);
-		}
-	} finally {
-		reader.releaseLock();
-	}
+	const bytes = await readStreamToCap(request.body);
 
-	if (total === 0) {
+	if (bytes.byteLength === 0) {
 		throw malformedRequest('The request body is empty; send the file bytes.');
-	}
-
-	const bytes = new Uint8Array(total);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.byteLength;
 	}
 	return bytes;
 }
