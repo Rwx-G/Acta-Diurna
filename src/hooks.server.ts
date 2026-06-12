@@ -1,9 +1,13 @@
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { building } from '$app/environment';
+import { deleteAuthorCookie, readAuthorCookie } from '$lib/server/auth/cookies';
+import { loginRateLimiter } from '$lib/server/auth/rate-limit';
+import { validateAuthorSession } from '$lib/server/auth/sessions';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv } from '$lib/server/env';
 import { logger } from '$lib/server/logger';
+import { AppError, errorPageShape, problemResponse, rateLimited } from '$lib/server/problem';
 
 // Boot order (AR9 / FR34): validate env -> run migrations -> serve.
 // adapter-node top-level-awaits server.init() (which awaits this hook) before
@@ -60,7 +64,44 @@ const accessLog: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle: Handle = sequence(requestContext, securityHeaders, accessLog);
+// Sits inside accessLog/securityHeaders so a 429 is still logged and carries
+// the security headers. Wired only on the login action for now (AR12); other
+// sensitive routes opt in with their own keys as they land.
+const loginRateLimit: Handle = async ({ event, resolve }) => {
+	if (event.url.pathname === '/login' && event.request.method === 'POST') {
+		const decision = loginRateLimiter.consume(`${event.getClientAddress()}:/login`);
+		if (!decision.allowed) {
+			logger.warn(
+				{ requestId: event.locals.requestId, path: event.url.pathname },
+				'rate limit engaged'
+			);
+			return problemResponse(rateLimited(decision.retryAfterSeconds));
+		}
+	}
+	return await resolve(event);
+};
+
+// Realm resolution (D4): a present author cookie is verified (HMAC, then DB
+// lookup) into locals.authorSession; an invalid or expired one is cleared so
+// clients do not resend it on every request.
+const authorRealm: Handle = async ({ event, resolve }) => {
+	event.locals.authorSession = null;
+
+	const token = readAuthorCookie(event.cookies);
+	if (token) {
+		event.locals.authorSession = await validateAuthorSession(token);
+		if (!event.locals.authorSession) deleteAuthorCookie(event.cookies);
+	}
+	return await resolve(event);
+};
+
+export const handle: Handle = sequence(
+	requestContext,
+	securityHeaders,
+	accessLog,
+	loginRateLimit,
+	authorRealm
+);
 
 export const handleError: HandleServerError = ({ error, event, status, message }) => {
 	logger.error(
@@ -73,8 +114,12 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 		},
 		message
 	);
-	// Never leak internals to the client; RFC 9457 problem-details shape
-	// (message is required by SvelteKit's App.Error and mirrors title).
+	// Single mapping point (AR4): a thrown AppError keeps its problem-details
+	// fields; for /api/* routes SvelteKit serializes this shape as JSON.
+	// Anything else stays an opaque 500 - never leak internals to the client.
+	if (error instanceof AppError) {
+		return errorPageShape(error);
+	}
 	return {
 		type: 'about:blank',
 		title: 'Internal Server Error',

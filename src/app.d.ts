@@ -1,5 +1,7 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
+import type { AuthorSession } from '$lib/server/auth/sessions';
+
 declare global {
 	namespace App {
 		// RFC 9457 problem-details shape returned by handleError in hooks.server.ts.
@@ -12,6 +14,9 @@ declare global {
 		}
 		interface Locals {
 			requestId: string;
+			// Resolved by the authorRealm hook on every request: null means
+			// unauthenticated (or invalid/expired cookie, already cleared).
+			authorSession: AuthorSession | null;
 		}
 	}
 }
