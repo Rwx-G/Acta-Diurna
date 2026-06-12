@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError } from '$lib/server/problem';
 import { saveSkeleton } from '$lib/server/skeletons/skeletons';
 
@@ -12,6 +13,10 @@ export const actions: Actions = {
 			// payload means a no-JS post, which the structure-first composer does not
 			// support (workspace is desktop-only, JS-required - 1.5 accepted gap).
 			return fail(400, { message: 'Composing a skeleton requires JavaScript.', errors: [] });
+		}
+		if (raw.length > MAX_DOCUMENT_BYTES) {
+			// Reject an oversized payload before JSON.parse spends memory on it.
+			return fail(413, { message: 'Skeleton payload is too large.', errors: [] });
 		}
 		let structureInput: unknown;
 		try {

@@ -173,6 +173,17 @@ describe('save action', () => {
 		expect(updateMock).not.toHaveBeenCalled();
 	});
 
+	it('rejects an oversized payload with 413 before parsing or calling the service', async () => {
+		const data = new FormData();
+		data.set('document', 'x'.repeat(1_000_001));
+
+		const result = (await actions.save(saveEvent(data))) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(413);
+		expect(updateMock).not.toHaveBeenCalled();
+		expect(getReportMock).not.toHaveBeenCalled();
+	});
+
 	it('returns a graceful 404 failure when the report is deleted before a no-JS save', async () => {
 		// getReport runs inside the action try/catch, so a report deleted between
 		// load and submit on the no-JS path surfaces as a mapped failure, never a 500.

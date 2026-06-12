@@ -38,7 +38,6 @@
 	let clientErrors = $state<EditorIssue[] | null>(null);
 	let saveMessage = $state<string | null>(null);
 	let submittedDoc = $state<DocumentV1Input | null>(null);
-	let saveFormElement: HTMLFormElement | undefined = $state();
 
 	const issues: EditorIssue[] = $derived(clientErrors ?? form?.errors ?? []);
 	const errorsByKey: ErrorsByKey = $derived(groupErrorsByLocation(issues, submittedDoc ?? draft));
@@ -83,7 +82,7 @@
 	<title>Compose a skeleton - Acta Diurna</title>
 </svelte:head>
 
-<form method="POST" action="?/save" use:enhance={submitSave} bind:this={saveFormElement}>
+<form method="POST" action="?/save" use:enhance={submitSave}>
 	<div class="composer-header">
 		<input
 			class="skeleton-title"

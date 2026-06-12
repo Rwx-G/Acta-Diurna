@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { getBrick } from '$lib/bricks';
 import { sectionSchema, validateDocument } from '$lib/schema';
-import { appendBrick, groupErrorsByLocation, moveItem, newSkeletonDraft } from './compose-state.ts';
+import {
+	appendBrick,
+	groupErrorsByLocation,
+	moveItem,
+	newSkeletonDraft,
+	removeSection
+} from './compose-state.ts';
 
 const cover = getBrick('cover')!;
 const dataTable = getBrick('dataTable')!;
@@ -32,12 +38,14 @@ describe('composer state', () => {
 		expect(draft.sections[1].id).toBe(firstId);
 	});
 
-	it('removing a section via splice updates the structure', () => {
+	it('removeSection drops the section at the index and is a no-op out of bounds', () => {
 		const draft = newSkeletonDraft(cover);
 		appendBrick(draft.sections, dataTable);
-		draft.sections.splice(0, 1);
+		removeSection(draft.sections, 0);
 		expect(draft.sections).toHaveLength(1);
 		expect(draft.sections[0].title).toBe('Data table');
+		removeSection(draft.sections, 5);
+		expect(draft.sections).toHaveLength(1);
 	});
 
 	it('renaming a section keeps the document valid', () => {

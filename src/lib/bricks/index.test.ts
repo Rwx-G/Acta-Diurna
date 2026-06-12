@@ -33,6 +33,26 @@ describe('brick library', () => {
 		}
 	});
 
+	it('returns non-aliased binding objects across calls (mutation does not leak)', () => {
+		const first = getBrick('dataTable')!.factory();
+		const second = getBrick('dataTable')!.factory();
+		const firstBlock = first.blocks[0] as { binding: { fields: { name: string }[] } };
+		const secondBlock = second.blocks[0] as { binding: { fields: { name: string }[] } };
+
+		expect(firstBlock.binding).not.toBe(secondBlock.binding);
+		expect(firstBlock.binding.fields).not.toBe(secondBlock.binding.fields);
+
+		firstBlock.binding.fields[0].name = 'mutated';
+		firstBlock.binding.fields.push({ name: 'extra' });
+
+		expect(secondBlock.binding.fields[0].name).toBe('item');
+		expect(secondBlock.binding.fields).toHaveLength(3);
+		// A third call still produces the pristine preset, proving the singleton survived.
+		const third = getBrick('dataTable')!.factory();
+		const thirdBlock = third.blocks[0] as { binding: { fields: { name: string }[] } };
+		expect(thirdBlock.binding.fields[0].name).toBe('item');
+	});
+
 	it('the annex brick is annex-flagged', () => {
 		const section = getBrick('annex')!.factory();
 		expect(section.annex).toBe(true);

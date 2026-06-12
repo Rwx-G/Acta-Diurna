@@ -90,6 +90,14 @@ const TABLE_BINDING: Binding = {
 	]
 };
 
+// The binding presets are module-level constants, but a factory result is a
+// fresh mutable draft the composer owns and edits. Cloning the binding (and its
+// fields array) per call keeps the presets from being aliased into the draft,
+// so a downstream mutation cannot corrupt the shared singleton.
+function cloneBinding(binding: Binding): Binding {
+	return { ...binding, fields: binding.fields.map((field) => ({ ...field })) };
+}
+
 /** Data table: a section with a table block bound to placeholder columns. */
 function dataTableBrick(): SkeletonSection {
 	return {
@@ -104,7 +112,7 @@ function dataTableBrick(): SkeletonSection {
 					{ key: 'status', label: 'Status' },
 					{ key: 'count', label: 'Count' }
 				],
-				binding: TABLE_BINDING
+				binding: cloneBinding(TABLE_BINDING)
 			}
 		]
 	};
@@ -127,7 +135,7 @@ function chartSectionBrick(): SkeletonSection {
 				type: 'chart',
 				id: newId(),
 				kind: 'line',
-				binding: CHART_BINDING,
+				binding: cloneBinding(CHART_BINDING),
 				xAxisLabel: 'Period',
 				yAxisLabel: 'Value',
 				legendLabel: 'Trend'
@@ -153,7 +161,7 @@ function kpiRowBrick(): SkeletonSection {
 			{
 				type: 'kpi',
 				id: newId(),
-				binding: KPI_BINDING
+				binding: cloneBinding(KPI_BINDING)
 			}
 		]
 	};

@@ -6,21 +6,23 @@
  *
  * A skeleton IS a `DocumentV1Input` (story 2.1 Dev Notes): structure + binding
  * expectations, no data. The list-reordering and error-grouping primitives are
- * reused from the 1.5 block editor (`editor-state`) - the composer is the
- * structure-first sibling of that editor, so they share one implementation.
+ * the shared `$lib/editor` ones - the composer is the structure-first sibling of
+ * the 1.5 block editor, so both consume one implementation.
  */
 import type { Brick, SkeletonSection } from '$lib/bricks';
 import type { DocumentV1Input } from '$lib/schema';
 
-export {
-	groupErrorsByLocation,
-	humanizePath,
-	moveItem
-} from '../../reports/[id]/edit/editor-state.ts';
-export type { EditorIssue, ErrorsByKey } from '../../reports/[id]/edit/editor-state.ts';
+export { groupErrorsByLocation, humanizePath, moveItem } from '$lib/editor';
+export type { EditorIssue, ErrorsByKey } from '$lib/editor';
 
 /** The default title a fresh composer opens with; renamed before save. */
 export const DEFAULT_SKELETON_TITLE = 'Untitled skeleton';
+
+/** Removes the section at `index` in place; out-of-bounds is a no-op. */
+export function removeSection(sections: SkeletonSection[], index: number): void {
+	if (index < 0 || index >= sections.length) return;
+	sections.splice(index, 1);
+}
 
 /**
  * A fresh skeleton draft. Per UX Flow A the composer opens with a starter Cover

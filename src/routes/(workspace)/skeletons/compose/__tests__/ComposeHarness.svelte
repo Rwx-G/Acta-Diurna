@@ -5,8 +5,8 @@
 	import { BRICKS } from '$lib/bricks';
 	import type { DocumentV1Input } from '$lib/schema';
 	import BrickCard from '$lib/ui/BrickCard.svelte';
-	import StructureTree from './StructureTree.svelte';
-	import { appendBrick, newSkeletonDraft, type ErrorsByKey } from './compose-state';
+	import StructureTree from '../StructureTree.svelte';
+	import { appendBrick, newSkeletonDraft, type ErrorsByKey } from '../compose-state';
 
 	let draft = $state<DocumentV1Input>(newSkeletonDraft(BRICKS[0]));
 	const errors: ErrorsByKey = {};

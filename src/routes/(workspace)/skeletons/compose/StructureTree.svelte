@@ -2,7 +2,7 @@
 	import type { SkeletonSection } from '$lib/bricks';
 	import Button from '$lib/ui/Button.svelte';
 	import IssueList from '../../reports/[id]/edit/IssueList.svelte';
-	import { moveItem, type ErrorsByKey } from './compose-state';
+	import { moveItem, removeSection, type ErrorsByKey } from './compose-state';
 
 	// Center zone of the three-zone composer (UX Flow A): the assembled structure
 	// as an ordered list of sections and their blocks. Reorder up/down, rename a
@@ -20,15 +20,25 @@
 
 	function blockSummary(block: SkeletonSection['blocks'][number]): string {
 		const label = block.type.charAt(0).toUpperCase() + block.type.slice(1);
-		if (block.type === 'text') {
-			const count = block.paragraphs.length;
-			return `${label} - ${count} paragraph${count === 1 ? '' : 's'}`;
+		switch (block.type) {
+			case 'text': {
+				const count = block.paragraphs.length;
+				return `${label} - ${count} paragraph${count === 1 ? '' : 's'}`;
+			}
+			case 'image':
+				return label;
+			case 'table':
+			case 'chart':
+			case 'kpi': {
+				const fields = block.binding?.fields.map((field) => field.name).join(', ');
+				return fields ? `${label} - expects ${fields}` : label;
+			}
+			default: {
+				// A new block type must add a case above rather than fall through silently.
+				const exhaustive: never = block;
+				return exhaustive;
+			}
 		}
-		if (block.type === 'image') {
-			return label;
-		}
-		const fields = block.binding?.fields.map((field) => field.name).join(', ');
-		return fields ? `${label} - expects ${fields}` : label;
 	}
 </script>
 
@@ -66,7 +76,7 @@
 					<Button
 						variant="danger"
 						onclick={() => {
-							sections.splice(sectionIndex, 1);
+							removeSection(sections, sectionIndex);
 							onChange();
 						}}
 						aria-label="Remove section">Remove</Button

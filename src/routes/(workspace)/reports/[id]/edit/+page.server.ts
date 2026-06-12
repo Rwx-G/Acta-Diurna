@@ -7,6 +7,7 @@ import {
 	unpublishToDraft,
 	updateReportDocument
 } from '$lib/server/documents/reports';
+import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError, errorPageShape } from '$lib/server/problem';
 import { applyNarrativeFields } from './editor-state';
 
@@ -28,6 +29,10 @@ export const actions: Actions = {
 		try {
 			let documentInput: unknown;
 			if (typeof raw === 'string') {
+				if (raw.length > MAX_DOCUMENT_BYTES) {
+					// Reject an oversized payload before JSON.parse spends memory on it.
+					return fail(413, { message: 'Document payload is too large.', errors: [] });
+				}
 				try {
 					documentInput = JSON.parse(raw);
 				} catch {
