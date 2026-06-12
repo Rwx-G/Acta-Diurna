@@ -8,6 +8,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
 	import BlockBinder from './BlockBinder.svelte';
+	import RefillPanel from './RefillPanel.svelte';
 	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
 	import {
@@ -292,6 +293,8 @@
 </form>
 
 <BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} />
+
+<RefillPanel {dataSets} disabled={!editable} />
 
 <style>
 	.editor-toolbar {

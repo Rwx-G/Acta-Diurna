@@ -9,7 +9,7 @@ import {
 	updateReportDocument,
 	type Report
 } from '$lib/server/documents/reports';
-import { bindBlock, listDataSets } from '$lib/server/ingestion';
+import { bindBlock, listDataSets, rebindReport, remapField } from '$lib/server/ingestion';
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
@@ -21,7 +21,9 @@ vi.mock('$lib/server/documents/reports', () => ({
 }));
 vi.mock('$lib/server/ingestion', () => ({
 	listDataSets: vi.fn(),
-	bindBlock: vi.fn()
+	bindBlock: vi.fn(),
+	rebindReport: vi.fn(),
+	remapField: vi.fn()
 }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 
@@ -31,6 +33,8 @@ const publishMock = vi.mocked(publishReport);
 const unpublishMock = vi.mocked(unpublishToDraft);
 const listDataSetsMock = vi.mocked(listDataSets);
 const bindBlockMock = vi.mocked(bindBlock);
+const rebindReportMock = vi.mocked(rebindReport);
+const remapFieldMock = vi.mocked(remapField);
 const logoutMock = vi.mocked(performLogout);
 
 const REPORT_ID = '01970000-0000-7000-8000-000000000001';
@@ -304,6 +308,133 @@ describe('bind action', () => {
 		)) as ActionFailure<{ message: string }>;
 
 		expect(result.status).toBe(422);
+	});
+});
+
+type RebindAction = typeof actions.rebind;
+
+function postEvent(action: string, form: Record<string, string>): Parameters<RebindAction>[0] {
+	const data = new FormData();
+	for (const [key, value] of Object.entries(form)) data.set(key, value);
+	return {
+		params: { id: REPORT_ID },
+		request: new Request(`http://localhost/reports/x/edit?/${action}`, {
+			method: 'POST',
+			body: data
+		})
+	} as Parameters<RebindAction>[0];
+}
+
+describe('rebind action (FR14)', () => {
+	it('rebinds from a data set and returns diagnostics + summary', async () => {
+		rebindReportMock.mockResolvedValue({
+			report: sampleReport({ updatedAt: new Date('2026-06-12T12:00:00Z') }),
+			diagnostics: [
+				{ blockId: 'b1', blockType: 'table', label: 'Metrics - table', state: 'bound', drifts: [] }
+			],
+			summary: { total: 1, bound: 1, drifted: 0, unresolved: 0, allGreen: true },
+			rebound: ['b1']
+		});
+
+		const result = await actions.rebind(
+			postEvent('rebind', { dataSetId: '01970000-0000-7000-8000-0000000000bb' })
+		);
+
+		expect(rebindReportMock).toHaveBeenCalledExactlyOnceWith(
+			REPORT_ID,
+			'01970000-0000-7000-8000-0000000000bb'
+		);
+		expect(result).toMatchObject({
+			reboundAt: '2026-06-12T12:00:00.000Z',
+			rebound: ['b1'],
+			summary: { allGreen: true }
+		});
+	});
+
+	it('rejects a missing data set with 400 without calling the service', async () => {
+		const result = (await actions.rebind(postEvent('rebind', { dataSetId: '' }))) as ActionFailure<{
+			message: string;
+		}>;
+
+		expect(result.status).toBe(400);
+		expect(rebindReportMock).not.toHaveBeenCalled();
+	});
+
+	it('maps a service 422 (incoherent on fresh data) to a failure', async () => {
+		rebindReportMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'File could not be parsed',
+				type: '/problems/unparseable-file',
+				detail: 'Chart y value is not a number.'
+			})
+		);
+
+		const result = (await actions.rebind(
+			postEvent('rebind', { dataSetId: 'd' })
+		)) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(422);
+	});
+});
+
+describe('remap action (FR15)', () => {
+	it('remaps an expected field onto an available field and returns the timestamp', async () => {
+		remapFieldMock.mockResolvedValue(sampleReport({ updatedAt: new Date('2026-06-12T12:30:00Z') }));
+
+		const result = await actions.remap(
+			postEvent('remap', {
+				blockId: 'severity-table',
+				dataSetId: 'd',
+				expectedField: 'count',
+				availableField: 'counts'
+			})
+		);
+
+		expect(remapFieldMock).toHaveBeenCalledExactlyOnceWith(
+			REPORT_ID,
+			'severity-table',
+			'd',
+			'count',
+			'counts'
+		);
+		expect(result).toEqual({ remappedAt: '2026-06-12T12:30:00.000Z' });
+	});
+
+	it('rejects an incomplete remap with 400 without calling the service', async () => {
+		const result = (await actions.remap(
+			postEvent('remap', {
+				blockId: 'b',
+				dataSetId: 'd',
+				expectedField: 'count',
+				availableField: ''
+			})
+		)) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(400);
+		expect(remapFieldMock).not.toHaveBeenCalled();
+	});
+
+	it('maps a service 404 (unknown field) to a failure', async () => {
+		remapFieldMock.mockRejectedValue(
+			new AppError({
+				status: 404,
+				title: 'Binding field not found',
+				type: '/problems/binding-field-not-found',
+				detail: 'No bound field "count" on this block to remap.'
+			})
+		);
+
+		const result = (await actions.remap(
+			postEvent('remap', {
+				blockId: 'b',
+				dataSetId: 'd',
+				expectedField: 'count',
+				availableField: 'counts'
+			})
+		)) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(404);
 	});
 });
 

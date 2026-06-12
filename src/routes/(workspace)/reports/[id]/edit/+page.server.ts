@@ -7,7 +7,13 @@ import {
 	unpublishToDraft,
 	updateReportDocument
 } from '$lib/server/documents/reports';
-import { bindBlock, listDataSets, type SlotMapping } from '$lib/server/ingestion';
+import {
+	bindBlock,
+	listDataSets,
+	rebindReport,
+	remapField,
+	type SlotMapping
+} from '$lib/server/ingestion';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError, errorPageShape } from '$lib/server/problem';
 import { parseSlotMapping } from './bind-form';
@@ -77,6 +83,57 @@ export const actions: Actions = {
 		try {
 			const report = await bindBlock(params.id, blockId, dataSetId, slotMapping);
 			return { boundAt: report.updatedAt.toISOString() };
+		} catch (thrown) {
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, {
+					message: thrown.detail ?? thrown.title,
+					errors: thrown.errors ?? []
+				});
+			}
+			throw thrown;
+		}
+	},
+	rebind: async ({ params, request }) => {
+		// Auto-rebinding (FR14): inject a fresh data set and re-resolve every bound
+		// block whose fields match it. Returns the per-block diagnostics + the
+		// summary so the chips turn green/amber/red in one action.
+		const data = await request.formData();
+		const dataSetId = String(data.get('dataSetId') ?? '');
+		if (!dataSetId) {
+			return fail(400, { message: 'A data set is required to rebind.', errors: [] });
+		}
+		try {
+			const result = await rebindReport(params.id, dataSetId);
+			return {
+				reboundAt: result.report.updatedAt.toISOString(),
+				diagnostics: result.diagnostics,
+				summary: result.summary,
+				rebound: result.rebound
+			};
+		} catch (thrown) {
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, {
+					message: thrown.detail ?? thrown.title,
+					errors: thrown.errors ?? []
+				});
+			}
+			throw thrown;
+		}
+	},
+	remap: async ({ params, request }) => {
+		// Remap-in-place (FR15): point a drifted expected field at an available
+		// field; the remap persists in the binding and the block re-resolves.
+		const data = await request.formData();
+		const blockId = String(data.get('blockId') ?? '');
+		const dataSetId = String(data.get('dataSetId') ?? '');
+		const expectedField = String(data.get('expectedField') ?? '');
+		const availableField = String(data.get('availableField') ?? '');
+		if (!blockId || !dataSetId || !expectedField || !availableField) {
+			return fail(400, { message: 'A block, data set, and field pair are required.', errors: [] });
+		}
+		try {
+			const report = await remapField(params.id, blockId, dataSetId, expectedField, availableField);
+			return { remappedAt: report.updatedAt.toISOString() };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, {
