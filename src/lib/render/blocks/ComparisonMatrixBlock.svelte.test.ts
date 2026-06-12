@@ -124,6 +124,14 @@ describe('ComparisonMatrixBlock render', () => {
 						category: 'Access',
 						label: 'A1',
 						severity: 'high',
+						// siem found, edr missing.
+						sources: { siem: { state: 'found' }, edr: { state: 'missing' } },
+						treatment: { before: 'x', after: 'y', status: 'action' }
+					},
+					{
+						category: 'Access',
+						label: 'A2',
+						severity: 'low',
 						// siem found, edr omitted -> none.
 						sources: { siem: { state: 'found' } },
 						treatment: { before: 'x', after: 'y', status: 'action' }
@@ -133,7 +141,47 @@ describe('ComparisonMatrixBlock render', () => {
 			scales
 		});
 		expect(container.querySelector('.source-cell.found')).not.toBeNull();
+		expect(container.querySelector('.source-cell.missing')).not.toBeNull();
 		expect(container.querySelector('.source-cell.none')).not.toBeNull();
+	});
+
+	it('carries the missing state class and a visually-hidden "Missed" label on a missing cell', () => {
+		const { container } = render(ComparisonMatrixBlock, {
+			block: block({
+				findings: [
+					{
+						category: 'Access',
+						label: 'A1',
+						severity: 'high',
+						sources: { edr: { state: 'missing' } },
+						treatment: { before: 'x', after: 'y', status: 'action' }
+					}
+				]
+			}),
+			scales
+		});
+		const missing = container.querySelector('.source-cell.missing');
+		expect(missing).not.toBeNull();
+		expect(missing?.querySelector('.visually-hidden')?.textContent?.trim()).toBe('Missed:');
+	});
+
+	it('renders the escaped text of a found source cell in .cell-text', () => {
+		const { container } = render(ComparisonMatrixBlock, {
+			block: block({
+				findings: [
+					{
+						category: 'Access',
+						label: 'A1',
+						severity: 'high',
+						sources: { siem: { state: 'found', text: 'INT-04' } },
+						treatment: { before: 'x', after: 'y', status: 'action' }
+					}
+				]
+			}),
+			scales
+		});
+		const cellText = container.querySelector('.source-cell.found .cell-text');
+		expect(cellText?.textContent?.trim()).toBe('INT-04');
 	});
 
 	it('tints treatment cells by status', () => {
