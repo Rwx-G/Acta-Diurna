@@ -34,8 +34,9 @@ describe('BlockEditor inline validation', () => {
 		await expect
 			.element(getByText('Describe the image for screen readers', { exact: false }))
 			.toBeVisible();
-		// Regex form: brackets in a string locator are parsed as selector syntax.
-		await expect.element(getByText(/sections\[0\]\.blocks\[0\]\.alt/)).toBeVisible();
+		// The raw indexed path is humanised to a readable field label (no brackets,
+		// no indices) so the author sees `alt`, not `sections[0].blocks[0].alt`.
+		await expect.element(getByText('alt', { exact: true })).toBeVisible();
 	});
 
 	it('renders no alert when the block has no issues', async () => {

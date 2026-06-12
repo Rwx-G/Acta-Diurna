@@ -1,8 +1,10 @@
 <script lang="ts">
+	import type { ReportStatus } from '$lib/server/documents/reports';
+
 	// Standing states use chips (UX feedback patterns). Report lifecycle only
 	// has these two states in Epic 1; binding chips arrive with Epic 2.
 	interface Props {
-		status: 'draft' | 'published';
+		status: ReportStatus;
 	}
 
 	let { status }: Props = $props();

@@ -2,6 +2,7 @@ import { isRedirect } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createReport, type Report } from '$lib/server/documents/reports';
 import { actions, load } from './+page.server';
+import { DEFAULT_REPORT_TITLE } from './constants';
 
 vi.mock('$lib/server/documents/reports', () => ({ createReport: vi.fn() }));
 
@@ -38,6 +39,6 @@ describe('create action', () => {
 		} catch (thrown) {
 			expectRedirect(thrown, '/reports/01970000-0000-7000-8000-000000000001/edit');
 		}
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('Untitled report');
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE);
 	});
 });

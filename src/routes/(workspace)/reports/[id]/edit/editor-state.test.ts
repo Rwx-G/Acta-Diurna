@@ -3,6 +3,7 @@ import { validateDocument, type BlockType, type DocumentV1Input } from '$lib/sch
 import {
 	applyNarrativeFields,
 	groupErrorsByLocation,
+	humanizePath,
 	moveItem,
 	newBlock,
 	newSection,
@@ -98,6 +99,19 @@ describe('paragraphText', () => {
 	});
 });
 
+describe('humanizePath', () => {
+	it('reduces an indexed path to its readable trailing field', () => {
+		expect(humanizePath('sections[0].blocks[2].items[1].label')).toBe('label');
+		expect(humanizePath('sections[0].title')).toBe('title');
+		expect(humanizePath('title')).toBe('title');
+	});
+
+	it('splits camelCase fields into words', () => {
+		expect(humanizePath('sections[0].blocks[0].assetId')).toBe('asset id');
+		expect(humanizePath('sections[0].blocks[0].stickyHeader')).toBe('sticky header');
+	});
+});
+
 describe('groupErrorsByLocation', () => {
 	const document = {
 		sections: [
@@ -129,6 +143,28 @@ describe('groupErrorsByLocation', () => {
 		);
 
 		expect(grouped['document']).toHaveLength(1);
+	});
+
+	it('keeps an error on the right block when sections reorder between submit and render', () => {
+		// The error path is index-based against the SUBMITTED document. The page
+		// maps it against that snapshot, not the live (reordered) doc, so the
+		// stable block id stays correct even after the author swaps sections.
+		const submitted = {
+			sections: [
+				{ id: 'alpha', blocks: [{ id: 'alpha-1' }] },
+				{ id: 'beta', blocks: [{ id: 'beta-1' }] }
+			]
+		};
+		const grouped = groupErrorsByLocation(
+			[{ path: 'sections[1].blocks[0].alt', message: 'Alt text must not be empty.' }],
+			submitted
+		);
+
+		// The error names the second section's block at submit time: beta-1.
+		expect(grouped['block:beta-1']).toHaveLength(1);
+		// Re-grouping against a reordered live doc would still resolve by id, never
+		// by stale index, so the alert never jumps to the wrong block.
+		expect(grouped['block:alpha-1']).toBeUndefined();
 	});
 });
 

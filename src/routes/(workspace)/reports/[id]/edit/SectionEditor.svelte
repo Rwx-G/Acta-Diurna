@@ -3,6 +3,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import BlockEditor from './BlockEditor.svelte';
+	import IssueList from './IssueList.svelte';
 	import { moveItem, newBlock, type ErrorsByKey } from './editor-state';
 
 	interface Props {
@@ -59,16 +60,7 @@
 
 	<AudiencePicker bind:audiences={section.audiences} legend="Section audiences" {onEdit} />
 
-	{#if sectionIssues.length > 0}
-		<ul class="section-issues" role="alert">
-			{#each sectionIssues as issue (issue.path + issue.message)}
-				<li>
-					<strong>{issue.message}</strong>
-					{#if issue.hint}<span class="hint">{issue.hint}</span>{/if}
-				</li>
-			{/each}
-		</ul>
-	{/if}
+	<IssueList issues={sectionIssues} variant="section" />
 
 	{#each section.blocks as block, blockIndex (block.id)}
 		<BlockEditor
@@ -141,19 +133,6 @@
 	.controls {
 		display: flex;
 		gap: var(--space-1);
-	}
-
-	.section-issues {
-		margin: 0 0 var(--space-3);
-		padding: var(--space-2) var(--space-5);
-		color: var(--color-danger);
-		background: var(--color-danger-08);
-		border-radius: var(--radius-sm);
-	}
-
-	.section-issues .hint {
-		display: block;
-		color: var(--color-ink-65);
 	}
 
 	.add-block {

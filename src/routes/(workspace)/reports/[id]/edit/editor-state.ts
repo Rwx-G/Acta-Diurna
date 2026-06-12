@@ -18,8 +18,12 @@ export type EditorIssue = ValidationErrorDetail;
 /** Issues grouped by editor location: `document`, `section:<id>` or `block:<id>`. */
 export type ErrorsByKey = Record<string, EditorIssue[]>;
 
-// Editor-generated ids only need to satisfy the schema slug rule; UUIDv7 is a
-// database-key rule. crypto.randomUUID() exists in both browser and Node 22.
+// Editor-generated section/block ids only need to satisfy the schema's slug
+// rule (lowercase alphanumerics and hyphens) - they are document-internal
+// anchors, not database keys. The UUIDv7 rule applies only to the report row id,
+// which the server assigns on create; a crypto.randomUUID() here is a
+// convenient slug-valid unique value and is never persisted as a row primary
+// key. crypto.randomUUID() exists in both the browser and Node 22.
 function newId(): string {
 	return crypto.randomUUID();
 }
@@ -67,6 +71,22 @@ export function moveItem<T>(items: T[], index: number, direction: -1 | 1): void 
  */
 export function paragraphText(paragraph: Paragraph): string {
 	return paragraph.map((run) => run.text).join('');
+}
+
+/**
+ * Turns a validation error path into a readable field label for the author:
+ * the last non-index segment with separators normalised. `sections[0].blocks[2]
+ * .items[1].label` becomes `label`, `sections[0].title` becomes `title`. The
+ * raw indexed path is noise to a human; the inline placement already says which
+ * block the error belongs to.
+ */
+export function humanizePath(path: string): string {
+	const segments = path
+		.replace(/\[\d+\]/g, '')
+		.split('.')
+		.filter((segment) => segment.length > 0);
+	const last = segments.at(-1) ?? path;
+	return last.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
 const LOCATION_PATTERN = /^sections\[(\d+)\](?:\.blocks\[(\d+)\])?/;

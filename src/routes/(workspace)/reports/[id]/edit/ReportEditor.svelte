@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { formatUtcTime } from '$lib/format';
 	import type { DocumentV1 } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
+	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
 	import {
 		groupErrorsByLocation,
@@ -36,7 +38,11 @@
 	// no-JS path); [] = last JS save succeeded; entries = last JS save failed.
 	let clientErrors = $state<EditorIssue[] | null>(null);
 	let saveMessage = $state<string | null>(null);
-	let submittedDoc: DocumentV1 | null = null;
+	// Reactive: the error-to-block mapping below maps issues against the document
+	// that was SUBMITTED (the one the server rejected), not the live doc. As a
+	// plain `let` the $derived captured the initial null and never re-grouped
+	// after a save reassigned it; $state makes the reassignment reactive.
+	let submittedDoc = $state<DocumentV1 | null>(null);
 	let saveFormElement: HTMLFormElement | undefined = $state();
 	let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -102,7 +108,7 @@
 	};
 
 	function savedAtLabel(iso: string): string {
-		return `Saved at ${iso.slice(11, 16)} UTC`;
+		return `Saved at ${formatUtcTime(iso)}`;
 	}
 </script>
 
@@ -151,16 +157,7 @@
 			<p class="problem" role="alert">{failureMessage}</p>
 		{/if}
 
-		{#if documentIssues.length > 0}
-			<ul class="document-issues" role="alert">
-				{#each documentIssues as issue (issue.path + issue.message)}
-					<li>
-						<strong>{issue.message}</strong>
-						{#if issue.hint}<span class="hint">{issue.hint}</span>{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<IssueList issues={documentIssues} variant="document" />
 
 		{#each doc.sections as section, sectionIndex (section.id)}
 			<SectionEditor
@@ -252,19 +249,6 @@
 		color: var(--color-danger);
 		background: var(--color-danger-08);
 		border-radius: var(--radius-sm);
-	}
-
-	.document-issues {
-		margin: 0 0 var(--space-4);
-		padding: var(--space-3) var(--space-5);
-		color: var(--color-danger);
-		background: var(--color-danger-08);
-		border-radius: var(--radius-sm);
-	}
-
-	.document-issues .hint {
-		display: block;
-		color: var(--color-ink-65);
 	}
 
 	.add-section {

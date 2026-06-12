@@ -161,6 +161,21 @@ describe('save action', () => {
 		expect(updateMock).not.toHaveBeenCalled();
 	});
 
+	it('returns a graceful 404 failure when the report is deleted before a no-JS save', async () => {
+		// getReport runs inside the action try/catch, so a report deleted between
+		// load and submit on the no-JS path surfaces as a mapped failure, never a 500.
+		getReportMock.mockRejectedValue(
+			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
+		);
+		const data = new FormData();
+		data.set('title', 'Edited Without JS');
+
+		const result = (await actions.save(saveEvent(data))) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(404);
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
 	it('applies posted narrative fields onto the stored document when JS is unavailable', async () => {
 		const report = sampleReport();
 		getReportMock.mockResolvedValue(report);

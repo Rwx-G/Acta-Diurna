@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { formatUtcDateTime } from '$lib/format';
 	import Button from '$lib/ui/Button.svelte';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
@@ -30,12 +31,6 @@
 			await update();
 		};
 	};
-
-	// Deterministic UTC formatting: identical on server and client renders.
-	function formatTimestamp(date: Date): string {
-		const iso = date.toISOString();
-		return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
-	}
 
 	const newReportPath = resolve('/(workspace)/reports/new');
 </script>
@@ -74,7 +69,7 @@
 					{report.title}
 				</a>
 				<StatusChip status={report.status} />
-				<span class="updated">Updated {formatTimestamp(report.updatedAt)}</span>
+				<span class="updated">Updated {formatUtcDateTime(report.updatedAt)}</span>
 				{#if report.status === 'draft'}
 					<form method="POST" action="?/delete" use:enhance={confirmDelete}>
 						<input type="hidden" name="id" value={report.id} />
