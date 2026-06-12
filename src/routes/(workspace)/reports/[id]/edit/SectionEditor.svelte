@@ -114,9 +114,9 @@
 	.section-title {
 		flex: 1;
 		min-width: 0;
-		padding: var(--space-1) var(--space-2);
+		padding: var(--space-2) var(--space-3);
 		font: inherit;
-		font-size: 16px;
+		font-size: var(--text-lg);
 		font-weight: 600;
 		color: inherit;
 		background: transparent;
@@ -137,7 +137,8 @@
 
 	.add-block {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
-		margin-top: var(--space-3);
+		margin-top: var(--space-4);
 	}
 </style>

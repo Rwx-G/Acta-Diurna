@@ -112,8 +112,8 @@
 <style>
 	.field-label {
 		display: block;
-		margin: var(--space-3) 0 var(--space-1);
-		font-size: 12px;
+		margin: var(--space-4) 0 var(--space-2);
+		font-size: var(--text-sm);
 		font-weight: 600;
 		color: var(--color-ink-65);
 	}
@@ -121,19 +121,19 @@
 	.field-row {
 		display: flex;
 		gap: var(--space-2);
-		margin-bottom: var(--space-2);
+		margin-bottom: var(--space-3);
 	}
 
 	.series {
-		margin: var(--space-3) 0;
-		padding: var(--space-2) var(--space-3);
+		margin: var(--space-4) 0;
+		padding: var(--space-3) var(--space-4);
 		border: 1px dashed var(--color-ink-12);
 		border-radius: var(--radius-sm);
 	}
 
 	input,
 	select {
-		padding: var(--space-1) var(--space-2);
+		padding: var(--space-2) var(--space-3);
 		font: inherit;
 		color: inherit;
 		background: var(--color-surface);

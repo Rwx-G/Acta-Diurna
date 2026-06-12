@@ -93,7 +93,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
-		font-size: 12px;
+		font-size: var(--text-sm);
 		color: var(--color-ink-65);
 	}
 
@@ -104,7 +104,7 @@
 
 	.field-row input,
 	.field-row select {
-		padding: var(--space-1) var(--space-2);
+		padding: var(--space-2) var(--space-3);
 		font: inherit;
 		color: inherit;
 		background: var(--color-surface);

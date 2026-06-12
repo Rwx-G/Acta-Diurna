@@ -50,8 +50,8 @@
 <style>
 	.paragraph-row {
 		display: flex;
-		gap: var(--space-2);
-		margin-bottom: var(--space-2);
+		gap: var(--space-3);
+		margin-bottom: var(--space-3);
 	}
 
 	textarea {
@@ -59,6 +59,7 @@
 		min-width: 0;
 		padding: var(--space-2) var(--space-3);
 		font: inherit;
+		line-height: 1.5;
 		color: inherit;
 		background: var(--color-surface);
 		border: 1px solid var(--color-ink-25);

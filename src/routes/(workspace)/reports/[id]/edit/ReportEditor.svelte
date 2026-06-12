@@ -204,8 +204,13 @@
 />
 
 <div class="editor-toolbar">
-	<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
-	<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
+	<nav class="toolbar-nav" aria-label="Report views">
+		<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
+		<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
+		{#if !editable}
+			<a class="toolbar-link" href={sharePath}>Share</a>
+		{/if}
+	</nav>
 
 	<!-- Morphing primary action (UX): publish a draft, or unpublish to edit a
 	     published report. Kept outside the editor fieldset so the unpublish
@@ -217,7 +222,6 @@
 			</Button>
 		</form>
 	{:else}
-		<a class="toolbar-link" href={sharePath}>Share</a>
 		<form method="POST" action="?/unpublish" use:enhance={submitUnpublish} class="lifecycle">
 			<span class="lifecycle-note">Published - unpublish to edit</span>
 			<Button type="submit" variant="secondary" disabled={publishing}>
@@ -302,11 +306,19 @@
 <style>
 	.editor-toolbar {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		justify-content: flex-end;
-		gap: var(--space-3);
+		justify-content: space-between;
+		gap: var(--space-3) var(--space-5);
 		max-width: 880px;
-		margin-bottom: var(--space-4);
+		margin-bottom: var(--space-5);
+	}
+
+	.toolbar-nav {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
 	}
 
 	.lifecycle {
@@ -326,7 +338,7 @@
 	.toolbar-link {
 		padding: var(--space-2) var(--space-4);
 		font-weight: 600;
-		font-size: var(--text-sm);
+		font-size: var(--text-base);
 		color: var(--color-ink);
 		text-decoration: none;
 		border: 1px solid var(--color-ink-25);
@@ -379,7 +391,7 @@
 
 	.saved-at {
 		color: var(--color-ink-65);
-		font-size: 12px;
+		font-size: var(--text-sm);
 		white-space: nowrap;
 	}
 

@@ -36,14 +36,16 @@
 <style>
 	.field-label {
 		display: block;
-		margin: var(--space-3) 0 var(--space-1);
-		font-size: 12px;
+		margin: var(--space-4) 0 var(--space-2);
+		font-size: var(--text-sm);
 		font-weight: 600;
 		color: var(--color-ink-65);
 	}
 
 	input {
-		padding: var(--space-1) var(--space-2);
+		display: block;
+		width: 100%;
+		padding: var(--space-2) var(--space-3);
 		font: inherit;
 		color: inherit;
 		background: var(--color-surface);
@@ -57,8 +59,8 @@
 	}
 
 	.note {
-		margin: var(--space-1) 0 0;
-		font-size: 12px;
+		margin: var(--space-2) 0 0;
+		font-size: var(--text-sm);
 		color: var(--color-ink-65);
 	}
 </style>

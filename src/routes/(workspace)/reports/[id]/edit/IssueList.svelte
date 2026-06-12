@@ -54,7 +54,7 @@
 
 	.field {
 		display: block;
-		font-size: 11px;
+		font-size: var(--text-xs);
 		color: var(--color-ink-65);
 	}
 </style>

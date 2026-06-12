@@ -75,8 +75,8 @@
 
 <style>
 	.block-card {
-		margin-bottom: var(--space-3);
-		padding: var(--space-3) var(--space-4);
+		margin-bottom: var(--space-4);
+		padding: var(--space-4) var(--space-5);
 		background: var(--color-stone);
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-sm);
@@ -86,11 +86,11 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: var(--space-2);
+		margin-bottom: var(--space-3);
 	}
 
 	.block-type {
-		font-size: 12px;
+		font-size: var(--text-sm);
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
