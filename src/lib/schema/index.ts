@@ -51,11 +51,20 @@ export {
 export type { DocumentV1, DocumentV1Input, SupportedVersion } from './versions/index.ts';
 
 export {
+	CURRENT_SCHEMA_VERSION,
+	DOCUMENT_MIGRATIONS,
+	migrateToVersion,
+	MigrationPathError
+} from './versions/migrations.ts';
+export type { DocumentMigration } from './versions/migrations.ts';
+
+export {
 	documentErrorMap,
 	formatIssuePath,
 	toProblemDetails,
 	toValidationErrors,
-	validateDocument
+	validateDocument,
+	validateStoredDocument
 } from './errors.ts';
 export type {
 	DocumentValidationResult,

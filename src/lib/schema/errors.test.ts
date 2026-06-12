@@ -3,9 +3,11 @@ import {
 	toProblemDetails,
 	toValidationErrors,
 	validateDocument,
+	validateStoredDocument,
 	type ValidationErrorDetail
 } from './errors.ts';
 import { documentSchemaV1 } from './versions/v1.ts';
+import { syntheticV0Document, syntheticV0Migration } from './versions/synthetic-v0.fixture.ts';
 
 function documentWithBlocks(blocks: unknown[]): unknown {
 	return {
@@ -323,5 +325,51 @@ describe('toProblemDetails', () => {
 	it('uses singular wording for a single error', () => {
 		const errors = expectInvalid({ version: 1, title: 'One', sections: [] });
 		expect(toProblemDetails(errors).detail).toBe('1 validation error found in the document.');
+	});
+});
+
+describe('validateStoredDocument - version-aware rendering (FR7)', () => {
+	it('validates a current-version document like the standard path', () => {
+		const result = validateStoredDocument({
+			version: 1,
+			title: 'Current',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Hi.' }]] }]
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.document.title).toBe('Current');
+	});
+
+	it('renders a synthetic v0 document by migrating it to v1 first (N-1 mechanism)', () => {
+		// Exercises the real migration walk: v0 (with `name`) -> v1 (with `title`).
+		const result = validateStoredDocument(syntheticV0Document, [syntheticV0Migration]);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.document.version).toBe(1);
+			expect(result.document.title).toBe('Legacy Quarterly Report');
+			expect(result.document.sections[0].blocks[0].type).toBe('text');
+		}
+	});
+
+	it('reports an unsupported version with the supported range as the hint', () => {
+		// No migration path: the synthetic v0 has no production migration registered.
+		const result = validateStoredDocument(syntheticV0Document);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0].path).toBe('version');
+			expect(result.errors[0].hint).toBe('Supported document schema versions: 1.');
+		}
+	});
+
+	it('still reports a root-level type error for a non-object input', () => {
+		const result = validateStoredDocument('not a document');
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.errors[0].path).toBe('document');
 	});
 });

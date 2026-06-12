@@ -6,6 +6,11 @@ import {
 	SUPPORTED_VERSIONS,
 	type DocumentV1
 } from './versions/index.ts';
+import {
+	migrateToVersion,
+	MigrationPathError,
+	type DocumentMigration
+} from './versions/migrations.ts';
 
 /**
  * One actionable validation error (FR2/FR15). The same shape feeds the
@@ -190,6 +195,37 @@ export function validateDocument(input: unknown): DocumentValidationResult {
 		return versionError('Unsupported document schema version.');
 	}
 	return parseWith(getSchema(version), input);
+}
+
+/**
+ * Validates a STORED document for rendering, lifting an earlier supported
+ * version forward through the migration chain first (FR7, N/N-1). This is the
+ * render-path contract: a document persisted under schema v(N-1) is migrated to
+ * the current shape, then validated, so the renderer only ever sees a
+ * current-version `DocumentV1`. An unsupported version (no migration path)
+ * yields the same actionable `version` error as {@link validateDocument},
+ * naming the supported range - rendered as a neutral error state, never a crash.
+ *
+ * `migrations` is injectable purely so the N-1 mechanism can be exercised by a
+ * synthetic v0 fixture in tests; production callers use the default registry.
+ */
+export function validateStoredDocument(
+	input: unknown,
+	migrations?: readonly DocumentMigration[]
+): DocumentValidationResult {
+	if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+		return parseWith(documentSchemaV1, input);
+	}
+	let migrated: Record<string, unknown>;
+	try {
+		migrated = migrateToVersion(input as Record<string, unknown>, undefined, migrations);
+	} catch (thrown) {
+		if (thrown instanceof MigrationPathError) {
+			return versionError('Unsupported document schema version.');
+		}
+		throw thrown;
+	}
+	return validateDocument(migrated);
 }
 
 /** Shapes validation errors as an RFC 9457 problem-details body (architecture D9). */
