@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
 	check,
+	index,
 	integer,
 	jsonb,
 	pgTable,
@@ -109,3 +110,44 @@ export const dataSets = pgTable(
 );
 
 export type DataSetRow = typeof dataSets.$inferSelect;
+
+// A share link (FR17/FR21/NFR6) points a reader at a published report. The raw
+// token lives ONLY in the share URL handed out once at creation; the table
+// stores its SHA-256 hash (D5, same hash-at-rest as the sessions token), so a
+// database leak exposes no usable link. `token_hash` is uniquely indexed - the
+// reader gate (story 3.3) resolves a share by hashing the URL token and looking
+// it up here.
+//
+// `report_id` is ON DELETE CASCADE (contrast `data_sets`' SET NULL): a share is
+// meaningless without its report - it serves that report's published snapshot
+// and nothing else, so when the report is deleted its shares must vanish with
+// it (a dangling share would resolve to no report). A data set, by contrast,
+// can legitimately outlive or precede a report, hence SET NULL there.
+//
+// Forward-schema columns created now, exercised later (same discipline as the
+// sessions `realm` column): `mode` ('restricted'|'open', default 'restricted' =
+// the safe default) is driven in story 3.4; `revoked_at` (null = active) is set
+// in story 3.5. Defining them now keeps the schema stable so 3.3/3.4/3.5 do not
+// re-migrate. `expires_at` is the author-chosen absolute expiry (null = no time
+// bound, FR21); enforcement on the reader side is story 3.5.
+export const shares = pgTable(
+	'shares',
+	{
+		id: uuid('id').primaryKey(),
+		reportId: uuid('report_id')
+			.notNull()
+			.references(() => reports.id, { onDelete: 'cascade' }),
+		tokenHash: text('token_hash').notNull(),
+		mode: text('mode').notNull().default('restricted'),
+		expiresAt: timestamp('expires_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		revokedAt: timestamp('revoked_at', { withTimezone: true })
+	},
+	(table) => [
+		uniqueIndex('shares_token_hash_idx').on(table.tokenHash),
+		index('shares_report_id_idx').on(table.reportId),
+		check('shares_mode_check', sql`${table.mode} in ('restricted', 'open')`)
+	]
+);
+
+export type ShareRow = typeof shares.$inferSelect;
