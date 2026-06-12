@@ -1,8 +1,9 @@
 <script lang="ts">
-	import type { Block } from '$lib/schema';
+	import type { Block, Scales } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
+	import ComparisonMatrixBlockEditor from './ComparisonMatrixBlockEditor.svelte';
 	import ImageBlockEditor from './ImageBlockEditor.svelte';
 	import IssueList from './IssueList.svelte';
 	import KpiBlockEditor from './KpiBlockEditor.svelte';
@@ -21,6 +22,8 @@
 		blockIndex: number;
 		count: number;
 		issues: EditorIssue[];
+		/** Document scales, for the comparison-matrix block's scale selects. */
+		scales?: Scales;
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -32,6 +35,7 @@
 		blockIndex,
 		count,
 		issues,
+		scales,
 		onEdit,
 		onRemove,
 		onMove
@@ -70,6 +74,8 @@
 		<KpiBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'image'}
 		<ImageBlockEditor bind:block {onEdit} />
+	{:else if block.type === 'comparison-matrix'}
+		<ComparisonMatrixBlockEditor bind:block {scales} {onEdit} />
 	{/if}
 </article>
 

@@ -50,6 +50,25 @@ export function newBlock(type: BlockType): Block {
 			return { type, id, items: [{ label: '', value: '' }] };
 		case 'image':
 			return { type, id, assetId: '', alt: '' };
+		case 'comparison-matrix':
+			// Starts with empty scale refs and one empty finding: the author picks
+			// the scales and fills the finding. Validation names the empties on save
+			// (errors are guidance, the author is never blocked from adding a block).
+			return {
+				type,
+				id,
+				severityScale: '',
+				sourceScale: '',
+				findings: [
+					{
+						category: '',
+						label: '',
+						severity: '',
+						sources: {},
+						treatment: { before: '', after: '', status: 'action' }
+					}
+				]
+			};
 	}
 }
 

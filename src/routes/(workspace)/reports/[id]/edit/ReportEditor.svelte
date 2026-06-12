@@ -274,6 +274,7 @@
 				{sectionIndex}
 				count={doc.sections.length}
 				errors={errorsByKey}
+				scales={doc.scales}
 				{onEdit}
 				onRemove={() => {
 					doc.sections.splice(sectionIndex, 1);

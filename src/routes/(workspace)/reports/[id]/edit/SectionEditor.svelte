@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { BlockType, Section } from '$lib/schema';
+	import type { BlockType, Scales, Section } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import BlockEditor from './BlockEditor.svelte';
@@ -11,6 +11,8 @@
 		sectionIndex: number;
 		count: number;
 		errors: ErrorsByKey;
+		/** Document scales, threaded to the comparison-matrix block editor. */
+		scales?: Scales;
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -21,6 +23,7 @@
 		sectionIndex,
 		count,
 		errors,
+		scales,
 		onEdit,
 		onRemove,
 		onMove
@@ -28,7 +31,7 @@
 
 	const sectionIssues = $derived(errors[`section:${section.id}`] ?? []);
 
-	const BLOCK_TYPES: BlockType[] = ['text', 'table', 'chart', 'kpi', 'image'];
+	const BLOCK_TYPES: BlockType[] = ['text', 'table', 'chart', 'kpi', 'image', 'comparison-matrix'];
 </script>
 
 <section class="section-card" aria-label={`Section: ${section.title}`}>
@@ -69,6 +72,7 @@
 			{blockIndex}
 			count={section.blocks.length}
 			issues={errors[`block:${block.id}`] ?? []}
+			{scales}
 			{onEdit}
 			onRemove={() => {
 				section.blocks.splice(blockIndex, 1);

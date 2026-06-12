@@ -46,6 +46,15 @@ describe('newBlock', () => {
 		}
 	});
 
+	it('creates a comparison-matrix starter whose validation names the empty scale refs', () => {
+		const block = newBlock('comparison-matrix');
+		expect(block.type).toBe('comparison-matrix');
+		// The starter carries empty scale refs (not slug-valid), so its own block
+		// schema flags them; the author picks the scales before saving.
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');
