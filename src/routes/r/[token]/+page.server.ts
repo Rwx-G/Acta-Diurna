@@ -142,15 +142,18 @@ async function requestVerificationAction(event: RequestEvent) {
 	const verifyUrlFor = (rawToken: string): string =>
 		`${url.origin}/r/${params.token}/verify?t=${rawToken}`;
 
+	// 3.4: the restricted-list check lives INSIDE requestVerification, BEHIND this
+	// same neutral return - an unauthorized (off-list) email silently gets no link,
+	// but the reader sees the identical confirmation (NFR9). The mail send is
+	// fire-and-forget inside requestVerification, so neither the on-list nor the
+	// off-list path waits on SMTP and the response timing cannot separate them; any
+	// pre-send error (DB) is swallowed here so the reader always sees the same
+	// "check your email".
 	try {
-		// 3.4 inserts the restricted-list check inside requestVerification, BEHIND
-		// this same neutral return: an unauthorized email silently does not get a
-		// link, but the reader sees the identical confirmation.
-		await requestVerification(share.id, email, verifyUrlFor, locals.requestId);
+		await requestVerification(share, email, verifyUrlFor, locals.requestId);
 	} catch {
-		// Mail failure is logged inside sendMail (warn, NFR16) but never surfaced
-		// here - surfacing it would leak that a send was attempted for this
-		// address. The reader always sees "check your email".
+		// A pre-send failure is never surfaced - surfacing it would reveal that work
+		// was attempted for this address. The reader always sees the neutral state.
 	}
 
 	return { state: 'sent' as const };

@@ -169,7 +169,14 @@ describe('request-verification action (enumeration-safety)', () => {
 		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
 
 		expect(result).toEqual({ state: 'sent' });
-		expect(mocks.requestVerification).toHaveBeenCalled();
+		// The action passes the RESOLVED share (not just its id) so the gate can read
+		// `mode` for the restricted allow-list check (3.4).
+		expect(mocks.requestVerification).toHaveBeenCalledWith(
+			ACTIVE_SHARE,
+			'a@example.com',
+			expect.any(Function),
+			'req-1'
+		);
 	});
 
 	it('returns the SAME neutral "sent" for a different email (no enumeration)', async () => {

@@ -19,35 +19,61 @@ import {
 import { findOrCreateIdentity, recordAccess } from './identities';
 import { magicLinkEmail } from '$lib/server/mail/templates/magic-link';
 import { sendMail } from '$lib/server/mail/send';
+import { isAuthorizedReader } from '$lib/server/sharing';
+import type { ResolvedShare } from '$lib/server/sharing';
+import { logger } from '$lib/server/logger';
 import { createReaderSession, type CreatedSession } from '$lib/server/auth/sessions';
 
 /**
- * Issues a verification token for (shareId, normalizedEmail) and sends the magic
- * link. `verifyUrlFor` composes the absolute landing URL from the raw token
- * (the route owns ORIGIN + the `/r/[token]/verify` shape). A mail failure
- * propagates as the `sendMail` AppError so the operator is not left thinking a
- * link was delivered (NFR16); the caller decides how to surface it WITHOUT
- * leaking whether the email was on any list.
+ * Issues a verification token for (share, normalizedEmail) and sends the magic
+ * link - but ONLY to an authorized email. `verifyUrlFor` composes the absolute
+ * landing URL from the raw token (the route owns ORIGIN + the `/r/[token]/verify`
+ * shape).
+ *
+ * Restricted-mode allow-list check (FR19, story 3.4), BEHIND the neutral return:
+ * `isAuthorizedReader(share, email)` is the FIRST step. In `open` mode it is true
+ * for any email (no DB read); in `restricted` mode it is true only for an email
+ * on the share's recipient list. An UNAUTHORIZED (off-list) email issues NO
+ * token and sends NO mail, but returns the SAME void result as the authorized
+ * path - the caller's neutral `{state:'sent'}` is byte-identical either way, so
+ * the refusal never reveals whether the email was known (NFR9).
  *
  * Dedup-before-issue (mail-amplification guard): if a LIVE (unconsumed,
  * unexpired) verification already exists for this (share, email), no new token
- * is issued and no second mail is sent. This caps the pair to one pending
- * verification per 15-min TTL, blunting amplification by an attacker who holds
- * one open-mode share link and POSTs arbitrary victim emails. The suppression is
- * silent: the function still returns void exactly as on a real send, so the
- * caller's neutral `{state:'sent'}` is identical whether mail was sent or
- * suppressed (enumeration-safety, the dedup is never revealed).
+ * is issued and no second mail is sent, capping the pair to one pending
+ * verification per 15-min TTL. Like the allow-list refusal, the suppression is
+ * silent (same void result).
+ *
+ * Timing-equivalence (NFR9, the parked 3.4 constant-work constraint): the mail
+ * send is FIRE-AND-FORGET on the authorized path - the function returns WITHOUT
+ * awaiting `sendMail`, so the slow, attacker-observable SMTP round-trip is never
+ * in the response timing on EITHER path. The off-list path returns after one
+ * allow-list read; the on-list path returns after the allow-list read, the
+ * dedup read, and a token insert - all fast, bounded DB work in the same timing
+ * class, with NO network I/O on the response path. Removing the SMTP latency (the
+ * one large, variable cost that would have made the two paths separable) is what
+ * closes the timing oracle. The send error is logged server-side (NFR16) inside
+ * the catch so a fire-and-forget rejection is never unhandled and never leaks to
+ * the reader.
  */
 export async function requestVerification(
-	shareId: string,
+	share: ResolvedShare,
 	normalizedEmail: string,
 	verifyUrlFor: (rawToken: string) => string,
 	requestId?: string
 ): Promise<void> {
-	if (await hasLiveVerification(shareId, normalizedEmail)) return;
-	const { token } = await issueVerificationToken(shareId, normalizedEmail);
+	if (!(await isAuthorizedReader(share, normalizedEmail))) return;
+	if (await hasLiveVerification(share.id, normalizedEmail)) return;
+
+	const { token } = await issueVerificationToken(share.id, normalizedEmail);
 	const url = verifyUrlFor(token);
-	await sendMail(magicLinkEmail(normalizedEmail, url), requestId);
+
+	// Fire-and-forget: the response does not wait on SMTP (timing-equivalence),
+	// and a delivery failure is logged here (NFR16) so the floating promise never
+	// rejects unhandled. The reader sees the neutral confirmation regardless.
+	void sendMail(magicLinkEmail(normalizedEmail, url), requestId).catch((error) => {
+		logger.warn({ requestId, err: error }, 'reader verification mail send failed');
+	});
 }
 
 export interface CompletedVerification {
