@@ -859,7 +859,7 @@ So that coverage by source-combination is visible at a glance, with zero extra d
 
 **Given** a Set-Membership block referencing a Comparison Matrix block by id (`sourceBlockId`)
 **When** rendered
-**Then** it derives one row per present intersection - findings grouped by the exact set of sources where `state != none` - and renders each row as a dot pattern (one dot per source in the sources scale, filled when the source is in that set, with a line connecting the filled dots) (FR42)
+**Then** it derives one row per present intersection - findings grouped by the exact set of sources that FOUND it (`state == 'found'`; the coverage UpSet) - and renders each row as a dot pattern (one dot per source in the sources scale, filled when the source is in that set, with a line connecting the filled dots) (FR42)
 
 **Given** an intersection row
 **When** rendered
