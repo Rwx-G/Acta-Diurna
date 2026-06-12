@@ -287,3 +287,43 @@ export const readerSessions = pgTable(
 );
 
 export type ReaderSessionRow = typeof readerSessions.$inferSelect;
+
+// Personal access tokens (D10): the THIRD auth surface (programmatic, PAT
+// bearer) alongside the author and reader cookie realms. A PAT authorizes the
+// `/api/v1` surface for scripts and agents; it never opens a cookie session, and
+// a cookie never authorizes the API (strict realm separation, NFR12 extended to
+// the API).
+//
+// The raw token is a high-entropy `acta_pat_<base64url>` value handed to the
+// author ONCE at creation; the table stores only its SHA-256 hash (shared
+// at-rest helper, same as sessions/shares) - a database leak exposes no usable
+// token. `token_hash` is uniquely indexed: `authenticateApiToken` hashes the
+// presented bearer and matches on the digest. `display_fragment` is a NON-secret
+// snippet (the last 4 chars of the raw token) shown in the management list so two
+// tokens are distinguishable without re-revealing either (the prefix is greppable
+// and not secret; only the body is).
+//
+// Author-scoped by intent (single-author MVP): no owner column yet, mirroring the
+// 1.5 "Multi-author IDOR prep" backlog note - add owner/tenant when tenancy
+// lands. `name` is the author-chosen label. `last_used_at` (null until first use)
+// is stamped best-effort on each successful authentication; `revoked_at` (null =
+// active) is set on revoke and the row is NEVER deleted (an audit trail). V1 is
+// revoke-only, no expiry (backlog Epic 4 decision).
+export const apiTokens = pgTable(
+	'api_tokens',
+	{
+		id: uuid('id').primaryKey(),
+		name: text('name').notNull(),
+		tokenHash: text('token_hash').notNull(),
+		displayFragment: text('display_fragment').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+		revokedAt: timestamp('revoked_at', { withTimezone: true })
+	},
+	(table) => [
+		uniqueIndex('api_tokens_token_hash_idx').on(table.tokenHash),
+		index('api_tokens_revoked_at_idx').on(table.revokedAt)
+	]
+);
+
+export type ApiTokenRow = typeof apiTokens.$inferSelect;
