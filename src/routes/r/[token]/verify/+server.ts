@@ -35,6 +35,13 @@ export const GET: RequestHandler = async ({
 	getClientAddress,
 	setHeaders
 }) => {
+	// The magic-link landing is a sensitive response: it consumes a single-use
+	// token and may open a reader session. Never let an intermediary cache it
+	// (NFR10), so a revoked link's previously-served verify step cannot be replayed
+	// from a cache. Set before any branch so every exit (neutral 404, expired
+	// bounce, success redirect) carries it.
+	setHeaders({ 'cache-control': 'no-store' });
+
 	const share = await getShareByToken(params.token);
 	if (!share || share.status !== 'active') {
 		serveNeutralClosed(setHeaders);
