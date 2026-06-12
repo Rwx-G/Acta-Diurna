@@ -11,10 +11,7 @@
 		<a href={resolve('/(workspace)/reports')}>Reports</a>
 		<a href={resolve('/(workspace)/skeletons')}>Skeletons</a>
 		<a href={resolve('/(workspace)/data-sets')}>Data sets</a>
-		<!-- Disabled rail entry: settings later. -->
-		<span class="disabled" aria-disabled="true" title="Settings are not available yet"
-			>Settings</span
-		>
+		<a href={resolve('/(workspace)/settings')}>Settings</a>
 		<!-- Relative ?/logout: every workspace page exposes the shared logout action. -->
 		<form method="POST" action="?/logout" class="signout">
 			<button type="submit">Sign out</button>
@@ -48,13 +45,9 @@
 		color: var(--color-purple);
 	}
 
-	.rail a,
-	.rail .disabled {
+	.rail a {
 		padding: var(--space-2) var(--space-3);
 		border-radius: var(--radius-sm);
-	}
-
-	.rail a {
 		color: var(--color-ink);
 		text-decoration: none;
 		background: var(--color-purple-08);
@@ -63,11 +56,6 @@
 
 	.rail a:hover {
 		color: var(--color-purple);
-	}
-
-	.rail .disabled {
-		color: var(--color-ink-25);
-		cursor: not-allowed;
 	}
 
 	.signout {
