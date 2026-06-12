@@ -151,11 +151,29 @@ function fieldNotFound(detail: string): AppError {
 }
 
 /**
+ * 409 conflict for a remap that would point two of a block's bound fields at the
+ * same available field. The slot mapping is keyed by field name, so two slots on
+ * one name silently drops a slot; this surfaces the collision as a clean conflict
+ * (the same realm as `updateReportDocument`'s published-report 409), never a
+ * silent loss.
+ */
+function fieldAlreadyBound(detail: string): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Field already bound',
+		type: '/problems/field-already-bound',
+		detail
+	});
+}
+
+/**
  * Remap-in-place (FR15): rename one of a block's bound fields to an available
  * field name and re-resolve against the fresh data set. The binding's
  * `fields[].name` is rewritten (the slot - the role - is preserved), so the
  * remap PERSISTS in the document. 404 if the block or the expected field is not
- * found; 422 if the remapped mapping is incoherent for the block type.
+ * found, or if `availableField` is absent from the fresh data set; 409 if it
+ * collides with another bound field on the block; 422 if the remapped mapping is
+ * incoherent for the block type.
  *
  * The remap reuses `bindBlock`'s write path semantics: the data set is read, the
  * slot mapping recovered from the (now corrected) binding, and the document
@@ -183,6 +201,26 @@ export async function remapField(
 		const target = block.binding.fields.find((field) => field.name === expectedField);
 		if (target === undefined || target.slot === undefined) {
 			throw fieldNotFound(`No bound field "${expectedField}" on this block to remap.`);
+		}
+
+		// The remap endpoint is a real boundary: the UI <select> only constrains the
+		// happy path, so a tampered POST can name a field the fresh data set lacks.
+		// Without this guard buildBinding silently drops the unknown name and the
+		// block re-resolves with a dropped column - the diagnostic promised an
+		// actionable error, not silent data loss.
+		if (!dataSet.fields.some((field) => field.name === availableField)) {
+			throw fieldNotFound(`No field "${availableField}" in the fresh data set to remap onto.`);
+		}
+
+		// Two of this block's slotted fields keyed on one name collide in the slot
+		// mapping and the second assignment silently wins, dropping a slot. Reject
+		// the remap before mutating.
+		const collides = block.binding.fields.some(
+			(field) =>
+				field.slot !== undefined && field.name === availableField && field.name !== expectedField
+		);
+		if (collides) {
+			throw fieldAlreadyBound(`Field "${availableField}" is already bound on this block.`);
 		}
 
 		// Rewrite the name to the available field; the slot (role/key/order) is the

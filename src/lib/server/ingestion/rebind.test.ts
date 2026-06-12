@@ -234,4 +234,34 @@ describe('remapField (FR15)', () => {
 			remapField(REPORT_ID, 'no-such-block', DATA_SET_ID, 'count', 'counts')
 		).rejects.toBeInstanceOf(AppError);
 	});
+
+	it('throws 404 and persists nothing when the target field is absent from the data set', async () => {
+		await seedDataSet('severity,counts\nCritical,4', [
+			{ name: 'severity', type: 'string' },
+			{ name: 'counts', type: 'number' }
+		]);
+		const before = structuredClone(dbState.reports.get(REPORT_ID)!.document);
+
+		await expect(
+			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'phantom')
+		).rejects.toMatchObject({ status: 404, type: '/problems/binding-field-not-found' });
+
+		// The binding is unchanged and nothing was written.
+		expect(dbState.reports.get(REPORT_ID)!.document).toEqual(before);
+	});
+
+	it('throws 409 and persists nothing when the target collides with another bound field', async () => {
+		await seedDataSet('severity,count\nCritical,4', [
+			{ name: 'severity', type: 'string' },
+			{ name: 'count', type: 'number' }
+		]);
+		const before = structuredClone(dbState.reports.get(REPORT_ID)!.document);
+
+		// "count" is remapped onto "severity", which already carries a column slot.
+		await expect(
+			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'severity')
+		).rejects.toMatchObject({ status: 409, type: '/problems/field-already-bound' });
+
+		expect(dbState.reports.get(REPORT_ID)!.document).toEqual(before);
+	});
 });
