@@ -72,9 +72,12 @@ describe('isPublicPath', () => {
 });
 
 describe('isApiPath / isPublicApiPath', () => {
-	it.each(['/api', '/api/v1/reports', '/api/v1/whoami'])('treats %s as an API path', (path) => {
-		expect(isApiPath(path)).toBe(true);
-	});
+	it.each(['/api', '/api/v1/reports', '/api/v1/whoami', '/api/mcp'])(
+		'treats %s as an API path',
+		(path) => {
+			expect(isApiPath(path)).toBe(true);
+		}
+	);
 
 	it.each(['/reports', '/apixyz', '/r/api'])('treats %s as not an API path', (path) => {
 		expect(isApiPath(path)).toBe(false);
@@ -86,6 +89,9 @@ describe('isApiPath / isPublicApiPath', () => {
 		expect(isPublicApiPath('/api/v1/schema')).toBe(true);
 		expect(isPublicApiPath('/api/v1/reports')).toBe(false);
 		expect(isPublicApiPath('/api/v1/whoami')).toBe(false);
+		// 5.1: the MCP surface is authenticated - it must NOT be public, so apiAuth
+		// 401s a missing/invalid PAT before the /api/mcp route runs (no info leak).
+		expect(isPublicApiPath('/api/mcp')).toBe(false);
 	});
 });
 
