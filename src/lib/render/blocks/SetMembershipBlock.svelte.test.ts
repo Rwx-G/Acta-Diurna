@@ -96,6 +96,51 @@ describe('SetMembershipBlock render', () => {
 		expect(pill?.getAttribute('style')).toContain('#7a2e3a');
 	});
 
+	it('groups pills per intersection row beside the dot matrix, in row order', () => {
+		const { container } = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([
+				// {siem,edr}: count 2 -> first row.
+				finding({ tag: 'A', sources: { siem: { state: 'found' }, edr: { state: 'found' } } }),
+				finding({ tag: 'B', sources: { edr: { state: 'found' }, siem: { state: 'found' } } }),
+				// {siem}: count 1 -> second row.
+				finding({ tag: 'C', sources: { siem: { state: 'found' } } })
+			]),
+			scales
+		});
+		// The matrix SVG and the pill rows share one grid (alignment container).
+		const grid = container.querySelector('.upset-grid');
+		expect(grid?.querySelector('svg.upset-svg')).not.toBeNull();
+		const pillRows = grid?.querySelectorAll('.pill-row') ?? [];
+		// One pill-group per intersection row, in the same order as the SVG rows.
+		expect(pillRows).toHaveLength(2);
+		const textOf = (row: Element) =>
+			[...row.querySelectorAll('.pill')].map((p) => p.textContent?.trim());
+		expect(textOf(pillRows[0])).toEqual(['A', 'B']);
+		expect(textOf(pillRows[1])).toEqual(['C']);
+		// Each pill-group is placed in its matching grid track (row i -> track i+2,
+		// after the top-margin spacer track), so it sits beside that row's dots.
+		expect(pillRows[0].getAttribute('style')).toContain('grid-row: 2');
+		expect(pillRows[1].getAttribute('style')).toContain('grid-row: 3');
+	});
+
+	it('carries a per-row visually-hidden summary beside each pill group', () => {
+		const { container } = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([
+				finding({ tag: 'both', sources: { siem: { state: 'found' }, edr: { state: 'found' } } })
+			]),
+			scales
+		});
+		const pillRow = container.querySelector('.pill-row');
+		const hidden = pillRow?.querySelector('.visually-hidden');
+		expect(hidden?.textContent).toContain('Found by SIEM and EDR');
+		expect(hidden?.textContent).toContain('both');
+		// The colour/dot pattern is never the sole signal: the pills are aria-hidden
+		// and the words summary carries the data for assistive tech.
+		expect(pillRow?.querySelector('.pills')?.getAttribute('aria-hidden')).toBe('true');
+	});
+
 	it('falls back to the finding label when no tag is present', () => {
 		const { container } = render(SetMembershipBlock, {
 			block,

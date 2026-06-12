@@ -59,8 +59,12 @@ export interface UpSetGeometry {
 	/** Source labels with their dot column x-position, in scale order. */
 	sources: Array<{ key: string; label: string; cx: number }>;
 	rows: IntersectionRow[];
-	/** Per-row y centre, for the pill column layout in the component. */
+	/** Per-row band height, for the pill column row tracks in the component. */
 	rowHeight: number;
+	/** Top inset before row 0, so the pill column aligns its first group to it. */
+	marginTop: number;
+	/** Bottom inset (under the last row) reserved for the source labels. */
+	marginBottom: number;
 	dotRadius: number;
 }
 
@@ -213,6 +217,8 @@ export function computeUpSetGeometry(
 		sources,
 		rows,
 		rowHeight: ROW_HEIGHT,
+		marginTop: MARGIN.top,
+		marginBottom: MARGIN.bottom,
 		dotRadius: DOT_RADIUS
 	};
 }
