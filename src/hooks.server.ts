@@ -1,8 +1,12 @@
 import { redirect, type Handle, type HandleServerError, type ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { building } from '$app/environment';
+import { authenticateApiToken } from '$lib/server/auth/api-tokens';
 import { deleteAuthorCookie, readAuthorCookie } from '$lib/server/auth/cookies';
 import {
+	apiAuthFailureLimiter,
+	apiAuthRateLimiter,
+	GLOBAL_API_AUTH_FAILURE_KEY,
 	GLOBAL_LOGIN_FAILURE_KEY,
 	loginFailureLimiter,
 	loginRateLimiter
@@ -144,6 +148,139 @@ export function isPublicPath(pathname: string): boolean {
 	return false;
 }
 
+// The programmatic surface (D8/D10): `/api/*` is the THIRD entry realm, guarded
+// by PAT bearer auth (apiAuth) and NOT by the cookie-realm workspaceGuard. An
+// unauthenticated API call gets a 401 problem+json, never a 302 to /login (a
+// redirect is meaningless to a script/agent). Centralized so both the auth hook
+// and the guard exclusion share one definition.
+export function isApiPath(pathname: string): boolean {
+	return pathname === '/api' || pathname.startsWith('/api/');
+}
+
+// Public-API allowlist seam: API routes that need NO bearer (the published agent
+// schema `/api/v1/schema`, story 4.3, is public by design - FR31). Empty for 4.1
+// (no public API route exists yet), but the seam is built so 4.3 adds its path
+// here and the apiAuth hook lets it through without a token. The `/api/*` error
+// boundary still wraps it.
+export function isPublicApiPath(pathname: string): boolean {
+	void pathname;
+	return false;
+}
+
+// Reads `Authorization: Bearer <token>`, returning the raw token or null. Only
+// the `Bearer` scheme is accepted; a cookie is never consulted here (strict
+// realm separation: a browser session must NOT authorize the API).
+function readBearerToken(request: Request): string | null {
+	const header = request.headers.get('authorization');
+	if (!header) return null;
+	const match = /^Bearer (.+)$/.exec(header);
+	return match ? match[1] : null;
+}
+
+const unauthorizedApi = (): AppError =>
+	new AppError({
+		status: 401,
+		title: 'Unauthorized',
+		type: '/problems/unauthorized',
+		detail: 'A valid API token is required. Send it as `Authorization: Bearer <token>`.',
+		headers: { 'WWW-Authenticate': 'Bearer' }
+	});
+
+/**
+ * PAT-bearer authentication for `/api/*` (the THIRD realm, D10). Reads the
+ * Authorization Bearer token, resolves it via authenticateApiToken, and populates
+ * locals.apiIdentity on success. Missing/invalid/malformed/revoked -> a 401
+ * problem+json with `WWW-Authenticate: Bearer`, EXCEPT for public-API paths
+ * (isPublicApiPath, the 4.3 schema seam) which pass through with a null identity.
+ *
+ * STRICT separation: this hook consults ONLY the Authorization header, never a
+ * cookie - an author/reader cookie can never authenticate an API request. It runs
+ * INSIDE apiErrorBoundary (so a thrown AppError from a downstream endpoint is
+ * still formatted) but its OWN 401/429 short-circuits return problem+json
+ * directly. Non-/api requests pass straight through untouched.
+ *
+ * Rate limiting (AR12): only a FAILED bearer attempt consumes a token (a valid
+ * token costs nothing, so a legitimate script is never throttled), per-IP plus
+ * the IP-independent global brake (the reverse-proxy second line). A throttled
+ * caller gets a 429 problem+json with Retry-After.
+ */
+export const apiAuth: Handle = async ({ event, resolve }) => {
+	if (!isApiPath(event.url.pathname)) return await resolve(event);
+
+	event.locals.apiIdentity = null;
+
+	if (isPublicApiPath(event.url.pathname)) return await resolve(event);
+
+	const rawToken = readBearerToken(event.request);
+	const identity = rawToken ? await authenticateApiToken(rawToken) : null;
+
+	if (!identity) {
+		// A failed auth attempt is the rate-limited event. Consume per-IP first,
+		// then the global brake; either tripping returns the same 429.
+		const perIp = apiAuthRateLimiter.consume(`${event.getClientAddress()}:/api`);
+		if (!perIp.allowed) {
+			logger.warn(
+				{ requestId: event.locals.requestId, path: event.url.pathname, limiter: 'ip' },
+				'api auth rate limit engaged'
+			);
+			return problemResponse(rateLimited(perIp.retryAfterSeconds));
+		}
+		const global = apiAuthFailureLimiter.consume(GLOBAL_API_AUTH_FAILURE_KEY);
+		if (!global.allowed) {
+			logger.warn(
+				{ requestId: event.locals.requestId, path: event.url.pathname, limiter: 'global' },
+				'api auth rate limit engaged'
+			);
+			return problemResponse(rateLimited(global.retryAfterSeconds));
+		}
+		return problemResponse(unauthorizedApi());
+	}
+
+	event.locals.apiIdentity = identity;
+	return await resolve(event);
+};
+
+/**
+ * The `/api/*` error boundary (backlog "Epic 4 prep - API error boundary"). Wraps
+ * resolve() for API routes in a try/catch and maps a thrown AppError to its
+ * problem+json (RFC 9457) with the correct status; any other (unexpected) error
+ * becomes an opaque 500 problem+json, logged server-side with no internal detail
+ * leaked. This is the shared seam 4.2/4.3 build on: an endpoint just throws an
+ * AppError and the boundary formats it - no per-endpoint catch discipline, and no
+ * reliance on SvelteKit's handleError (which cannot change the status of an
+ * unexpected error, always 500, and serializes as an HTML/JSON error page rather
+ * than problem+json). It wraps apiAuth so even an auth-stage throw is formatted.
+ */
+export const apiErrorBoundary: Handle = async ({ event, resolve }) => {
+	if (!isApiPath(event.url.pathname)) return await resolve(event);
+
+	try {
+		return await resolve(event);
+	} catch (thrown) {
+		if (thrown instanceof AppError) {
+			return problemResponse(thrown);
+		}
+		// Unexpected: log with the request id, leak nothing. A bare 500 problem+json.
+		logger.error(
+			{
+				requestId: event.locals.requestId,
+				method: event.request.method,
+				path: event.url.pathname,
+				err: thrown
+			},
+			'unhandled error in /api boundary'
+		);
+		return problemResponse(
+			new AppError({
+				status: 500,
+				title: 'Internal Server Error',
+				type: 'about:blank',
+				detail: 'An unexpected error occurred.'
+			})
+		);
+	}
+};
+
 // Defense-in-depth author guard (the critical 1.5 fix): the (workspace) layout
 // `load` only guards GET page loads - it never runs for form actions or
 // +server endpoints, so a POST to `?/save`/`?/delete`/`/reports/new` reached
@@ -151,21 +288,20 @@ export function isPublicPath(pathname: string): boolean {
 // (and therefore before any action runs) for every author-realm request that
 // arrives without a session. Sits after authorRealm so locals.authorSession is
 // already resolved. GET is redirected too (the layout still guards it; this is
-// belt-and-braces). Mutations to /api/* get a 401 problem+json; page form
-// posts get a 303 to /login so the no-JS flow lands somewhere sensible.
+// belt-and-braces).
+//
+// `/api/*` is EXCLUDED entirely: it is the programmatic PAT-bearer realm owned
+// by apiAuth, which returns a 401 problem+json (never a 302 to /login - a
+// redirect is meaningless to a script). The cookie realm must not touch it (a
+// browser session never authorizes the API), so the guard skips it here and
+// apiAuth is the sole gate on that path.
 export const workspaceGuard: Handle = async ({ event, resolve }) => {
-	if (event.locals.authorSession || isPublicPath(event.url.pathname)) {
+	if (
+		event.locals.authorSession ||
+		isPublicPath(event.url.pathname) ||
+		isApiPath(event.url.pathname)
+	) {
 		return await resolve(event);
-	}
-	if (event.request.method !== 'GET' && event.url.pathname.startsWith('/api/')) {
-		return problemResponse(
-			new AppError({
-				status: 401,
-				title: 'Unauthorized',
-				type: '/problems/unauthenticated',
-				detail: 'An author session is required.'
-			})
-		);
 	}
 	redirect(303, '/login');
 };
@@ -173,18 +309,26 @@ export const workspaceGuard: Handle = async ({ event, resolve }) => {
 // Ordering contract: requestContext FIRST - it provides locals.requestId to
 // every later handle and to handleError. securityHeaders and accessLog wrap
 // the rest so even short-circuited responses (429) carry headers and a log
-// line. authorRealm INNERMOST - it populates locals.authorSession during
-// resolve, which accessLog reads after resolve returns to enrich its line.
-// workspaceGuard sits AFTER authorRealm (it reads the session authorRealm just
-// resolved) and short-circuits author-realm requests with no session before
-// any action or endpoint runs.
+// line. authorRealm populates locals.authorSession during resolve, which
+// accessLog reads after resolve returns to enrich its line.
+//
+// The /api/* segment is two nested handles: apiErrorBoundary OUTER (it must wrap
+// apiAuth + the endpoint so any thrown AppError - including from the auth stage -
+// becomes problem+json), apiAuth INNER (the PAT gate). Both are no-ops on
+// non-/api requests. apiErrorBoundary sits AFTER workspaceGuard in the sequence
+// so the guard has already let /api/* through (it excludes the API path), and
+// apiAuth is the actual gate. workspaceGuard sits AFTER authorRealm (it reads the
+// session authorRealm just resolved) and short-circuits author-realm cookie
+// requests with no session before any action or endpoint runs.
 export const handle: Handle = sequence(
 	requestContext,
 	securityHeaders,
 	accessLog,
 	loginRateLimit,
 	authorRealm,
-	workspaceGuard
+	workspaceGuard,
+	apiErrorBoundary,
+	apiAuth
 );
 
 export const handleError: HandleServerError = ({ error, event, status, message }) => {
