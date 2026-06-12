@@ -10,10 +10,14 @@
 
 	let sending = $state(false);
 
-	// The test-send action returns `{ sent, message }`; the token actions return
-	// `{ token: ... }`. Discriminate so each result renders under its own section.
+	// The test-send action returns `{ sent, message }`; the test-ai action returns
+	// `{ ai: { ok, message } }`; the token actions return `{ token: ... }`.
+	// Discriminate so each result renders under its own section.
 	const testResult = $derived(form && 'sent' in form ? form : null);
+	const aiResult = $derived(form && 'ai' in form ? form.ai : null);
 	const tokenResult = $derived(form && 'token' in form ? form.token : null);
+
+	let probingAi = $state(false);
 	const newToken = $derived(
 		tokenResult && 'created' in tokenResult && tokenResult.created ? tokenResult : null
 	);
@@ -119,6 +123,64 @@
 			<code>SMTP_USER</code> / <code>SMTP_PASSWORD</code> for an authenticated relay and
 			<code>SMTP_TLS_MODE</code>) in your environment, then restart. Magic links for readers cannot
 			be delivered until the relay is configured.
+		</p>
+	{/if}
+</section>
+
+<section class="panel">
+	<h2>AI generation</h2>
+
+	{#if data.ai}
+		{#if data.ai.enabled}
+			<p class="status">
+				<span class="chip ok">Enabled</span>
+				Model <strong>{data.ai.model}</strong> at <strong>{data.ai.baseUrl}</strong>.
+			</p>
+
+			<form
+				method="POST"
+				action="?/test-ai"
+				class="test-form"
+				use:enhance={() => {
+					probingAi = true;
+					return async ({ update }) => {
+						await update({ reset: false });
+						probingAi = false;
+					};
+				}}
+			>
+				<Button type="submit" variant="primary" disabled={probingAi}>
+					{probingAi ? 'Testing...' : 'Test connection'}
+				</Button>
+			</form>
+
+			{#if aiResult}
+				<p class="result {aiResult.ok ? 'ok' : 'failed'}" role="status">
+					<span class="chip {aiResult.ok ? 'ok' : 'failed'}">{aiResult.ok ? 'OK' : 'Failed'}</span>
+					{aiResult.message}
+				</p>
+			{/if}
+		{:else}
+			<p class="status">
+				<span class="chip off">Configured, disabled</span>
+				Model <strong>{data.ai.model}</strong> at <strong>{data.ai.baseUrl}</strong>.
+			</p>
+			<p class="hint">
+				The endpoint is configured but generation is not enabled. Set
+				<code>AI_GENERATION_ENABLED=true</code> in your environment and restart to opt in. Configuration
+				alone never makes an outbound call.
+			</p>
+		{/if}
+	{:else}
+		<p class="status">
+			<span class="chip off">AI generation not configured</span>
+		</p>
+		<p class="hint">
+			Set <code>LLM_BASE_URL</code> and <code>LLM_MODEL</code> (plus
+			<code>LLM_API_KEY</code> if the endpoint requires auth) to any OpenAI-compatible endpoint -
+			cloud, a local runtime, or an Anthropic-compatible proxy. Generation needs BOTH the config and
+			an explicit opt-in via <code>AI_GENERATION_ENABLED=true</code>, then restart. The API key is
+			never displayed.
 		</p>
 	{/if}
 </section>

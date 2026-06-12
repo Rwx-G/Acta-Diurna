@@ -5,6 +5,7 @@ import { performLogout } from '$lib/server/auth/logout';
 import { mailerConfig } from '$lib/server/mail/mailer';
 import { sendMail } from '$lib/server/mail/send';
 import { testEmail } from '$lib/server/mail/templates/test-email';
+import { aiConfig, chatComplete, isAiEnabled } from '$lib/server/ai/connector';
 import { AppError } from '$lib/server/problem';
 
 // Surfaces whether SMTP is configured so the page can explain the absent case
@@ -13,8 +14,15 @@ import { AppError } from '$lib/server/problem';
 // (D10) - id/name/fragment/timestamps/status only, never the raw token or hash.
 export const load: PageServerLoad = async () => {
 	const config = mailerConfig();
+	const ai = aiConfig();
 	return {
 		smtp: config ? { configured: true as const, from: config.from, tlsMode: config.tlsMode } : null,
+		// FR33: report whether the LLM is configured (base URL + model, key NEVER)
+		// and whether generation is opted-in. Two distinct gates so the page can
+		// explain "configured but disabled" vs "not configured" vs "enabled".
+		ai: ai
+			? { configured: true as const, baseUrl: ai.baseUrl, model: ai.model, enabled: isAiEnabled() }
+			: null,
 		tokens: await listApiTokens()
 	};
 };
@@ -47,6 +55,28 @@ export const actions: Actions = {
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, { sent: false, message: thrown.detail ?? thrown.title });
+			}
+			throw thrown;
+		}
+	},
+	// FR33 / NFR16: an explicit connectivity probe. A minimal chatComplete ping
+	// reports success or the redacted failure inline. It makes a REAL outbound
+	// call, so it is an explicit operator action and chatComplete asserts BOTH
+	// gates first - a disabled connector returns the 503 disabled detail rather
+	// than calling out. No key or host ever reaches the result message.
+	'test-ai': async ({ locals }) => {
+		try {
+			const result = await chatComplete(
+				[{ role: 'user', content: 'Reply with the single word: ok.' }],
+				{ temperature: 0, requestId: locals.requestId }
+			);
+			const reply = result.content.trim().slice(0, 80);
+			return { ai: { ok: true as const, message: `Endpoint reachable. Reply: "${reply}".` } };
+		} catch (thrown) {
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, {
+					ai: { ok: false as const, message: thrown.detail ?? thrown.title }
+				});
 			}
 			throw thrown;
 		}

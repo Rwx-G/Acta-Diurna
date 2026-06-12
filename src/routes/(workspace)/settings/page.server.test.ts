@@ -1,17 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '$lib/server/problem';
 
-const { sendMail, mailerConfig, createApiToken, listApiTokens, revokeApiToken } = vi.hoisted(
-	() => ({
-		sendMail: vi.fn(),
-		mailerConfig: vi.fn(),
-		createApiToken: vi.fn(),
-		listApiTokens: vi.fn(),
-		revokeApiToken: vi.fn()
-	})
-);
+const {
+	sendMail,
+	mailerConfig,
+	aiConfig,
+	chatComplete,
+	isAiEnabled,
+	createApiToken,
+	listApiTokens,
+	revokeApiToken
+} = vi.hoisted(() => ({
+	sendMail: vi.fn(),
+	mailerConfig: vi.fn(),
+	aiConfig: vi.fn(),
+	chatComplete: vi.fn(),
+	isAiEnabled: vi.fn(),
+	createApiToken: vi.fn(),
+	listApiTokens: vi.fn(),
+	revokeApiToken: vi.fn()
+}));
 vi.mock('$lib/server/mail/send', () => ({ sendMail }));
 vi.mock('$lib/server/mail/mailer', () => ({ mailerConfig }));
+vi.mock('$lib/server/ai/connector', () => ({ aiConfig, chatComplete, isAiEnabled }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 vi.mock('$lib/server/auth/api-tokens', () => ({ createApiToken, listApiTokens, revokeApiToken }));
 
@@ -20,6 +31,8 @@ import { actions, load } from './+page.server';
 beforeEach(() => {
 	vi.clearAllMocks();
 	listApiTokens.mockResolvedValue([]);
+	aiConfig.mockReturnValue(null);
+	isAiEnabled.mockReturnValue(false);
 });
 
 function formRequest(fields: Record<string, string>): Request {
@@ -72,6 +85,105 @@ describe('load', () => {
 		};
 
 		expect(result.smtp).toBeNull();
+	});
+});
+
+type AiLoad = {
+	ai: { configured: true; baseUrl: string; model: string; enabled: boolean } | null;
+};
+
+describe('load (AI)', () => {
+	it('reports AI as absent when not configured, never exposing a key', async () => {
+		mailerConfig.mockReturnValue(null);
+		aiConfig.mockReturnValue(null);
+
+		const result = (await load({} as Parameters<typeof load>[0])) as AiLoad;
+
+		expect(result.ai).toBeNull();
+	});
+
+	it('reports AI as configured-but-disabled with base URL and model, never the key', async () => {
+		mailerConfig.mockReturnValue(null);
+		aiConfig.mockReturnValue({
+			baseUrl: 'https://llm.example.com/v1',
+			apiKey: 'sk-secret',
+			model: 'gpt-test'
+		});
+		isAiEnabled.mockReturnValue(false);
+
+		const result = (await load({} as Parameters<typeof load>[0])) as AiLoad;
+
+		expect(result.ai).toEqual({
+			configured: true,
+			baseUrl: 'https://llm.example.com/v1',
+			model: 'gpt-test',
+			enabled: false
+		});
+		expect(JSON.stringify(result.ai)).not.toContain('sk-secret');
+	});
+
+	it('reports AI as enabled when both gates hold', async () => {
+		mailerConfig.mockReturnValue(null);
+		aiConfig.mockReturnValue({ baseUrl: 'https://llm.example.com/v1', model: 'gpt-test' });
+		isAiEnabled.mockReturnValue(true);
+
+		const result = (await load({} as Parameters<typeof load>[0])) as AiLoad;
+
+		expect(result.ai?.enabled).toBe(true);
+	});
+});
+
+async function runTestAi(): Promise<Record<string, unknown>> {
+	return (await actions['test-ai']({
+		request: formRequest({}),
+		locals: { requestId: 'req-1' }
+	} as unknown as Parameters<(typeof actions)['test-ai']>[0])) as Record<string, unknown>;
+}
+
+describe('test-ai action', () => {
+	it('surfaces a successful probe with the reply', async () => {
+		chatComplete.mockResolvedValue({ content: 'ok', model: 'gpt-test' });
+
+		const result = await runTestAi();
+
+		expect(chatComplete).toHaveBeenCalledOnce();
+		expect(result.ai).toMatchObject({ ok: true });
+	});
+
+	it('surfaces a disabled connector as the redacted problem detail (503)', async () => {
+		chatComplete.mockRejectedValue(
+			new AppError({
+				status: 503,
+				title: 'AI Generation Disabled',
+				type: '/problems/ai-generation-disabled',
+				detail: 'AI generation is disabled. Set LLM_BASE_URL and LLM_MODEL ...'
+			})
+		);
+
+		const result = (await runTestAi()) as { status: number; data: { ai: { ok: boolean } } };
+
+		expect(result.status).toBe(503);
+		expect(result.data.ai.ok).toBe(false);
+	});
+
+	it('surfaces an endpoint failure as the redacted problem detail (502)', async () => {
+		chatComplete.mockRejectedValue(
+			new AppError({
+				status: 502,
+				title: 'AI Generation Failed',
+				type: '/problems/ai-generation-failed',
+				detail: 'The AI endpoint could not be reached or returned an error.'
+			})
+		);
+
+		const result = (await runTestAi()) as {
+			status: number;
+			data: { ai: { ok: boolean; message: string } };
+		};
+
+		expect(result.status).toBe(502);
+		expect(result.data.ai.ok).toBe(false);
+		expect(result.data.ai.message).not.toContain('sk-');
 	});
 });
 
