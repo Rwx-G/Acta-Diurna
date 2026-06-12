@@ -121,15 +121,54 @@ describe('PATCH /api/v1/reports/:id', () => {
 		expect(response.status).toBe(400);
 	});
 
-	it('applies the document then the title when both are present', async () => {
-		updateDocumentMock.mockResolvedValue(REPORT);
-		updateTitleMock.mockResolvedValue({ ...REPORT, title: 'Final' });
+	it('writes both in a single guarded document update when title and document are present', async () => {
+		updateDocumentMock.mockResolvedValue({ ...REPORT, title: 'Final' });
 
-		const response = await PATCH(patch({ document: { version: 1 }, title: 'Final' }));
+		const response = await PATCH(
+			patch({ document: { version: 1, title: 'From doc', sections: [] }, title: 'Final' })
+		);
 
-		expect(updateDocumentMock).toHaveBeenCalledOnce();
-		expect(updateTitleMock).toHaveBeenCalledExactlyOnceWith(ID, 'Final');
+		expect(updateDocumentMock).toHaveBeenCalledExactlyOnceWith(
+			ID,
+			{ version: 1, title: 'Final', sections: [] },
+			undefined
+		);
+		expect(updateTitleMock).not.toHaveBeenCalled();
 		expect((await response.json()).title).toBe('Final');
+	});
+
+	it('lets the explicit title win over the document title when both differ', async () => {
+		updateDocumentMock.mockResolvedValue(REPORT);
+
+		await PATCH(patch({ document: { version: 1, title: 'Ignored' }, title: 'Wins' }));
+
+		const call = updateDocumentMock.mock.calls[0];
+		expect((call[1] as { title: string }).title).toBe('Wins');
+	});
+
+	it('guards the combined update atomically: a stale token 409s and writes nothing', async () => {
+		updateDocumentMock.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Report changed concurrently',
+				type: '/problems/report-conflict'
+			})
+		);
+
+		const response = await PATCH(
+			patch({
+				document: { version: 1, title: 'D', sections: [] },
+				title: 'Final',
+				expectedUpdatedAt: '2026-06-12T10:00:00.000Z'
+			})
+		);
+
+		expect(response.status).toBe(409);
+		expect(((await response.json()) as { type: string }).type).toBe('/problems/report-conflict');
+		expect(updateDocumentMock).toHaveBeenCalledOnce();
+		const call = updateDocumentMock.mock.calls[0];
+		expect(call[2]).toBeInstanceOf(Date);
+		expect(updateTitleMock).not.toHaveBeenCalled();
 	});
 });
 

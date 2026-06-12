@@ -18,14 +18,20 @@ export const GET: RequestHandler = ({ params }) =>
  * `PATCH /api/v1/reports/:id` - partial update (backlog Epic 4 decision: PATCH,
  * not PUT, since the services are granular). Body `{ title?, document?,
  * expectedUpdatedAt? }`: a `document` routes to `updateReportDocument`, a `title`
- * to `updateReportTitle` - the EXACT services the workspace editor calls, so
- * validation, the published-read-only rule, and the FR2 422 problem+json are
- * identical (workspace parity). `expectedUpdatedAt` opts into optimistic
- * concurrency: a stale token is the service's 409 `/problems/report-conflict`.
+ * to `updateReportTitle` - the same granular documents services (validate-on-write),
+ * composed to match the workspace's behavior, so validation, the published-read-only
+ * rule, and the FR2 422 problem+json are identical (workspace parity).
+ * `expectedUpdatedAt` opts into optimistic concurrency: a stale token is the
+ * service's 409 `/problems/report-conflict`.
  *
- * `document` is applied before `title` when both are present, so the final row
- * reflects the explicit title rather than the document's own. At least one of the
- * two must be present.
+ * The report title is canonically `document.title` (the documents service derives
+ * the row title from it), so when both `title` and `document` are present we set
+ * `document.title = title` and do a SINGLE guarded `updateReportDocument` write.
+ * That keeps the whole update atomic under one concurrency guard - a separate
+ * unguarded title write would let a concurrent edit slip in between and be
+ * silently overwritten. Precedence: the explicit `title` arg wins over any
+ * `document.title` already in the body when they differ. At least one of the two
+ * must be present.
  */
 export const PATCH: RequestHandler = ({ params, request }) =>
 	runApi(async () => {
@@ -42,24 +48,23 @@ export const PATCH: RequestHandler = ({ params, request }) =>
 				detail: 'Provide at least one of `title` or `document` to update.'
 			});
 		}
+		if (hasTitle && typeof body['title'] !== 'string') {
+			throw new AppError({
+				status: 400,
+				title: 'Malformed request body',
+				type: '/problems/malformed-request',
+				detail: '`title` must be a string.'
+			});
+		}
 
-		let report;
+		if (hasDocument && hasTitle) {
+			const document = { ...(body['document'] as Record<string, unknown>), title: body['title'] };
+			return json(await updateReportDocument(params.id, document, expectedUpdatedAt));
+		}
 		if (hasDocument) {
-			report = await updateReportDocument(params.id, body['document'], expectedUpdatedAt);
+			return json(await updateReportDocument(params.id, body['document'], expectedUpdatedAt));
 		}
-		if (hasTitle) {
-			if (typeof body['title'] !== 'string') {
-				throw new AppError({
-					status: 400,
-					title: 'Malformed request body',
-					type: '/problems/malformed-request',
-					detail: '`title` must be a string.'
-				});
-			}
-			report = await updateReportTitle(params.id, body['title']);
-		}
-
-		return json(report);
+		return json(await updateReportTitle(params.id, body['title'] as string));
 	});
 
 /** `DELETE /api/v1/reports/:id` - 204; the service 409s a published (non-draft) report. */
