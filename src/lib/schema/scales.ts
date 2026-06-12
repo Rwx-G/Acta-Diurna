@@ -192,9 +192,86 @@ export function validateScaleReferences(document: {
 	sections: ReadonlyArray<{ blocks: ReadonlyArray<{ type: string }> }>;
 }): ScaleReferenceIssue[] {
 	const issues: ScaleReferenceIssue[] = [];
-	// No v1 block type references a scale yet. 7.2+ extend this loop: for each
-	// referencing block, resolve its scale/entry refs against `document.scales`
-	// and push a ScaleReferenceIssue per dangling ref.
-	void document;
+	for (let s = 0; s < document.sections.length; s += 1) {
+		const blocks = document.sections[s].blocks;
+		for (let b = 0; b < blocks.length; b += 1) {
+			const block = blocks[b];
+			if (block.type === 'comparison-matrix') {
+				validateComparisonMatrixRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
+			}
+		}
+	}
 	return issues;
+}
+
+/**
+ * Structural view of a comparison-matrix block, narrowed by `type` in the loop
+ * above. Typed locally so this isomorphic module does not import the block
+ * schema (which imports back into the document pass). The block has already
+ * passed its own zod shape validation before this cross-reference pass runs, so
+ * the ref fields are present and slug-shaped.
+ */
+interface ComparisonMatrixRefView {
+	type: string;
+	severityScale?: unknown;
+	sourceScale?: unknown;
+	findings?: ReadonlyArray<{ severity?: unknown; sources?: Record<string, unknown> }>;
+}
+
+/**
+ * Resolves a comparison-matrix block's scale/entry references against the
+ * document `scales`, pushing one {@link ScaleReferenceIssue} per dangling ref:
+ * an unknown `severityScale`/`sourceScale` key, a finding `severity` not in the
+ * severity scale, or a `sources` record key not in the sources scale. Paths are
+ * built off `basePath` (`['sections', i, 'blocks', j]`).
+ */
+function validateComparisonMatrixRefs(
+	block: ComparisonMatrixRefView,
+	scales: Scales | undefined,
+	basePath: PropertyKey[],
+	issues: ScaleReferenceIssue[]
+): void {
+	const severityKey = typeof block.severityScale === 'string' ? block.severityScale : undefined;
+	const sourceKey = typeof block.sourceScale === 'string' ? block.sourceScale : undefined;
+	const severityScale = severityKey ? resolveScaleRef(scales, severityKey) : undefined;
+	const sourceScale = sourceKey ? resolveScaleRef(scales, sourceKey) : undefined;
+
+	if (severityKey && !severityScale) {
+		issues.push({
+			path: [...basePath, 'severityScale'],
+			message: `Unknown severity scale: ${severityKey}.`,
+			hint: `Declare a scale with key "${severityKey}" in the document scales, or reference an existing scale.`
+		});
+	}
+	if (sourceKey && !sourceScale) {
+		issues.push({
+			path: [...basePath, 'sourceScale'],
+			message: `Unknown sources scale: ${sourceKey}.`,
+			hint: `Declare a scale with key "${sourceKey}" in the document scales, or reference an existing scale.`
+		});
+	}
+
+	const findings = block.findings ?? [];
+	for (let f = 0; f < findings.length; f += 1) {
+		const finding = findings[f];
+		const severity = typeof finding.severity === 'string' ? finding.severity : undefined;
+		if (severityScale && severity && !resolveEntryRef(severityScale, severity)) {
+			issues.push({
+				path: [...basePath, 'findings', f, 'severity'],
+				message: `Unknown severity "${severity}" on finding ${f + 1}.`,
+				hint: `"${severity}" is not an entry of the "${severityKey}" scale; use one of its declared entry keys.`
+			});
+		}
+		if (sourceScale && finding.sources) {
+			for (const sourceEntryKey of Object.keys(finding.sources)) {
+				if (!resolveEntryRef(sourceScale, sourceEntryKey)) {
+					issues.push({
+						path: [...basePath, 'findings', f, 'sources', sourceEntryKey],
+						message: `Unknown source "${sourceEntryKey}" on finding ${f + 1}.`,
+						hint: `"${sourceEntryKey}" is not an entry of the "${sourceKey}" scale; use one of its declared entry keys.`
+					});
+				}
+			}
+		}
+	}
 }

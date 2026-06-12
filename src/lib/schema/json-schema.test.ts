@@ -29,9 +29,9 @@ describe('toJsonSchema', () => {
 		expect(schema.required).toEqual(['version', 'title', 'sections']);
 	});
 
-	it('describes the five block types as a union', () => {
+	it('describes the six block types as a union', () => {
 		const schema = toJsonSchema() as ExportedJsonSchema;
-		expect(schema.properties.sections.items.properties.blocks.items.oneOf).toHaveLength(5);
+		expect(schema.properties.sections.items.properties.blocks.items.oneOf).toHaveLength(6);
 	});
 
 	it('serializes cleanly without zod internals', () => {

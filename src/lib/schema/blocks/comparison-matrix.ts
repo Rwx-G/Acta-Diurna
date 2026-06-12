@@ -1,0 +1,99 @@
+import { z } from 'zod';
+import { audiencesSchema, idSchema } from './shared.ts';
+
+/**
+ * Comparison Matrix block (Epic 7, Story 7.2): a findings-by-sources coverage
+ * matrix whose formatting is computed from the document `scales`, not authored
+ * per cell. The findings live ON this block (its content, not a document-level
+ * registry); the Set-Membership block (7.4) references this block by id and
+ * reads the same findings + severity/tag.
+ *
+ * Isomorphic by design: imports nothing from `$lib/server` or `$lib/ui`. The
+ * block validates its own shape here; the cross-reference of `severityScale` /
+ * `sourceScale` / `severity` / `sources` keys against the document `scales`
+ * happens in the document-level pass (`scales.ts` `validateScaleReferences`),
+ * because a block cannot see the document `scales` from inside the discriminated
+ * union.
+ */
+
+/**
+ * Per-source coverage state for a finding:
+ *
+ * - `found`: the source covers this finding (render tints the cell with the
+ *   source's scale colour).
+ * - `missing`: the source looked and did not find it (render fills the cell with
+ *   a neutral hatched "missed" treatment, NOT a scale colour).
+ * - `none`: the source was not run for this finding (render shows a neutral
+ *   dash).
+ */
+export const sourceStateSchema = z.enum(['found', 'missing', 'none']);
+
+export type SourceState = z.infer<typeof sourceStateSchema>;
+
+export const sourceCellSchema = z.object({
+	state: sourceStateSchema,
+	text: z.string().max(2000, 'Source cell text too long: 2000 characters maximum.').optional()
+});
+
+export type SourceCell = z.infer<typeof sourceCellSchema>;
+
+/**
+ * Treatment disposition for a finding. A closed two-value enum (unlike the
+ * author-defined severity/source scales): `action` = remediation is due,
+ * `deferred` = accepted/parked. Render tints the treatment cells from fixed
+ * theme tokens, never from a scale.
+ */
+export const treatmentStatusSchema = z.enum(['action', 'deferred']);
+
+export type TreatmentStatus = z.infer<typeof treatmentStatusSchema>;
+
+export const treatmentSchema = z.object({
+	before: z.string().max(2000, 'Treatment-before too long: 2000 characters maximum.'),
+	after: z.string().max(2000, 'Treatment-after too long: 2000 characters maximum.'),
+	status: treatmentStatusSchema
+});
+
+export type Treatment = z.infer<typeof treatmentSchema>;
+
+export const findingSchema = z.object({
+	category: z.string().min(1).max(300, 'Finding category too long: 300 characters maximum.'),
+	label: z.string().min(1).max(300, 'Finding label too long: 300 characters maximum.'),
+	// An entry key in the severity scale (resolved in the document-level pass).
+	severity: idSchema,
+	// Keyed by an entry key in the sources scale. A finding need not carry a cell
+	// for every source: a missing record key renders as `none`. Render always
+	// iterates the sources-scale entry order for columns (not this record's own
+	// key order), so every finding row aligns to the same columns.
+	sources: z.record(idSchema, sourceCellSchema),
+	treatment: treatmentSchema,
+	// Optional short label. 7.4 renders each finding as a pill beside its
+	// intersection and reads this `tag`; absent, 7.4 falls back to `label`.
+	// Defined here so 7.4 needs no schema change. Forward-dependency, do not
+	// repurpose.
+	tag: z.string().min(1).max(100, 'Finding tag too long: 100 characters maximum.').optional()
+});
+
+export type Finding = z.infer<typeof findingSchema>;
+
+/**
+ * DoS cap on findings. A finding is one row; 500 rows stays well under the
+ * table 10000-row cap and keeps SSR within NFR1. The source count per row is
+ * bounded by the sources scale (`MAX_SCALE_ENTRIES = 24`), so the matrix is at
+ * most 500 x 24 source cells.
+ */
+export const MAX_FINDINGS = 500;
+
+export const comparisonMatrixBlockSchema = z.object({
+	type: z.literal('comparison-matrix'),
+	id: idSchema,
+	audiences: audiencesSchema.optional(),
+	// Document `scales` keys (resolved in the document-level pass).
+	severityScale: idSchema,
+	sourceScale: idSchema,
+	findings: z
+		.array(findingSchema)
+		.min(1, 'A comparison matrix needs at least one finding.')
+		.max(MAX_FINDINGS, 'Too many findings: 500 maximum.')
+});
+
+export type ComparisonMatrixBlock = z.infer<typeof comparisonMatrixBlockSchema>;

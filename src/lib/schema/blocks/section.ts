@@ -1,18 +1,20 @@
 import { z } from 'zod';
 import { audiencesSchema, idSchema } from './shared.ts';
 import { chartBlockSchema } from './chart.ts';
+import { comparisonMatrixBlockSchema } from './comparison-matrix.ts';
 import { imageBlockSchema } from './image.ts';
 import { kpiBlockSchema } from './kpi.ts';
 import { tableBlockSchema } from './table.ts';
 import { textBlockSchema } from './text.ts';
 
-/** The five v1 block types, discriminated on `type`. */
+/** The v1 block types, discriminated on `type`. */
 export const blockSchema = z.discriminatedUnion('type', [
 	textBlockSchema,
 	tableBlockSchema,
 	chartBlockSchema,
 	kpiBlockSchema,
-	imageBlockSchema
+	imageBlockSchema,
+	comparisonMatrixBlockSchema
 ]);
 
 export type Block = z.infer<typeof blockSchema>;

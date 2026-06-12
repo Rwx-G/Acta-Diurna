@@ -39,6 +39,24 @@ export type { KpiBlock, KpiItem, KpiTrend } from './blocks/kpi.ts';
 export { imageBlockSchema } from './blocks/image.ts';
 export type { ImageBlock } from './blocks/image.ts';
 
+export {
+	comparisonMatrixBlockSchema,
+	findingSchema,
+	MAX_FINDINGS,
+	sourceCellSchema,
+	sourceStateSchema,
+	treatmentSchema,
+	treatmentStatusSchema
+} from './blocks/comparison-matrix.ts';
+export type {
+	ComparisonMatrixBlock,
+	Finding,
+	SourceCell,
+	SourceState,
+	Treatment,
+	TreatmentStatus
+} from './blocks/comparison-matrix.ts';
+
 export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 

@@ -215,11 +215,114 @@ describe('resolveEntryColor', () => {
 });
 
 describe('validateScaleReferences seam', () => {
-	it('returns no issues for the current block set (7.1 has no scale-referencing block)', () => {
+	it('returns no issues for a non-referencing block', () => {
 		const issues = validateScaleReferences({
 			scales: [severityScale],
 			sections: [{ blocks: [{ type: 'text' }] }]
 		});
 		expect(issues).toEqual([]);
+	});
+});
+
+describe('validateScaleReferences - comparison-matrix cross references', () => {
+	const sourcesScale: Scale = {
+		key: 'sources',
+		label: 'Sources',
+		kind: 'nominal',
+		entries: [
+			{ key: 'siem', label: 'SIEM' },
+			{ key: 'edr', label: 'EDR' }
+		]
+	};
+
+	function matrixDoc(block: Record<string, unknown>, scales = [severityScale, sourcesScale]) {
+		return {
+			version: 1 as const,
+			title: 'Audit',
+			scales,
+			sections: [{ id: 'overview', title: 'Overview', blocks: [block] }]
+		};
+	}
+
+	function validMatrixBlock(overrides: Record<string, unknown> = {}) {
+		return {
+			type: 'comparison-matrix',
+			id: 'findings',
+			severityScale: 'severity',
+			sourceScale: 'sources',
+			findings: [
+				{
+					category: 'Access',
+					label: 'Weak policy',
+					severity: 'high',
+					sources: { siem: { state: 'found' }, edr: { state: 'missing' } },
+					treatment: { before: 'a', after: 'b', status: 'action' }
+				}
+			],
+			...overrides
+		};
+	}
+
+	it('passes when every scale and entry reference resolves', () => {
+		const result = validateDocument(matrixDoc(validMatrixBlock()));
+		expect(result.ok).toBe(true);
+	});
+
+	it('flags an unknown severityScale at the block path (FR2)', () => {
+		const result = validateDocument(matrixDoc(validMatrixBlock({ severityScale: 'ghost' })));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('severityScale'));
+			expect(issue?.path).toBe('sections[0].blocks[0].severityScale');
+			expect(issue?.message).toContain('ghost');
+		}
+	});
+
+	it('flags an unknown sourceScale at the block path (FR2)', () => {
+		const result = validateDocument(matrixDoc(validMatrixBlock({ sourceScale: 'ghost' })));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('sourceScale'));
+			expect(issue?.path).toBe('sections[0].blocks[0].sourceScale');
+		}
+	});
+
+	it('flags a finding severity not in the severity scale, naming the finding', () => {
+		const block = validMatrixBlock();
+		(block.findings as { severity: string }[])[0].severity = 'unknown';
+		const result = validateDocument(matrixDoc(block));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('findings[0].severity'));
+			expect(issue?.path).toBe('sections[0].blocks[0].findings[0].severity');
+			expect(issue?.message).toContain('unknown');
+		}
+	});
+
+	it('flags a sources record key not in the sources scale, naming the finding', () => {
+		const block = validMatrixBlock();
+		(block.findings as { sources: Record<string, unknown> }[])[0].sources = {
+			siem: { state: 'found' },
+			ghost: { state: 'found' }
+		};
+		const result = validateDocument(matrixDoc(block));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.includes('ghost'));
+			expect(issue?.path).toBe('sections[0].blocks[0].findings[0].sources.ghost');
+			expect(issue?.message).toContain('ghost');
+		}
+	});
+
+	it('flags a dangling reference when the document declares no scales', () => {
+		const result = validateDocument({
+			version: 1,
+			title: 'Audit',
+			sections: [{ id: 'overview', title: 'Overview', blocks: [validMatrixBlock()] }]
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.errors.some((e) => e.path.endsWith('severityScale'))).toBe(true);
+		}
 	});
 });

@@ -45,7 +45,9 @@ describe('validateDocument - invalid corpus', () => {
 		const errors = expectInvalid(documentWithBlocks([{ type: 'video', id: 'clip' }]));
 		expect(errors).toHaveLength(1);
 		expect(errors[0].path).toBe('sections[0].blocks[0].type');
-		expect(errors[0].hint).toBe('Valid block types: text, table, chart, kpi, image.');
+		expect(errors[0].hint).toBe(
+			'Valid block types: text, table, chart, kpi, image, comparison-matrix.'
+		);
 	});
 
 	it('reports the supported versions for a wrong version', () => {
