@@ -242,6 +242,8 @@
 					{index}
 					total={view.sections.length}
 					mode={effectiveMode}
+					scales={view.scales}
+					{theme}
 					cover={index === 0 ? cover : undefined}
 				/>
 			</div>

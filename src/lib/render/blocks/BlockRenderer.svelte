@@ -1,6 +1,8 @@
 <script lang="ts">
+	import type { Scales } from '$lib/schema';
 	import type { BlockView } from '../document-view.ts';
 	import ChartBlock from './ChartBlock.svelte';
+	import ComparisonMatrixBlock from './ComparisonMatrixBlock.svelte';
 	import ImageBlock from './ImageBlock.svelte';
 	import KpiBlock from './KpiBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
@@ -9,8 +11,9 @@
 	// Dispatches a block view to its renderer. An invalid block (preview path
 	// only - the reader always gets a validated document) renders a gentle
 	// in-place notice instead of throwing, so one in-progress block never blanks
-	// the whole preview.
-	let { view }: { view: BlockView } = $props();
+	// the whole preview. `scales`/`theme` are threaded for the comparison-matrix
+	// block, which resolves its colours from the document scales (Epic 7).
+	let { view, scales, theme }: { view: BlockView; scales?: Scales; theme?: string } = $props();
 </script>
 
 <div class="block" id={view.anchorId}>
@@ -28,6 +31,8 @@
 		<KpiBlock block={view.block} />
 	{:else if view.block.type === 'image'}
 		<ImageBlock block={view.block} />
+	{:else if view.block.type === 'comparison-matrix'}
+		<ComparisonMatrixBlock block={view.block} {scales} {theme} />
 	{/if}
 </div>
 

@@ -14,10 +14,12 @@
  */
 import {
 	blockSchema,
+	scalesSchema,
 	sectionSchema,
 	validateDocument,
 	type Block,
 	type DocumentV1,
+	type Scales,
 	type Section
 } from '$lib/schema';
 
@@ -49,6 +51,13 @@ export interface TocEntry {
 export interface ReportView {
 	title: string;
 	theme: string | undefined;
+	/**
+	 * Document-level categorical scales (Epic 7). Threaded to the block renderer
+	 * so the comparison-matrix block resolves its severity/source colours and
+	 * labels from the same source the document declares, instead of authoring
+	 * colour per cell. Undefined when the document declares no scales.
+	 */
+	scales: Scales | undefined;
 	sections: SectionView[];
 	toc: TocEntry[];
 }
@@ -81,6 +90,7 @@ export function toReportView(document: DocumentV1): ReportView {
 	return {
 		title: document.title,
 		theme: document.theme,
+		scales: document.scales,
 		sections,
 		toc: tocFrom(sections)
 	};
@@ -113,10 +123,20 @@ export function toPreviewView(snapshot: unknown): ReportView {
 	const whole = validateDocument(snapshot);
 	if (whole.ok) return toReportView(whole.document);
 
-	const record = (snapshot ?? {}) as { title?: unknown; theme?: unknown; sections?: unknown };
+	const record = (snapshot ?? {}) as {
+		title?: unknown;
+		theme?: unknown;
+		scales?: unknown;
+		sections?: unknown;
+	};
 	const title =
 		typeof record.title === 'string' && record.title.length > 0 ? record.title : 'Untitled report';
 	const theme = typeof record.theme === 'string' ? record.theme : undefined;
+	// Best-effort scales: an invalid snapshot may carry a malformed scales array
+	// while the author edits; the matrix renderer tolerates undefined (it falls
+	// back to a neutral palette), so parse permissively and drop on failure.
+	const scalesResult = scalesSchema.safeParse(record.scales);
+	const scales = scalesResult.success ? scalesResult.data : undefined;
 	const rawSections = Array.isArray(record.sections) ? record.sections : [];
 
 	const sections: SectionView[] = rawSections.map((rawSection, sectionIndex) => {
@@ -170,7 +190,7 @@ export function toPreviewView(snapshot: unknown): ReportView {
 		};
 	});
 
-	return { title, theme, sections, toc: tocFrom(sections) };
+	return { title, theme, scales, sections, toc: tocFrom(sections) };
 }
 
 interface ZodLikeIssue {
