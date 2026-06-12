@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { formatUtcTime } from '$lib/format';
@@ -18,7 +19,10 @@
 	import type { ActionData, PageData } from './$types';
 
 	// The page remounts this component via {#key report.id}, so capturing the
-	// report once at init is the intended lifecycle (fresh state per report).
+	// document once at init is the intended lifecycle (fresh state per report).
+	// The lifecycle status, by contrast, is read live off the prop so publish /
+	// unpublish (which invalidateAll to refresh `report`) flip the editor between
+	// editable and read-only without losing the in-memory document.
 	interface Props {
 		report: PageData['report'];
 		form: ActionData;
@@ -26,8 +30,7 @@
 
 	let { report, form }: Props = $props();
 
-	// svelte-ignore state_referenced_locally
-	const editable = report.status === 'draft';
+	const editable = $derived(report.status === 'draft');
 
 	// svelte-ignore state_referenced_locally
 	let doc = $state(structuredClone(report.document));
@@ -108,6 +111,55 @@
 		};
 	};
 
+	let publishing = $state(false);
+
+	// Morphing primary action (UX): a draft is published from here; publishing
+	// validates server-side, so an invalid draft comes back as the same errors[]
+	// the save path renders inline at the failing blocks. A published report
+	// reverts to draft to resume editing. Both refresh `report` via invalidateAll
+	// so the editor flips read-only/editable without a full remount.
+	const submitPublish: SubmitFunction = ({ cancel }) => {
+		if (saving || dirty) {
+			// A draft save is in flight or pending: publishing now could freeze a
+			// stale snapshot. Cancel and let the autosave land; the author retries.
+			cancel();
+			saveMessage = 'Saving your latest edits - try publishing again in a moment.';
+			return;
+		}
+		publishing = true;
+		return async ({ result }) => {
+			publishing = false;
+			if (result.type === 'success') {
+				clientErrors = [];
+				saveMessage = null;
+				await invalidateAll();
+			} else if (result.type === 'failure') {
+				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
+				submittedDoc = $state.snapshot(doc) as DocumentV1;
+				clientErrors = payload?.errors ?? [];
+				saveMessage = clientErrors.length === 0 ? (payload?.message ?? 'Publish failed.') : null;
+			} else if (result.type === 'error') {
+				clientErrors = [];
+				saveMessage = 'Publish failed: the server could not be reached.';
+			}
+		};
+	};
+
+	const submitUnpublish: SubmitFunction = () => {
+		publishing = true;
+		return async ({ result }) => {
+			publishing = false;
+			if (result.type === 'success') {
+				clientErrors = [];
+				saveMessage = null;
+				await invalidateAll();
+			} else if (result.type === 'failure') {
+				const payload = result.data as { message?: string } | undefined;
+				saveMessage = payload?.message ?? 'Unpublish failed.';
+			}
+		};
+	};
+
 	function savedAtLabel(iso: string): string {
 		return `Saved at ${formatUtcTime(iso)}`;
 	}
@@ -132,9 +184,25 @@
 
 <div class="editor-toolbar">
 	<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
-	<a class="toolbar-link primary" href={viewPath} data-sveltekit-preload-data="off"
-		>View as reader</a
-	>
+	<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
+
+	<!-- Morphing primary action (UX): publish a draft, or unpublish to edit a
+	     published report. Kept outside the editor fieldset so the unpublish
+	     control stays enabled while the read-only fieldset is disabled. -->
+	{#if editable}
+		<form method="POST" action="?/publish" use:enhance={submitPublish} class="lifecycle">
+			<Button type="submit" variant="primary" disabled={publishing || saving}>
+				{publishing ? 'Publishing...' : 'Publish'}
+			</Button>
+		</form>
+	{:else}
+		<form method="POST" action="?/unpublish" use:enhance={submitUnpublish} class="lifecycle">
+			<span class="lifecycle-note">Published - unpublish to edit</span>
+			<Button type="submit" variant="secondary" disabled={publishing}>
+				{publishing ? 'Unpublishing...' : 'Unpublish'}
+			</Button>
+		</form>
+	{/if}
 </div>
 
 <form method="POST" action="?/save" use:enhance={submitSave} bind:this={saveFormElement}>
@@ -163,8 +231,8 @@
 
 		{#if !editable}
 			<p class="published-note">
-				This report is published and read-only. Lifecycle changes arrive with publishing (story
-				1.7).
+				This report is published and read-only. Readers see the snapshot taken at publish. Unpublish
+				above to edit or delete it.
 			</p>
 		{/if}
 
@@ -208,10 +276,25 @@
 <style>
 	.editor-toolbar {
 		display: flex;
+		align-items: center;
 		justify-content: flex-end;
 		gap: var(--space-3);
 		max-width: 880px;
 		margin-bottom: var(--space-4);
+	}
+
+	.lifecycle {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		margin: 0;
+		margin-left: auto;
+	}
+
+	.lifecycle-note {
+		font-size: var(--text-sm);
+		color: var(--color-ink-65);
+		white-space: nowrap;
 	}
 
 	.toolbar-link {
@@ -227,17 +310,6 @@
 	.toolbar-link:hover {
 		border-color: var(--color-purple);
 		color: var(--color-purple);
-	}
-
-	.toolbar-link.primary {
-		color: var(--color-stone);
-		background: var(--color-purple);
-		border-color: var(--color-purple);
-	}
-
-	.toolbar-link.primary:hover {
-		color: var(--color-stone);
-		background: color-mix(in srgb, var(--color-purple) 88%, var(--color-ink));
 	}
 
 	.editor {

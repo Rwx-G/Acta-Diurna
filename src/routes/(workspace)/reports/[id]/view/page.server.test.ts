@@ -13,24 +13,45 @@ function loadEvent(id: string) {
 	return { params: { id } } as unknown as Parameters<typeof load>[0];
 }
 
+function reportWith(document: unknown, status: 'draft' | 'published') {
+	return {
+		id: 'r1',
+		title: 'X',
+		schemaVersion: 1,
+		document,
+		publishedDocument: null,
+		publishedAt: null,
+		status,
+		createdAt: new Date(),
+		updatedAt: new Date()
+	} as Awaited<ReturnType<typeof getReport>>;
+}
+
 describe('reader view load', () => {
-	it('returns the validated document and status', async () => {
+	it('returns the validated draft document and status with no render error', async () => {
 		const result = validateDocument(fullDocument);
 		if (!result.ok) throw new Error('fixture invalid');
-		getReportMock.mockResolvedValueOnce({
-			id: 'r1',
-			title: result.document.title,
-			schemaVersion: result.document.version,
-			document: result.document,
-			status: 'draft',
-			createdAt: new Date(),
-			updatedAt: new Date()
-		});
+		getReportMock.mockResolvedValueOnce(reportWith(result.document, 'draft'));
+
 		const data = await load(loadEvent('r1'));
-		// load() returns the data object on the happy path (it only throws via
-		// error() on the AppError branch, exercised separately below).
-		expect(data?.document.title).toBe('Quarterly Security Report');
+
+		expect(data?.document?.title).toBe('Quarterly Security Report');
 		expect(data?.status).toBe('draft');
+		expect(data?.renderError).toBeNull();
+	});
+
+	it('returns a neutral renderError for an unsupported stored version (FR7)', async () => {
+		// A stored document at an unsupported version: no migration path exists, so
+		// the load returns the version error to render as a neutral state.
+		getReportMock.mockResolvedValueOnce(
+			reportWith({ version: 0, title: 'Legacy', sections: [] }, 'published')
+		);
+
+		const data = await load(loadEvent('r1'));
+
+		expect(data?.document).toBeNull();
+		expect(data?.renderError?.[0].path).toBe('version');
+		expect(data?.renderError?.[0].hint).toBe('Supported document schema versions: 1.');
 	});
 
 	it('maps an AppError to a SvelteKit error with its status', async () => {

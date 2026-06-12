@@ -1,7 +1,12 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { performLogout } from '$lib/server/auth/logout';
-import { getReport, updateReportDocument } from '$lib/server/documents/reports';
+import {
+	getReport,
+	publishReport,
+	unpublishToDraft,
+	updateReportDocument
+} from '$lib/server/documents/reports';
 import { AppError, errorPageShape } from '$lib/server/problem';
 import { applyNarrativeFields } from './editor-state';
 
@@ -44,6 +49,33 @@ export const actions: Actions = {
 					message: thrown.detail ?? thrown.title,
 					errors: thrown.errors ?? []
 				});
+			}
+			throw thrown;
+		}
+	},
+	publish: async ({ params }) => {
+		try {
+			const report = await publishReport(params.id);
+			return { published: true, status: report.status };
+		} catch (thrown) {
+			// A 422 (invalid draft) carries the actionable errors[]; the editor
+			// renders them at the failing blocks, reusing the save-path rendering.
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, {
+					message: thrown.detail ?? thrown.title,
+					errors: thrown.errors ?? []
+				});
+			}
+			throw thrown;
+		}
+	},
+	unpublish: async ({ params }) => {
+		try {
+			const report = await unpublishToDraft(params.id);
+			return { published: false, status: report.status };
+		} catch (thrown) {
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, { message: thrown.detail ?? thrown.title, errors: [] });
 			}
 			throw thrown;
 		}

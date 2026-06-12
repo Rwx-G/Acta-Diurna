@@ -2,18 +2,28 @@ import { isHttpError, isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateDocument, type DocumentV1, type DocumentV1Input } from '$lib/schema';
 import { performLogout } from '$lib/server/auth/logout';
-import { getReport, updateReportDocument, type Report } from '$lib/server/documents/reports';
+import {
+	getReport,
+	publishReport,
+	unpublishToDraft,
+	updateReportDocument,
+	type Report
+} from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
 vi.mock('$lib/server/documents/reports', () => ({
 	getReport: vi.fn(),
-	updateReportDocument: vi.fn()
+	updateReportDocument: vi.fn(),
+	publishReport: vi.fn(),
+	unpublishToDraft: vi.fn()
 }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 
 const getReportMock = vi.mocked(getReport);
 const updateMock = vi.mocked(updateReportDocument);
+const publishMock = vi.mocked(publishReport);
+const unpublishMock = vi.mocked(unpublishToDraft);
 const logoutMock = vi.mocked(performLogout);
 
 const REPORT_ID = '01970000-0000-7000-8000-000000000001';
@@ -42,6 +52,8 @@ function sampleReport(overrides: Partial<Report> = {}): Report {
 		status: 'draft',
 		schemaVersion: 1,
 		document: sampleDocument(),
+		publishedDocument: null,
+		publishedAt: null,
 		createdAt: new Date('2026-06-12T08:00:00Z'),
 		updatedAt: new Date('2026-06-12T09:30:00Z'),
 		...overrides
@@ -195,6 +207,53 @@ describe('save action', () => {
 			type: 'text',
 			paragraphs: [[{ text: 'Rewritten paragraph.' }]]
 		});
+	});
+});
+
+function actionEvent(id = REPORT_ID): { params: { id: string } } {
+	return { params: { id } } as { params: { id: string } };
+}
+
+describe('publish action', () => {
+	it('publishes and returns the new status', async () => {
+		publishMock.mockResolvedValue(sampleReport({ status: 'published' }));
+
+		const result = await actions.publish(actionEvent() as Parameters<typeof actions.publish>[0]);
+
+		expect(publishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(result).toEqual({ published: true, status: 'published' });
+	});
+
+	it('maps a 422 invalid-draft AppError to a failure carrying errors[]', async () => {
+		publishMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'Document validation failed',
+				type: '/problems/document-validation',
+				detail: '1 validation error found in the document.',
+				errors: [{ path: 'sections', message: 'A document needs at least one section.' }]
+			})
+		);
+
+		const result = (await actions.publish(
+			actionEvent() as Parameters<typeof actions.publish>[0]
+		)) as ActionFailure<{ errors: { path: string }[] }>;
+
+		expect(result.status).toBe(422);
+		expect(result.data.errors[0].path).toBe('sections');
+	});
+});
+
+describe('unpublish action', () => {
+	it('reverts to draft and returns the new status', async () => {
+		unpublishMock.mockResolvedValue(sampleReport({ status: 'draft' }));
+
+		const result = await actions.unpublish(
+			actionEvent() as Parameters<typeof actions.unpublish>[0]
+		);
+
+		expect(unpublishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(result).toEqual({ published: false, status: 'draft' });
 	});
 });
 

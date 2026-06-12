@@ -29,6 +29,10 @@ async function seedFixture(databaseUrl: string): Promise<void> {
 			status: 'published',
 			schemaVersion: result.document.version,
 			document: result.document,
+			// Published fixture carries its publish snapshot (story 1.7): readers are
+			// served `published_document`, frozen at publish time.
+			publishedDocument: result.document,
+			publishedAt: now,
 			createdAt: now,
 			updatedAt: now
 		});

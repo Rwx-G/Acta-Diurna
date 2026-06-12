@@ -1,22 +1,39 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { getReport } from '$lib/server/documents/reports';
+import { validateStoredDocument, type DocumentV1, type ValidationErrorDetail } from '$lib/schema';
 import { AppError, errorPageShape } from '$lib/server/problem';
 
 /**
  * Author-only reader view of a report by id (under the workspace guard). This
  * is the SSR-first render surface for Epic 1: the same renderer a reader will
- * see, reachable from the editor. The public magic-link reader (`/r/[token]`)
- * is Epic 3 and is intentionally not built here.
+ * see, reachable from the editor.
  *
- * Returns only the validated document - the renderer needs nothing else
- * (purity boundary). The full section list is sent so the page is SSR-complete
- * (no loading state) and the reader-path JS only hydrates for SPA navigation.
+ * Author intent: this is the author's preview, so it renders the live DRAFT
+ * (`report.document`) - the author wants to see their in-progress work, not a
+ * stale published snapshot. The "what readers actually see" path is the frozen
+ * published snapshot, served by `getPublishedDocument` and consumed by Epic 3's
+ * public `/r/[token]` reader (not built here).
+ *
+ * FR7 (version-aware rendering): the stored document is run through
+ * `validateStoredDocument`, which lifts an earlier supported schema version to
+ * the current shape via the migration chain before validating. An unsupported
+ * version is returned as a neutral error state for the page to render, never a
+ * crash. The renderer only ever receives a current-version `DocumentV1`.
  */
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({
+	params
+}): Promise<
+	| { document: DocumentV1; status: string; renderError: null }
+	| { document: null; status: string; renderError: ValidationErrorDetail[] }
+> => {
 	try {
 		const report = await getReport(params.id);
-		return { document: report.document, status: report.status };
+		const result = validateStoredDocument(report.document);
+		if (result.ok) {
+			return { document: result.document, status: report.status, renderError: null };
+		}
+		return { document: null, status: report.status, renderError: result.errors };
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));
 		throw thrown;
