@@ -112,6 +112,38 @@ export interface IngestInput {
 }
 
 /**
+ * Raw-bytes ingestion entry (story 4.3): the API push delivers the file as the
+ * request body with the format declared by `Content-Type`, not as a multipart
+ * `File`. This wraps the bytes in a `File` and delegates to `ingestFile` so the
+ * push runs the EXACT upload pipeline - same cap, same parser, same UUIDv7
+ * storage, same `data_sets` row - just a different transport. The size cap is
+ * re-checked on the buffered length here too (the endpoint already rejected an
+ * over-cap `Content-Length` before reading), keeping the 413 honest if a
+ * transport under-reports the length.
+ */
+export interface IngestBytesInput {
+	bytes: Uint8Array;
+	format: SourceFormat;
+	filename: string;
+	reportId?: string | null;
+	dataAsOf?: Date | null;
+}
+
+export async function ingestBytes(input: IngestBytesInput): Promise<DataSet> {
+	const { bytes, format, filename, reportId = null, dataAsOf = null } = input;
+	if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+		throw tooLarge(MAX_UPLOAD_BYTES);
+	}
+	const mimeType = format === 'csv' ? 'text/csv' : format === 'json' ? 'application/json' : '';
+	// Copy into a fresh ArrayBuffer: a plain Uint8Array's backing buffer is typed
+	// ArrayBufferLike (it could be a SharedArrayBuffer), which is not a BlobPart
+	// under strict lib types. The slice is a one-time copy at the API boundary.
+	const buffer = bytes.slice().buffer;
+	const file = new File([buffer], filename, { type: mimeType });
+	return ingestFile({ file, reportId, dataAsOf });
+}
+
+/**
  * Ingests one uploaded file end to end. The size cap is checked on `file.size`
  * (the multipart length) BEFORE `arrayBuffer()` buffers the bytes, so an
  * oversized upload is rejected with 413 without spending memory on it. Excel is

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
 import { AppError } from '$lib/server/problem';
-import { detectFormat, ingestFile, MAX_UPLOAD_BYTES } from './ingestion.ts';
+import { detectFormat, ingestBytes, ingestFile, MAX_UPLOAD_BYTES } from './ingestion.ts';
 
 // One temp uploads dir for the whole file; the env mock points the service at
 // it so writes land somewhere disposable, not the repo's data/uploads.
@@ -115,6 +115,64 @@ describe('ingestFile - CSV/JSON happy path', () => {
 		});
 		expect(dataSet.reportId).toBe('01970000-0000-7000-8000-000000000001');
 		expect(dataSet.dataAsOf).toEqual(asOf);
+	});
+});
+
+describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
+	function bytesOf(text: string): Uint8Array {
+		return new TextEncoder().encode(text);
+	}
+
+	it('runs the EXACT ingestFile pipeline: parses, inspects, stores, persists a row', async () => {
+		const dataSet = await ingestBytes({
+			bytes: bytesOf('week,count\n2026-06-01,3\n2026-06-08,5'),
+			format: 'csv',
+			filename: 'pushed.csv',
+			reportId: '01970000-0000-7000-8000-000000000001'
+		});
+
+		expect(dataSet.sourceFormat).toBe('csv');
+		expect(dataSet.filename).toBe('pushed.csv');
+		expect(dataSet.reportId).toBe('01970000-0000-7000-8000-000000000001');
+		expect(dataSet.fields).toEqual([
+			{ name: 'week', type: 'date' },
+			{ name: 'count', type: 'number' }
+		]);
+		// Stored under a UUIDv7 name, never the supplied filename (the 2.4 defence).
+		expect(dataSet.storagePath).toContain(`${dataSet.id}.csv`);
+		expect(dataSet.storagePath).not.toContain('pushed.csv');
+		expect(dbState.dataSets.size).toBe(1);
+	});
+
+	it('parses JSON bytes', async () => {
+		const dataSet = await ingestBytes({
+			bytes: bytesOf('[{"item":"a","n":1}]'),
+			format: 'json',
+			filename: 'rows.json'
+		});
+		expect(dataSet.sourceFormat).toBe('json');
+		expect(dataSet.fields).toEqual([
+			{ name: 'item', type: 'string' },
+			{ name: 'n', type: 'number' }
+		]);
+	});
+
+	it('rejects an over-cap byte length with 413 before storing', async () => {
+		const oversize = new Uint8Array(MAX_UPLOAD_BYTES + 1);
+		const error = await expectAppError(
+			ingestBytes({ bytes: oversize, format: 'csv', filename: 'big.csv' }),
+			413
+		);
+		expect(error.type).toBe('/problems/upload-too-large');
+		expect(dbState.dataSets.size).toBe(0);
+	});
+
+	it('surfaces the same 422 parse diagnostic as the upload flow', async () => {
+		const error = await expectAppError(
+			ingestBytes({ bytes: bytesOf('a\n"oops'), format: 'csv', filename: 'broken.csv' }),
+			422
+		);
+		expect(error.type).toBe('/problems/unparseable-file');
 	});
 });
 

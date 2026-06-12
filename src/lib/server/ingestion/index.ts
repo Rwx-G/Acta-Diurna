@@ -2,8 +2,14 @@
  * Ingestion domain barrel (FR12-16): upload + parse + inspect + store, binding
  * resolution, and the read queries the workspace consumes.
  */
-export { ingestFile, detectFormat, MAX_UPLOAD_BYTES } from './ingestion.ts';
-export type { DataSet, IngestInput, ParsedTable, SourceFormat } from './ingestion.ts';
+export { ingestBytes, ingestFile, detectFormat, MAX_UPLOAD_BYTES } from './ingestion.ts';
+export type {
+	DataSet,
+	IngestBytesInput,
+	IngestInput,
+	ParsedTable,
+	SourceFormat
+} from './ingestion.ts';
 
 export { bindBlock, getDataSet, listDataSets, readDataSetTable } from './queries.ts';
 
