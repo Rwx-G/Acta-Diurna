@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { hashToken } from '$lib/server/crypto/hash-token';
 
 /**
  * Share-link tokens (NFR6). The byte count is the entropy contract: 32 bytes =
@@ -21,10 +22,11 @@ export function generateShareToken(): string {
 }
 
 /**
- * SHA-256 hash of a raw share token, hex-encoded. The same one-way function the
- * 1.4 session model uses for at-rest token storage: a leaked `token_hash` cannot
- * be reversed into a working share URL.
+ * SHA-256 hash of a raw share token, hex-encoded. Delegates to the shared
+ * {@link hashToken} at-rest helper (the same one-way function the session and
+ * verification-token stores use): a leaked `token_hash` cannot be reversed into
+ * a working share URL.
  */
 export function hashShareToken(token: string): string {
-	return createHash('sha256').update(token).digest('hex');
+	return hashToken(token);
 }
