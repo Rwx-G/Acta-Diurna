@@ -71,6 +71,13 @@
       "when": 1781250929607,
       "tag": "0009_api_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781270138325,
+      "tag": "0010_reader_session_no_expiry",
+      "breakpoints": true
     }
   ]
 }

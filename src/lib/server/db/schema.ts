@@ -261,8 +261,12 @@ export type VerificationTokenRow = typeof verificationTokens.$inferSelect;
 // for the realm rationale). Per-share scope: a session is bound to ONE share +
 // report + reader identity - a session for share A authorizes nothing for share
 // B. Token hashed at rest (shared helper). All FKs CASCADE: a session is dead
-// once its share, report, or identity is gone. `expires_at` carries the
-// configurable reader TTL (default 30 days).
+// once its share, report, or identity is gone. `expires_at` is NULLABLE: null =
+// the session has no time bound and never ages out on its own (the default;
+// access is governed entirely by the share's own expiry + revocation, which the
+// reader gate re-checks on every load). A non-null value is the optional
+// operator override (READER_SESSION_TTL set to N days) forcing sessions to age
+// out.
 export const readerSessions = pgTable(
 	'reader_sessions',
 	{
@@ -278,7 +282,7 @@ export const readerSessions = pgTable(
 			.notNull()
 			.references(() => readerIdentities.id, { onDelete: 'cascade' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
+		expiresAt: timestamp('expires_at', { withTimezone: true })
 	},
 	(table) => [
 		uniqueIndex('reader_sessions_token_hash_idx').on(table.tokenHash),
