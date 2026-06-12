@@ -74,6 +74,14 @@
 					<input type="hidden" name="id" value={report.id} />
 					<Button variant="secondary" type="submit">Duplicate</Button>
 				</form>
+				{#if report.status === 'published'}
+					<a
+						href={resolve('/(workspace)/reports/[id]/share', { id: report.id })}
+						class="action-link"
+					>
+						Share
+					</a>
+				{/if}
 				{#if report.status === 'draft'}
 					<form method="POST" action="?/delete" use:enhance={confirmDelete}>
 						<input type="hidden" name="id" value={report.id} />
@@ -144,5 +152,19 @@
 	.updated {
 		color: var(--color-ink-65);
 		font-size: 12px;
+	}
+
+	.action-link {
+		padding: var(--space-2) var(--space-4);
+		font-weight: 600;
+		color: var(--color-ink);
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+		text-decoration: none;
+	}
+
+	.action-link:hover {
+		border-color: var(--color-purple);
+		color: var(--color-purple);
 	}
 </style>

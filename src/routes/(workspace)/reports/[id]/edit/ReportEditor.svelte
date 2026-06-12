@@ -189,6 +189,8 @@
 	const previewPath = resolve('/(workspace)/reports/[id]/preview', { id: report.id });
 	// svelte-ignore state_referenced_locally
 	const viewPath = resolve('/(workspace)/reports/[id]/view', { id: report.id });
+	// svelte-ignore state_referenced_locally
+	const sharePath = resolve('/(workspace)/reports/[id]/share', { id: report.id });
 </script>
 
 <svelte:head>
@@ -215,6 +217,7 @@
 			</Button>
 		</form>
 	{:else}
+		<a class="toolbar-link" href={sharePath}>Share</a>
 		<form method="POST" action="?/unpublish" use:enhance={submitUnpublish} class="lifecycle">
 			<span class="lifecycle-note">Published - unpublish to edit</span>
 			<Button type="submit" variant="secondary" disabled={publishing}>
