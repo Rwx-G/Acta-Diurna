@@ -103,6 +103,19 @@ describe('newBlock', () => {
 		expect(validateDocument(documentWith([block])).ok).toBe(true);
 	});
 
+	it('creates a card-grid starter (two columns) whose validation names the empty card fields', () => {
+		const block = newBlock('card-grid');
+		expect(block.type).toBe('card-grid');
+		if (block.type === 'card-grid') expect(block.columns).toBe(2);
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.errors.map((error) => error.path)).toContain(
+				'sections[0].blocks[0].items[0].title'
+			);
+		}
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

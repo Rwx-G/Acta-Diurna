@@ -3,6 +3,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import CalloutBlockEditor from './CalloutBlockEditor.svelte';
+	import CardGridBlockEditor from './CardGridBlockEditor.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
 	import ChipClusterBlockEditor from './ChipClusterBlockEditor.svelte';
 	import CodeBlockEditor from './CodeBlockEditor.svelte';
@@ -97,6 +98,8 @@
 		<CalloutBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'code'}
 		<CodeBlockEditor bind:block {onEdit} />
+	{:else if block.type === 'card-grid'}
+		<CardGridBlockEditor bind:block {onEdit} />
 	{/if}
 </article>
 

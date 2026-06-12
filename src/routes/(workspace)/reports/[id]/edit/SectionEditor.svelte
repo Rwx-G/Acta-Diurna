@@ -46,7 +46,8 @@
 		'set-membership',
 		'chip-cluster',
 		'callout',
-		'code'
+		'code',
+		'card-grid'
 	];
 </script>
 

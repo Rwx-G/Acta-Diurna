@@ -107,6 +107,11 @@ export function newBlock(type: BlockType): Block {
 			// Starts schema-valid: an empty code string (no language, no annotations).
 			// The author types the snippet; nothing is required to render.
 			return { type, id, code: '' };
+		case 'card-grid':
+			// Starts with two columns and one empty card (no icon): validation names
+			// the empty title/description on save (errors are guidance, the author is
+			// never blocked from adding a block).
+			return { type, id, columns: 2, items: [{ title: '', description: '' }] };
 	}
 }
 
