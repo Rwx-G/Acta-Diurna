@@ -13,6 +13,12 @@ services:
       NODE_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOADS_DIR: /data/uploads
+      # adapter-node's transport body cap. Defaults to 512K, BELOW the 50 MB push
+      # cap (MAX_UPLOAD_BYTES in src/lib/server/ingestion), so a legitimate
+      # 512K-50MB push would be rejected at the transport with a generic error and
+      # the app's actionable 413 would be unreachable. Keep this aligned with
+      # MAX_UPLOAD_BYTES (a hair above) so the app-level cap is the one that fires.
+      BODY_SIZE_LIMIT: ${BODY_SIZE_LIMIT:-52428800}
       # Reader-realm session lifetime in days (story 3.3); absent -> 30-day default.
       READER_SESSION_TTL: ${READER_SESSION_TTL:-}
       SMTP_HOST: ${SMTP_HOST:-}
