@@ -243,6 +243,7 @@
 					total={view.sections.length}
 					mode={effectiveMode}
 					scales={view.scales}
+					matrixBlocks={view.matrixBlocks}
 					{theme}
 					cover={index === 0 ? cover : undefined}
 				/>

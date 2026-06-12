@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Scales } from '$lib/schema';
+	import type { ComparisonMatrixBlock, Scales } from '$lib/schema';
 	import type { SectionView } from './document-view.ts';
 	import BlockRenderer from './blocks/BlockRenderer.svelte';
 
@@ -16,13 +16,15 @@
 		mode: 'slide' | 'scroll';
 		/** Document scales, threaded to the block renderer (Epic 7). */
 		scales?: Scales;
+		/** Comparison-matrix blocks by id, for the set-membership block (story 7.4). */
+		matrixBlocks?: Map<string, ComparisonMatrixBlock>;
 		/** Resolved theme name, for scale colour resolution at render. */
 		theme?: string;
 		/** Optional cover snippet rendered above the first section's content. */
 		cover?: Snippet;
 	}
 
-	let { section, index, total, mode, scales, theme, cover }: Props = $props();
+	let { section, index, total, mode, scales, matrixBlocks, theme, cover }: Props = $props();
 </script>
 
 <!-- In slide mode the section is its own scroll container (content taller than
@@ -59,7 +61,7 @@
 
 		<div class="section-body">
 			{#each section.blocks as blockView (blockView.anchorId)}
-				<BlockRenderer view={blockView} {scales} {theme} />
+				<BlockRenderer view={blockView} {scales} {matrixBlocks} {theme} />
 			{/each}
 		</div>
 	</div>

@@ -18,6 +18,7 @@ import {
 	sectionSchema,
 	validateDocument,
 	type Block,
+	type ComparisonMatrixBlock,
 	type DocumentV1,
 	type Scales,
 	type Section
@@ -58,8 +59,31 @@ export interface ReportView {
 	 * colour per cell. Undefined when the document declares no scales.
 	 */
 	scales: Scales | undefined;
+	/**
+	 * The comparison-matrix blocks in the document, keyed by block id (Epic 7,
+	 * story 7.4). A set-membership block references one of these by id
+	 * (`sourceBlockId`) and derives its UpSet from that block's findings. The
+	 * referenced block can live in any section, so the lookup is document-wide,
+	 * threaded to the block renderer the same way `scales` is.
+	 */
+	matrixBlocks: Map<string, ComparisonMatrixBlock>;
 	sections: SectionView[];
 	toc: TocEntry[];
+}
+
+/** Indexes every comparison-matrix block in a section list by its id. */
+function collectMatrixBlocks(
+	sections: ReadonlyArray<{ blocks: ReadonlyArray<Block> }>
+): Map<string, ComparisonMatrixBlock> {
+	const lookup = new Map<string, ComparisonMatrixBlock>();
+	for (const section of sections) {
+		for (const block of section.blocks) {
+			if (block.type === 'comparison-matrix') {
+				lookup.set(block.id, block);
+			}
+		}
+	}
+	return lookup;
 }
 
 function blockAnchor(sectionId: string, block: { id?: unknown }): string {
@@ -91,6 +115,7 @@ export function toReportView(document: DocumentV1): ReportView {
 		title: document.title,
 		theme: document.theme,
 		scales: document.scales,
+		matrixBlocks: collectMatrixBlocks(document.sections),
 		sections,
 		toc: tocFrom(sections)
 	};
@@ -190,7 +215,17 @@ export function toPreviewView(snapshot: unknown): ReportView {
 		};
 	});
 
-	return { title, theme, scales, sections, toc: tocFrom(sections) };
+	// Collect the comparison-matrix blocks that validated individually, so a
+	// set-membership block can still resolve its source mid-edit (a transiently
+	// invalid sibling block does not block the UpSet from finding its matrix).
+	const validBlocks = sections.flatMap((section) =>
+		section.blocks
+			.map((blockView) => blockView.block)
+			.filter((block): block is Block => block !== null)
+	);
+	const matrixBlocks = collectMatrixBlocks([{ blocks: validBlocks }]);
+
+	return { title, theme, scales, matrixBlocks, sections, toc: tocFrom(sections) };
 }
 
 interface ZodLikeIssue {

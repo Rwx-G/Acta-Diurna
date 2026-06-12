@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Scales } from '$lib/schema';
+	import type { ComparisonMatrixBlock as ComparisonMatrixBlockType, Scales } from '$lib/schema';
 	import type { BlockView } from '../document-view.ts';
 	import ChartBlock from './ChartBlock.svelte';
 	import ComparisonMatrixBlock from './ComparisonMatrixBlock.svelte';
@@ -7,6 +7,7 @@
 	import ImageBlock from './ImageBlock.svelte';
 	import KpiBlock from './KpiBlock.svelte';
 	import LegendBlock from './LegendBlock.svelte';
+	import SetMembershipBlock from './SetMembershipBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import TextBlock from './TextBlock.svelte';
 
@@ -15,7 +16,17 @@
 	// in-place notice instead of throwing, so one in-progress block never blanks
 	// the whole preview. `scales`/`theme` are threaded for the comparison-matrix
 	// block, which resolves its colours from the document scales (Epic 7).
-	let { view, scales, theme }: { view: BlockView; scales?: Scales; theme?: string } = $props();
+	let {
+		view,
+		scales,
+		matrixBlocks,
+		theme
+	}: {
+		view: BlockView;
+		scales?: Scales;
+		matrixBlocks?: Map<string, ComparisonMatrixBlockType>;
+		theme?: string;
+	} = $props();
 </script>
 
 <div class="block" id={view.anchorId}>
@@ -39,6 +50,13 @@
 		<FieldGridBlock block={view.block} />
 	{:else if view.block.type === 'legend'}
 		<LegendBlock block={view.block} {scales} {theme} />
+	{:else if view.block.type === 'set-membership'}
+		<SetMembershipBlock
+			block={view.block}
+			matrix={matrixBlocks?.get(view.block.sourceBlockId)}
+			{scales}
+			{theme}
+		/>
 	{/if}
 </div>
 
