@@ -16,6 +16,7 @@ All notable changes to Acta Diurna are documented here. The format follows [Keep
 - **Skeleton composer (story 2.1):** a three-zone composer (brick library, structure tree, live preview) to assemble a reusable report structure from six template bricks (cover, summary, data table, chart section, KPI row, annex), with inline validation at the failing element.
 - **Skeleton library and instantiation (story 2.2):** save an assembled structure as a named skeleton, browse the skeleton library, and create new reports whose structure mirrors the skeleton exactly so every issue of a recurring report is identical (FR9, FR11).
 - **Duplicate a report (story 2.3):** a "Duplicate" action on the reports list copies any report (draft or published) into a fresh editable draft, deep-copying its structure, bindings, and content, then opens it in the editor (FR10).
+- **Upload data and bind blocks (story 2.4):** upload CSV or JSON data files (up to 50 MB), inspect their fields and inferred types, and bind a data set's fields to a table, chart, or KPI block so exported tool data renders without manual re-entry (FR12). Unparseable files return an actionable problem-details error. Excel ingestion is recognized but not yet enabled pending a dependency decision.
 
 ### Security
 
