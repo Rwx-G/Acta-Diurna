@@ -470,15 +470,21 @@ describe('remap action (FR15)', () => {
 
 type GenerateOutlineAction = (typeof actions)['generate-outline'];
 
+// A fresh session id per event by default: the aiGenerationLimiter is shared
+// module state keyed by session, so a unique key keeps each test's bucket full
+// unless a test deliberately reuses an id to exercise the limit.
+let sessionCounter = 0;
+
 function generateEvent(
 	action: string,
-	form: Record<string, string>
+	form: Record<string, string>,
+	sessionId = `session-${(sessionCounter += 1)}`
 ): Parameters<GenerateOutlineAction>[0] {
 	const data = new FormData();
 	for (const [key, value] of Object.entries(form)) data.set(key, value);
 	return {
 		params: { id: REPORT_ID },
-		locals: { requestId: 'req-test' },
+		locals: { requestId: 'req-test', authorSession: { id: sessionId } },
 		request: new Request(`http://localhost/reports/x/edit?/${action}`, {
 			method: 'POST',
 			body: data
@@ -637,6 +643,76 @@ describe('generate-fill action (FR32 stage 2)', () => {
 
 		expect(result.status).toBe(400);
 		expect(fillFromOutlineMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('generate action rate limit (5.4 QA, per author session)', () => {
+	it('throttles outline generation past the burst cap with 429 and no LLM call', async () => {
+		generateOutlineMock.mockResolvedValue(sampleOutline as never);
+		hashOutlineMock.mockReturnValue('hash-abc');
+		const sessionId = 'rate-limited-outline-session';
+
+		// Capacity is 10: the burst is allowed, the next call is throttled. Reusing
+		// one session id drains that session's bucket (the cost/DoS brake).
+		for (let i = 0; i < 10; i += 1) {
+			const ok = await actions['generate-outline'](
+				generateEvent('generate-outline', { intent: 'a weekly review' }, sessionId)
+			);
+			expect((ok as { generate: { stage: string } }).generate.stage).toBe('outline');
+		}
+
+		generateOutlineMock.mockClear();
+		const throttled = (await actions['generate-outline'](
+			generateEvent('generate-outline', { intent: 'a weekly review' }, sessionId)
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(throttled.status).toBe(429);
+		expect(generateOutlineMock).not.toHaveBeenCalled();
+	});
+
+	it('throttles fill generation past the burst cap with 429 and no service call', async () => {
+		fillFromOutlineMock.mockResolvedValue(sampleReport());
+		const sessionId = 'rate-limited-fill-session';
+
+		for (let i = 0; i < 10; i += 1) {
+			await actions['generate-fill'](
+				generateEvent(
+					'generate-fill',
+					{ outline: JSON.stringify(sampleOutline), outlineHash: 'hash-abc' },
+					sessionId
+				)
+			);
+		}
+
+		fillFromOutlineMock.mockClear();
+		const throttled = (await actions['generate-fill'](
+			generateEvent(
+				'generate-fill',
+				{ outline: JSON.stringify(sampleOutline), outlineHash: 'hash-abc' },
+				sessionId
+			)
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(throttled.status).toBe(429);
+		expect(fillFromOutlineMock).not.toHaveBeenCalled();
+	});
+
+	it('isolates sessions: one author at the cap does not throttle another', async () => {
+		generateOutlineMock.mockResolvedValue(sampleOutline as never);
+		hashOutlineMock.mockReturnValue('hash-abc');
+		const drained = 'isolation-drained-session';
+
+		for (let i = 0; i < 11; i += 1) {
+			await actions['generate-outline'](
+				generateEvent('generate-outline', { intent: 'x' }, drained)
+			);
+		}
+
+		const other = (await actions['generate-outline'](
+			generateEvent('generate-outline', { intent: 'x' }, 'isolation-fresh-session')
+		)) as { generate: { stage: string } };
+
+		expect(other.generate.stage).toBe('outline');
 	});
 });
 

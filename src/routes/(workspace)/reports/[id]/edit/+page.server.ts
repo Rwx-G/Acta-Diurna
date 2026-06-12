@@ -23,7 +23,8 @@ import {
 	type Outline
 } from '$lib/server/ai/generate';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
-import { AppError, errorPageShape } from '$lib/server/problem';
+import { aiGenerationLimiter } from '$lib/server/auth/rate-limit';
+import { AppError, errorPageShape, rateLimited } from '$lib/server/problem';
 import { parseSlotMapping } from './bind-form';
 import { applyNarrativeFields } from './editor-state';
 
@@ -166,6 +167,13 @@ export const actions: Actions = {
 	// the 5.3 503 here and makes no call. The outline + its content hash are
 	// returned to the client; the hash binds a later approval to THIS outline.
 	'generate-outline': async ({ request, locals }) => {
+		// Cost/DoS brake (5.4 QA): each generate issues a metered LLM call, so an
+		// authenticated author is rate-limited per session BEFORE any chatComplete.
+		const decision = aiGenerationLimiter.consume(`${locals.authorSession!.id}:/generate`);
+		if (!decision.allowed) {
+			const limited = rateLimited(decision.retryAfterSeconds);
+			return fail(429, { generate: { message: limited.detail ?? limited.title } });
+		}
 		const data = await request.formData();
 		const intent = String(data.get('intent') ?? '').trim();
 		const skeletonId = String(data.get('skeletonId') ?? '').trim() || null;
@@ -203,6 +211,13 @@ export const actions: Actions = {
 	// validate-on-write every surface uses. An invalid model document is the 422
 	// errors[] and the draft is left untouched.
 	'generate-fill': async ({ params, request, locals }) => {
+		// Same cost/DoS brake as generate-outline, per author session, before any
+		// chatComplete in fillFromOutline.
+		const decision = aiGenerationLimiter.consume(`${locals.authorSession!.id}:/generate`);
+		if (!decision.allowed) {
+			const limited = rateLimited(decision.retryAfterSeconds);
+			return fail(429, { generate: { message: limited.detail ?? limited.title } });
+		}
 		const data = await request.formData();
 		const rawOutline = String(data.get('outline') ?? '');
 		const approvedHash = String(data.get('outlineHash') ?? '');

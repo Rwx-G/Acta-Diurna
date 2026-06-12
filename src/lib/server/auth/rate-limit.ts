@@ -203,3 +203,27 @@ export const apiAuthFailureLimiter: TokenBucketLimiter = new TokenBucketLimiter(
 	API_AUTH_FAILURE_CAPACITY,
 	API_AUTH_FAILURE_REFILL_TOKENS_PER_SECOND
 );
+
+/**
+ * AI generation burst before the limiter engages (story 5.4 QA). Each generate
+ * action issues an outbound METERED LLM call via chatComplete, so the cap is
+ * cost-aware, not brute-force-aware: a small burst lets an author iterate on an
+ * outline, but sustained spam (an authenticated author driving unlimited paid
+ * calls) is throttled.
+ */
+const AI_GENERATION_BUCKET_CAPACITY = 10;
+/** One generation earned back every 30 seconds once drained (sustained rate ~2/min). */
+const AI_GENERATION_REFILL_TOKENS_PER_SECOND = 1 / 30;
+
+/**
+ * Per-AUTHOR-SESSION limiter for the FR32 generation actions
+ * (`generate-outline` / `generate-fill`). Keyed by the authenticated author's
+ * session id (the workspace guard guarantees a live session reaches the action),
+ * so one author's burst never starves another's. Consumed at the top of each
+ * generate action BEFORE any chatComplete call; on deny the action returns the
+ * same 429 problem the login limiter uses and makes no LLM call.
+ */
+export const aiGenerationLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	AI_GENERATION_BUCKET_CAPACITY,
+	AI_GENERATION_REFILL_TOKENS_PER_SECOND
+);
