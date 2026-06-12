@@ -126,3 +126,8 @@ default suits a single author plus light reader traffic. Raise it when the reade
 realm carries concurrent load (Epic 3) and the database is provisioned for the
 extra connections; keep it below the Postgres `max_connections` ceiling minus
 headroom for migrations and maintenance.
+
+## See also
+
+- [`migrations.md`](migrations.md) - how boot migrations apply, what a failure
+  looks like in the logs, and the recovery runbook.
