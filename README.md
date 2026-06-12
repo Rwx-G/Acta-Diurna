@@ -9,12 +9,12 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.8.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.9.0-brightgreen.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-v1%20in%20development-yellow.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
   <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/tests-1040%2B-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1264%2B-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/deploy-docker%20compose-2496ED.svg" alt="Docker">
 </p>
 
@@ -46,7 +46,8 @@ The tool carries the skeleton - structure, templates, rendering, sharing, access
 
 - Core blocks: **text, table, chart, KPI, image**
 - Reporting primitives (generic, not domain-bound): **comparison matrix** (findings x sources with conditional formatting), **set-membership / UpSet** (coverage by source combination, derived from a matrix with zero re-entry), **field grid**, and **legend**
-- **Document-level categorical scales** - severity and source colours/labels declared once and resolved at render by the matrix, legend, and UpSet, so a report stays legible even with zero authored colours
+- General report bricks: **status badges and conditional table formatting** (a scale value rendered as colour plus label), **callouts** (tinted info / success / warning / danger / neutral admonitions), **code blocks** (escaped, with an inline-code mark), a curated **icon set** (inline SVG, no icon font, no CDN), **card grids** (icon + title + description), **structured lists and steps** (native ordinals), **timelines** (milestones with per-milestone date and status), and a **field-grid meta-strip** header variant
+- **Document-level categorical scales** - severity and source colours/labels declared once and resolved at render by the matrix, legend, UpSet, status badges, and timelines, so a report stays legible even with zero authored colours
 - Every block is **renderer-pure** - escaped output only, no raw HTML, no `$lib/server` in the render path, zero hydration
 
 ### :robot: AI-native authoring
