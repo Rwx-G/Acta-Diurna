@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto';
 export function uuidv7(now: number = Date.now()): string {
 	const bytes = randomBytes(16);
 
+	// Division, not bit shifts: JS bitwise operators truncate to 32 bits and would drop the high bytes of the 48-bit timestamp.
 	bytes[0] = Math.floor(now / 2 ** 40) % 256;
 	bytes[1] = Math.floor(now / 2 ** 32) % 256;
 	bytes[2] = Math.floor(now / 2 ** 24) % 256;

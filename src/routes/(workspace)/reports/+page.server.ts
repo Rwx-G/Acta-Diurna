@@ -1,13 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
-import { deleteAuthorCookie, readAuthorCookie } from '$lib/server/auth/cookies';
-import { destroySession } from '$lib/server/auth/sessions';
+import { performLogout } from '$lib/server/auth/logout';
 
 export const actions: Actions = {
 	logout: async ({ cookies }) => {
-		const token = readAuthorCookie(cookies);
-		if (token) await destroySession(token);
-		deleteAuthorCookie(cookies);
+		await performLogout(cookies);
 		redirect(303, '/login');
 	}
 };

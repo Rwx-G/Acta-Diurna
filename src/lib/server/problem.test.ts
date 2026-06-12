@@ -63,6 +63,29 @@ describe('problemResponse', () => {
 			errors: [{ path: 'name', message: 'required' }]
 		});
 	});
+
+	it('passes only allow-listed headers through, case-insensitively', () => {
+		const response = problemResponse(
+			new AppError({
+				status: 401,
+				title: 'Unauthorized',
+				headers: {
+					'retry-after': '5',
+					'WWW-Authenticate': 'Bearer',
+					'Set-Cookie': 'evil=1',
+					'Access-Control-Allow-Origin': '*',
+					'X-Custom': 'nope'
+				}
+			})
+		);
+
+		expect(response.headers.get('Retry-After')).toBe('5');
+		expect(response.headers.get('WWW-Authenticate')).toBe('Bearer');
+		expect(response.headers.get('Set-Cookie')).toBeNull();
+		expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+		expect(response.headers.get('X-Custom')).toBeNull();
+		expect(response.headers.get('content-type')).toBe('application/problem+json');
+	});
 });
 
 describe('rateLimited', () => {

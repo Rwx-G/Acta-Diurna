@@ -2,7 +2,11 @@ import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { building } from '$app/environment';
 import { deleteAuthorCookie, readAuthorCookie } from '$lib/server/auth/cookies';
-import { loginRateLimiter } from '$lib/server/auth/rate-limit';
+import {
+	GLOBAL_LOGIN_FAILURE_KEY,
+	loginFailureLimiter,
+	loginRateLimiter
+} from '$lib/server/auth/rate-limit';
 import { validateAuthorSession } from '$lib/server/auth/sessions';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv } from '$lib/server/env';
@@ -51,13 +55,17 @@ const accessLog: Handle = async ({ event, resolve }) => {
 
 	const response = await resolve(event);
 
+	// Read AFTER resolve: authorRealm runs inside this handle and has populated
+	// locals.authorSession by the time the response comes back.
+	const session = event.locals.authorSession;
 	logger.info(
 		{
 			requestId: event.locals.requestId,
 			method: event.request.method,
 			path: event.url.pathname,
 			status: response.status,
-			durationMs: Math.round(performance.now() - start)
+			durationMs: Math.round(performance.now() - start),
+			...(session ? { realm: 'author', sessionId: session.id } : {})
 		},
 		'request'
 	);
@@ -72,10 +80,22 @@ const loginRateLimit: Handle = async ({ event, resolve }) => {
 		const decision = loginRateLimiter.consume(`${event.getClientAddress()}:/login`);
 		if (!decision.allowed) {
 			logger.warn(
-				{ requestId: event.locals.requestId, path: event.url.pathname },
+				{ requestId: event.locals.requestId, path: event.url.pathname, limiter: 'ip' },
 				'rate limit engaged'
 			);
 			return problemResponse(rateLimited(decision.retryAfterSeconds));
+		}
+		// Second, IP-independent brake: only failed login attempts consume it
+		// (in the login action), so it bounds total guessing even when client
+		// addresses collapse behind a proxy or are spoofed. Checked here so the
+		// denial is the same 429 problem+json as the per-IP one.
+		const globalDecision = loginFailureLimiter.check(GLOBAL_LOGIN_FAILURE_KEY);
+		if (!globalDecision.allowed) {
+			logger.warn(
+				{ requestId: event.locals.requestId, path: event.url.pathname, limiter: 'global' },
+				'rate limit engaged'
+			);
+			return problemResponse(rateLimited(globalDecision.retryAfterSeconds));
 		}
 	}
 	return await resolve(event);
@@ -95,6 +115,11 @@ const authorRealm: Handle = async ({ event, resolve }) => {
 	return await resolve(event);
 };
 
+// Ordering contract: requestContext FIRST - it provides locals.requestId to
+// every later handle and to handleError. securityHeaders and accessLog wrap
+// the rest so even short-circuited responses (429) carry headers and a log
+// line. authorRealm INNERMOST - it populates locals.authorSession during
+// resolve, which accessLog reads after resolve returns to enrich its line.
 export const handle: Handle = sequence(
 	requestContext,
 	securityHeaders,
@@ -116,14 +141,12 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 	);
 	// Single mapping point (AR4): a thrown AppError keeps its problem-details
 	// fields; for /api/* routes SvelteKit serializes this shape as JSON.
-	// Anything else stays an opaque 500 - never leak internals to the client.
+	// Anything else stays opaque: SvelteKit's status/message (e.g. 404 Not
+	// Found) for client errors, a bare Internal Server Error for 5xx - never
+	// leak internals to the client.
 	if (error instanceof AppError) {
 		return errorPageShape(error);
 	}
-	return {
-		type: 'about:blank',
-		title: 'Internal Server Error',
-		status: 500,
-		message: 'Internal Server Error'
-	};
+	const title = status >= 500 ? 'Internal Server Error' : message;
+	return { type: 'about:blank', title, status, message: title };
 };

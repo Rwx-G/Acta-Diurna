@@ -50,6 +50,10 @@ export function rateLimited(retryAfterSeconds: number): AppError {
 	});
 }
 
+// Only error-semantics headers pass through; everything else is dropped so an
+// AppError can never become a header-injection vector (cache, CORS, cookies).
+const ALLOWED_ERROR_HEADERS = new Set(['retry-after', 'www-authenticate']);
+
 /** Renders an AppError as an RFC 9457 problem+json HTTP response. */
 export function problemResponse(error: AppError): Response {
 	const body: Record<string, unknown> = {
@@ -60,10 +64,12 @@ export function problemResponse(error: AppError): Response {
 	if (error.detail !== undefined) body.detail = error.detail;
 	if (error.errors !== undefined) body.errors = error.errors;
 
-	return new Response(JSON.stringify(body), {
-		status: error.status,
-		headers: { 'content-type': 'application/problem+json', ...error.headers }
-	});
+	const headers = new Headers({ 'content-type': 'application/problem+json' });
+	for (const [name, value] of Object.entries(error.headers ?? {})) {
+		if (ALLOWED_ERROR_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+	}
+
+	return new Response(JSON.stringify(body), { status: error.status, headers });
 }
 
 /**

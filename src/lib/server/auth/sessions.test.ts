@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Column, Param, type SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionRow } from '../db/schema';
 import {
@@ -8,11 +9,24 @@ import {
 	validateAuthorSession
 } from './sessions';
 
+// The mock store is keyed by token HASH: a regression that queries by the raw
+// token (or any other column) misses the map and fails the lookup tests. The
+// `eq(column, value)` filters are decoded from drizzle's SQL chunks so the
+// filtered COLUMN is asserted too, not just the value.
 const dbState = vi.hoisted(() => ({
-	selectRows: [] as unknown[],
+	rowsByTokenHash: new Map<string, Record<string, unknown>>(),
 	inserted: [] as Record<string, unknown>[],
-	deleteCalls: 0
+	whereFilters: [] as { column: string; value: unknown }[],
+	deleteFilters: [] as { column: string; value: unknown }[]
 }));
+
+function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
+	const chunks = (filter as { queryChunks: unknown[] }).queryChunks;
+	const column = chunks.find((chunk): chunk is Column => chunk instanceof Column);
+	const param = chunks.find((chunk): chunk is Param => chunk instanceof Param);
+	if (!column || !param) throw new Error('mock only supports eq(column, value) filters');
+	return { column: column.name, value: param.value };
+}
 
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
@@ -24,14 +38,26 @@ vi.mock('$lib/server/db/client', () => ({
 		}),
 		select: () => ({
 			from: () => ({
-				where: () => ({
-					limit: () => Promise.resolve(dbState.selectRows)
-				})
+				where: (filter: SQL) => {
+					const decoded = decodeEqFilter(filter);
+					dbState.whereFilters.push(decoded);
+					return {
+						limit: () => {
+							if (decoded.column !== 'token_hash') return Promise.resolve([]);
+							const row = dbState.rowsByTokenHash.get(String(decoded.value));
+							return Promise.resolve(row ? [row] : []);
+						}
+					};
+				}
 			})
 		}),
 		delete: () => ({
-			where: () => {
-				dbState.deleteCalls += 1;
+			where: (filter: SQL) => {
+				const decoded = decodeEqFilter(filter);
+				dbState.deleteFilters.push(decoded);
+				if (decoded.column === 'token_hash') {
+					dbState.rowsByTokenHash.delete(String(decoded.value));
+				}
 				return Promise.resolve();
 			}
 		})
@@ -42,22 +68,25 @@ function sha256(value: string): string {
 	return createHash('sha256').update(value).digest('hex');
 }
 
-function sessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
-	return {
+function seedSession(token: string, overrides: Partial<SessionRow> = {}): SessionRow {
+	const row: SessionRow = {
 		id: '01970000-0000-7000-8000-000000000000',
 		realm: 'author',
-		tokenHash: 'irrelevant-for-mocked-lookup',
+		tokenHash: sha256(token),
 		createdAt: new Date(Date.now() - 1000),
 		expiresAt: new Date(Date.now() + 60_000),
 		metadata: null,
 		...overrides
 	};
+	dbState.rowsByTokenHash.set(row.tokenHash, row);
+	return row;
 }
 
 beforeEach(() => {
-	dbState.selectRows = [];
+	dbState.rowsByTokenHash.clear();
 	dbState.inserted = [];
-	dbState.deleteCalls = 0;
+	dbState.whereFilters = [];
+	dbState.deleteFilters = [];
 });
 
 describe('createAuthorSession', () => {
@@ -96,38 +125,48 @@ describe('createAuthorSession', () => {
 });
 
 describe('validateAuthorSession', () => {
-	it('resolves a live author session', async () => {
-		const row = sessionRow();
-		dbState.selectRows = [row];
+	it('resolves a live author session by querying the sha256 of the token', async () => {
+		const row = seedSession('some-token');
 
 		const session = await validateAuthorSession('some-token');
 
 		expect(session).toEqual({ id: row.id, createdAt: row.createdAt, expiresAt: row.expiresAt });
+		expect(dbState.whereFilters).toEqual([{ column: 'token_hash', value: sha256('some-token') }]);
 	});
 
 	it('returns null for an unknown token', async () => {
 		await expect(validateAuthorSession('unknown')).resolves.toBeNull();
 	});
 
-	it('returns null for a reader-realm session (strict realm separation)', async () => {
-		dbState.selectRows = [sessionRow({ realm: 'reader' })];
+	it('never matches a session seeded under the raw token (hash-at-rest contract)', async () => {
+		// A regression that filters on the raw token would find this row.
+		seedSession('raw-token', { tokenHash: 'raw-token' });
 
-		await expect(validateAuthorSession('reader-token')).resolves.toBeNull();
-		expect(dbState.deleteCalls).toBe(0);
+		await expect(validateAuthorSession('raw-token')).resolves.toBeNull();
 	});
 
-	it('deletes and rejects an expired session', async () => {
-		dbState.selectRows = [sessionRow({ expiresAt: new Date(Date.now() - 1) })];
+	it('returns null for a reader-realm session (strict realm separation)', async () => {
+		seedSession('reader-token', { realm: 'reader' });
+
+		await expect(validateAuthorSession('reader-token')).resolves.toBeNull();
+		expect(dbState.deleteFilters).toHaveLength(0);
+	});
+
+	it('deletes an expired session by id and rejects it', async () => {
+		const row = seedSession('expired-token', { expiresAt: new Date(Date.now() - 1) });
 
 		await expect(validateAuthorSession('expired-token')).resolves.toBeNull();
-		expect(dbState.deleteCalls).toBe(1);
+		expect(dbState.deleteFilters).toEqual([{ column: 'id', value: row.id }]);
 	});
 });
 
 describe('destroySession', () => {
-	it('deletes the session row for the token', async () => {
+	it('deletes the session row by the sha256 of the token', async () => {
+		seedSession('any-token');
+
 		await destroySession('any-token');
 
-		expect(dbState.deleteCalls).toBe(1);
+		expect(dbState.deleteFilters).toEqual([{ column: 'token_hash', value: sha256('any-token') }]);
+		expect(dbState.rowsByTokenHash.size).toBe(0);
 	});
 });

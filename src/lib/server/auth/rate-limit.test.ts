@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TokenBucketLimiter } from './rate-limit';
+import { GLOBAL_LOGIN_FAILURE_KEY, TokenBucketLimiter } from './rate-limit';
 
 const KEY = '192.0.2.10:/login';
 const T0 = 1_000_000_000_000;
@@ -66,5 +66,68 @@ describe('TokenBucketLimiter', () => {
 
 		// 'a' was pruned and restarts with a full bucket.
 		expect(limiter.consume('a', T0 + 30_000).allowed).toBe(true);
+	});
+});
+
+describe('TokenBucketLimiter.check', () => {
+	it('reports availability without consuming a token', () => {
+		const limiter = new TokenBucketLimiter(1, 1 / 30);
+
+		expect(limiter.check(KEY, T0).allowed).toBe(true);
+		// Still consumable: check above took nothing.
+		expect(limiter.consume(KEY, T0).allowed).toBe(true);
+
+		const denied = limiter.check(KEY, T0);
+		expect(denied.allowed).toBe(false);
+		expect(denied.retryAfterSeconds).toBe(30);
+	});
+
+	it('treats an untracked key as a full bucket', () => {
+		const limiter = new TokenBucketLimiter(1, 1 / 30);
+
+		expect(limiter.check('never-seen', T0)).toEqual({ allowed: true, retryAfterSeconds: 0 });
+		expect(limiter.trackedKeys).toBe(0);
+	});
+});
+
+describe('global login failure brake', () => {
+	it('engages after capacity failures even when callers are distinct', () => {
+		const limiter = new TokenBucketLimiter(20, 1 / 10);
+
+		// 20 failures from 20 different addresses all drain the same global key.
+		for (let i = 0; i < 20; i += 1) {
+			expect(limiter.consume(GLOBAL_LOGIN_FAILURE_KEY, T0).allowed).toBe(true);
+		}
+
+		const denied = limiter.check(GLOBAL_LOGIN_FAILURE_KEY, T0);
+		expect(denied.allowed).toBe(false);
+		expect(denied.retryAfterSeconds).toBe(10);
+	});
+});
+
+describe('tracked-key bound', () => {
+	it('never grows beyond maxTrackedKeys when keys rotate past the bound', () => {
+		const limiter = new TokenBucketLimiter(5, 1 / 30, 3);
+
+		// Every bucket stays drained-ish (no time passes), so pruning frees
+		// nothing and the LRU eviction must hold the bound alone.
+		for (let i = 0; i < 50; i += 1) {
+			limiter.consume(`198.51.100.${i}:/login`, T0 + i);
+			expect(limiter.trackedKeys).toBeLessThanOrEqual(3);
+		}
+	});
+
+	it('evicts the bucket touched longest ago when pruning frees nothing', () => {
+		const limiter = new TokenBucketLimiter(2, 1 / 30, 2);
+		limiter.consume('old', T0);
+		limiter.consume('fresh', T0 + 1000);
+
+		limiter.consume('new', T0 + 2000);
+		expect(limiter.trackedKeys).toBe(2);
+
+		// 'old' was evicted and restarts with a full bucket (capacity 2):
+		// without eviction its second consume here would be denied.
+		expect(limiter.consume('old', T0 + 2000).allowed).toBe(true);
+		expect(limiter.consume('old', T0 + 2000).allowed).toBe(true);
 	});
 });

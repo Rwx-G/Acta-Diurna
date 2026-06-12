@@ -2,16 +2,22 @@ import { isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setAuthorCookie } from '$lib/server/auth/cookies';
 import { verifyAuthorPassword } from '$lib/server/auth/password';
+import { GLOBAL_LOGIN_FAILURE_KEY, loginFailureLimiter } from '$lib/server/auth/rate-limit';
 import { createAuthorSession } from '$lib/server/auth/sessions';
 import { actions, load } from './+page.server';
 
 vi.mock('$lib/server/auth/cookies', () => ({ setAuthorCookie: vi.fn() }));
 vi.mock('$lib/server/auth/password', () => ({ verifyAuthorPassword: vi.fn() }));
+vi.mock('$lib/server/auth/rate-limit', () => ({
+	GLOBAL_LOGIN_FAILURE_KEY: 'global:/login',
+	loginFailureLimiter: { consume: vi.fn() }
+}));
 vi.mock('$lib/server/auth/sessions', () => ({ createAuthorSession: vi.fn() }));
 
 const verify = vi.mocked(verifyAuthorPassword);
 const createSession = vi.mocked(createAuthorSession);
 const setCookie = vi.mocked(setAuthorCookie);
+const consumeGlobalFailure = vi.mocked(loginFailureLimiter.consume);
 
 function loginRequest(fields: Record<string, string>): Request {
 	const body = new FormData();
@@ -70,6 +76,16 @@ describe('login action', () => {
 		expect(setCookie).not.toHaveBeenCalled();
 	});
 
+	it('consumes the global failure brake on every failed attempt', async () => {
+		verify.mockResolvedValue(false);
+
+		await callAction({ password: 'wrong-1' });
+		await callAction({ password: 'wrong-2' });
+
+		expect(consumeGlobalFailure).toHaveBeenCalledTimes(2);
+		expect(consumeGlobalFailure).toHaveBeenCalledWith(GLOBAL_LOGIN_FAILURE_KEY);
+	});
+
 	it('still runs one argon2 verification when the field is missing (uniform timing)', async () => {
 		verify.mockResolvedValueOnce(false);
 
@@ -94,5 +110,7 @@ describe('login action', () => {
 			);
 		}
 		expect(setCookie).toHaveBeenCalledWith({}, 'fresh-token', expiresAt);
+		// Successful logins never feed the global brake.
+		expect(consumeGlobalFailure).not.toHaveBeenCalled();
 	});
 });

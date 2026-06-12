@@ -28,12 +28,12 @@ describe('verifyAuthorPassword', () => {
 	});
 
 	it('reports a malformed stored hash as a plain mismatch', async () => {
+		const original = env.AUTHOR_PASSWORD_HASH;
 		env.AUTHOR_PASSWORD_HASH = 'not-a-phc-hash';
-
-		await expect(verifyAuthorPassword('anything')).resolves.toBe(false);
-
-		env.AUTHOR_PASSWORD_HASH = await argon2.hash('correct horse battery staple', {
-			type: argon2.argon2id
-		});
+		try {
+			await expect(verifyAuthorPassword('anything')).resolves.toBe(false);
+		} finally {
+			env.AUTHOR_PASSWORD_HASH = original;
+		}
 	});
 });
