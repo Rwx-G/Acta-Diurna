@@ -12,6 +12,18 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			// CSRF defense in depth. This list MUST stay empty. An empty
+			// trustedOrigins is SvelteKit 2.x's secure default: every cross-site
+			// form-POST has its Origin checked against the server origin, with no
+			// third-party exemption. Realm cookies are SameSite=Lax + `__Host-`-
+			// prefixed (first CSRF line); this Origin check is the second. Pinning it
+			// explicitly (no behavior change) stops a future proxy workaround from
+			// silently adding a trusted origin or `*` and exposing every author
+			// mutation to CSRF. An ORIGIN/forwarded-header mismatch must be fixed at
+			// the reverse proxy (set ORIGIN / X-Forwarded-* correctly), never by
+			// trusting cross-site origins here. (The deprecated equivalent was
+			// `checkOrigin: true`.)
+			csrf: { trustedOrigins: [] },
 			// Strict CSP (D7): zero third-party assets. Fonts are self-hosted via
 			// Fontsource (bundled into the build), so no font/style/script origin
 			// other than 'self' is permitted. SvelteKit hashes its own inline
