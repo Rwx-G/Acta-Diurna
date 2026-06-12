@@ -1,9 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { CURRENT_SCHEMA_VERSION, toJsonSchema } from '$lib/schema';
-import { fullDocument } from '$lib/schema/examples/full';
-import { minimalDocument } from '$lib/schema/examples/minimal';
 import { runApi } from '$lib/server/api';
+import { getPublishedSchema } from '$lib/server/schema/published';
 
 /**
  * `GET /api/v1/schema` (AR2; FR31 groundwork) - the published JSON Schema of the
@@ -28,12 +26,5 @@ import { runApi } from '$lib/server/api';
  */
 export const GET: RequestHandler = () =>
 	runApi(async () =>
-		json(
-			{
-				version: CURRENT_SCHEMA_VERSION,
-				schema: toJsonSchema(),
-				examples: { minimal: minimalDocument, full: fullDocument }
-			},
-			{ headers: { 'Cache-Control': 'public, max-age=3600' } }
-		)
+		json(getPublishedSchema(), { headers: { 'Cache-Control': 'public, max-age=3600' } })
 	);
