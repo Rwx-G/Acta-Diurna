@@ -31,6 +31,17 @@ const envSchema = z
 		// is a fixed 7 days and is unaffected. Bounded when set so a typo cannot
 		// mint an effectively-immortal aging session.
 		READER_SESSION_TTL: z.coerce.number().int().min(1).max(365).optional(),
+		// Retention grace (DAYS) for an UNBOUND data set before the purge sweep
+		// treats it as an orphan and deletes its row + uploaded file. OPTIONAL,
+		// default 30. `report_id IS NULL` is a legitimate transient state (a data
+		// set can precede or outlive a report), so this window is what separates a
+		// freshly-uploaded set from a truly-abandoned one. Bounded so a typo cannot
+		// disable collection (huge value) or delete fresh uploads (zero).
+		DATA_SET_ORPHAN_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).optional(),
+		// Period (MINUTES) of the boot-registered purge sweep (spent verification
+		// tokens + orphaned data sets). OPTIONAL, default 60. The sweep never runs
+		// under NODE_ENV=test (the suite must not spawn a timer).
+		PURGE_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
 		// SMTP is consumed by the mailer (Epic 3, story 3.1). The whole block is
 		// optional - an operator may deploy first and configure the relay later -
 		// but its SHAPE is validated at boot (fail-fast on a malformed value) and

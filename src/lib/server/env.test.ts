@@ -45,6 +45,24 @@ describe('parseEnv', () => {
 		);
 	});
 
+	it('coerces DATA_SET_ORPHAN_RETENTION_DAYS and rejects an out-of-range value', () => {
+		expect(
+			parseEnv({ ...validEnv, DATA_SET_ORPHAN_RETENTION_DAYS: '7' }).DATA_SET_ORPHAN_RETENTION_DAYS
+		).toBe(7);
+		expect(parseEnv(validEnv).DATA_SET_ORPHAN_RETENTION_DAYS).toBeUndefined();
+		expect(() => parseEnv({ ...validEnv, DATA_SET_ORPHAN_RETENTION_DAYS: '0' })).toThrow(
+			/DATA_SET_ORPHAN_RETENTION_DAYS/
+		);
+	});
+
+	it('coerces PURGE_INTERVAL_MINUTES and rejects an out-of-range value', () => {
+		expect(parseEnv({ ...validEnv, PURGE_INTERVAL_MINUTES: '15' }).PURGE_INTERVAL_MINUTES).toBe(15);
+		expect(parseEnv(validEnv).PURGE_INTERVAL_MINUTES).toBeUndefined();
+		expect(() => parseEnv({ ...validEnv, PURGE_INTERVAL_MINUTES: '99999' })).toThrow(
+			/PURGE_INTERVAL_MINUTES/
+		);
+	});
+
 	it('coerces PORT and SMTP_PORT from strings', () => {
 		const env = parseEnv({ ...validEnv, ...validSmtp, PORT: '8080', SMTP_PORT: '587' });
 

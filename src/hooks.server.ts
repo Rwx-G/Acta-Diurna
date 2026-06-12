@@ -12,9 +12,11 @@ import {
 	loginRateLimiter
 } from '$lib/server/auth/rate-limit';
 import { validateAuthorSession } from '$lib/server/auth/sessions';
+import { getDb } from '$lib/server/db/client';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv } from '$lib/server/env';
 import { logger } from '$lib/server/logger';
+import { runPurgeSweep } from '$lib/server/maintenance/purge';
 import { AppError, errorPageShape, problemResponse, rateLimited } from '$lib/server/problem';
 
 // Boot order (AR9 / FR34): validate env -> run migrations -> serve.
@@ -40,7 +42,20 @@ export const init: ServerInit = async () => {
 		throw error;
 	}
 	logger.info('migrations applied, accepting traffic');
+
+	registerPurgeSweep(env);
 };
+
+// Periodic ephemeral-state purge (3.3 penetration audit): spent verification
+// tokens + orphaned data sets. OFF under NODE_ENV=test so the suite never spawns
+// a timer; unref'd so the interval never keeps the process alive on its own.
+function registerPurgeSweep(env: ReturnType<typeof serverEnv>): void {
+	if (env.NODE_ENV === 'test') return;
+	const intervalMs = (env.PURGE_INTERVAL_MINUTES ?? 60) * 60 * 1000;
+	const timer = setInterval(() => void runPurgeSweep(getDb()), intervalMs);
+	timer.unref();
+	logger.debug({ intervalMinutes: intervalMs / 60_000 }, 'purge sweep scheduled');
+}
 
 const requestContext: Handle = async ({ event, resolve }) => {
 	event.locals.requestId = crypto.randomUUID();
