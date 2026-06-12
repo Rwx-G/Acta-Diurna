@@ -76,6 +76,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # Reader-path JS budget gate (NFR3): exits non-zero if the view-route
+      # closure busts 200 KB compressed.
+      - run: pnpm reader:budget
 
   docker-build:
     runs-on: ubuntu-latest

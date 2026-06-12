@@ -43,10 +43,22 @@ const requestContext: Handle = async ({ event, resolve }) => {
 	return await resolve(event);
 };
 
+// Report-content routes that must never be indexed (NFR10). The reader view and
+// the workspace preview render report bodies; the in-page <meta robots> covers
+// crawlers that execute the page, this header covers those that only read
+// headers. The future public reader /r/* (Epic 3) is matched here too.
+function isNoindexReportPath(pathname: string): boolean {
+	if (pathname === '/r' || pathname.startsWith('/r/')) return true;
+	return /^\/reports\/[^/]+\/(view|preview)$/.test(pathname);
+}
+
 const securityHeaders: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'no-referrer');
+	if (isNoindexReportPath(event.url.pathname)) {
+		response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+	}
 	return response;
 };
 

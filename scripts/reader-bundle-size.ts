@@ -9,12 +9,20 @@
  * Run after `pnpm build`:  node scripts/reader-bundle-size.ts
  */
 import { gzipSync } from 'node:zlib';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const BUDGET_BYTES = 200 * 1024;
 const CLIENT_DIR = path.resolve(process.cwd(), '.svelte-kit/output/client');
 const MANIFEST = path.join(CLIENT_DIR, '.vite/manifest.json');
+const GENERATED_NODES = path.resolve(process.cwd(), '.svelte-kit/generated/client-optimized/nodes');
+
+// The reader-path closure is anchored on the route SOURCE, never a numeric node
+// index: SvelteKit assigns node numbers by route-tree order, so adding a route
+// can renumber them and silently measure the wrong chunk. We resolve the node
+// by the `+page`/`+layout` source it re-exports.
+const VIEW_PAGE_SOURCE = 'reports/[id]/view/+page@.svelte';
+const ROOT_LAYOUT_SOURCE = 'src/routes/+layout.svelte';
 
 interface ManifestChunk {
 	file: string;
@@ -52,23 +60,59 @@ function findKey(manifest: Manifest, suffix: string): string | undefined {
 	return Object.keys(manifest).find((key) => key.endsWith(suffix));
 }
 
+/**
+ * Resolves a SvelteKit node index by the route source it re-exports. Each
+ * generated `client-optimized/nodes/<n>.js` is a one-line re-export of its
+ * `+page`/`+layout` source; we match on that path so renumbering nodes cannot
+ * point the budget at the wrong chunk.
+ */
+function nodeIndexForSource(sourceSuffix: string): number | undefined {
+	const normalized = sourceSuffix.replace(/\\/g, '/');
+	for (const file of readdirSync(GENERATED_NODES)) {
+		const match = /^(\d+)\.js$/.exec(file);
+		if (!match) continue;
+		const contents = readFileSync(path.join(GENERATED_NODES, file), 'utf8').replace(/\\/g, '/');
+		if (contents.includes(normalized)) return Number(match[1]);
+	}
+	return undefined;
+}
+
+function manifestKeyForNode(manifest: Manifest, index: number): string | undefined {
+	return findKey(manifest, `client-optimized/nodes/${index}.js`);
+}
+
 function main(): void {
 	const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
 
-	// Roots the browser loads to hydrate the reader view (node 8, a +page@.svelte
-	// that resets to the root layout node 0 - it does NOT pull the workspace
-	// layout): the SvelteKit client entry app, the root layout node and the view
-	// page node. Node numbers come from the build (see the Dev Agent Record).
+	// Roots the browser loads to hydrate the reader view: the SvelteKit client
+	// entry app, the root layout node (the view is a +page@.svelte that resets to
+	// the root layout - it does NOT pull the workspace layout) and the view page
+	// node. Both nodes are resolved by their route source, not a fixed index.
 	const roots: string[] = [];
 	const appEntry = findKey(manifest, 'client-optimized/app.js');
 	if (appEntry) roots.push(appEntry);
-	const rootLayout = findKey(manifest, 'client-optimized/nodes/0.js');
-	const viewPage = findKey(manifest, 'client-optimized/nodes/8.js');
+
+	const viewIndex = nodeIndexForSource(VIEW_PAGE_SOURCE);
+	const rootLayoutIndex = nodeIndexForSource(ROOT_LAYOUT_SOURCE);
+	if (viewIndex === undefined || rootLayoutIndex === undefined) {
+		console.error(
+			`Could not resolve the reader nodes by source ` +
+				`(view: ${VIEW_PAGE_SOURCE}, layout: ${ROOT_LAYOUT_SOURCE}).`
+		);
+		process.exit(2);
+	}
+
+	const rootLayout = manifestKeyForNode(manifest, rootLayoutIndex);
+	const viewPage = manifestKeyForNode(manifest, viewIndex);
 	if (!viewPage || !rootLayout) {
-		console.error('Could not locate the reader view nodes (0/8) in the client manifest.');
+		console.error(
+			`Resolved nodes (layout ${rootLayoutIndex}, view ${viewIndex}) but could not ` +
+				`find their keys in the client manifest.`
+		);
 		process.exit(2);
 	}
 	roots.push(rootLayout, viewPage);
+	console.log(`Reader view node ${viewIndex}, root layout node ${rootLayoutIndex}\n`);
 
 	const files = closure(manifest, roots);
 	const rows = [...files]

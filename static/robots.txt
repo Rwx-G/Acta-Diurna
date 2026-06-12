@@ -1,3 +1,6 @@
-# allow crawling everything by default
+# allow crawling everything by default, except report content (NFR10):
+# the public reader (/r/, Epic 3) and the author-side report routes (/reports/)
+# render private artifacts that must stay out of search indexes.
 User-agent: *
-Disallow:
+Disallow: /r/
+Disallow: /reports/

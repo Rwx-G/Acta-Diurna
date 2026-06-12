@@ -10,6 +10,7 @@
 
 <svelte:head>
 	<title>Preview - {data.document.title} - Acta Diurna</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="preview-page">
@@ -34,7 +35,7 @@
 
 	h1 {
 		margin: 0;
-		font-size: 20px;
+		font-size: var(--text-lg);
 	}
 
 	.back {

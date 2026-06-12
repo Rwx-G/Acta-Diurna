@@ -12,6 +12,9 @@
 
 <svelte:head>
 	<title>{data.document.title} - Acta Diurna</title>
+	<!-- Reports are private artifacts; keep them out of search indexes (NFR10).
+	     The future public reader /r/[token] (Epic 3) must carry the same tag. -->
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 {#key data.document}
