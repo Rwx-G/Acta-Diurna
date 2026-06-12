@@ -151,3 +151,112 @@ export const shares = pgTable(
 );
 
 export type ShareRow = typeof shares.$inferSelect;
+
+// A verified reader (FR22). ONE global row per email (the backlog uniqueness
+// decision): the same person verifying against several shares is one identity,
+// and the per-access audit lives in `access_records` (many per identity). The
+// email is normalized (lowercased/trimmed) BEFORE it reaches this table, so the
+// unique index is the canonical-email identity key. `last_verified_at` moves
+// forward on each successful verification; `created_at` is the first sighting.
+export const readerIdentities = pgTable(
+	'reader_identities',
+	{
+		id: uuid('id').primaryKey(),
+		email: text('email').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [uniqueIndex('reader_identities_email_idx').on(table.email)]
+);
+
+export type ReaderIdentityRow = typeof readerIdentities.$inferSelect;
+
+// One audit row per verified access (FR22): which identity reached which report,
+// through which share, when. Many rows per identity (the identity is global, the
+// access is per-share-per-verification). FKs CASCADE: an access record is
+// meaningless once its share or report is gone, and once the identity is purged
+// (FR24 retention, a later Epic) its audit trail goes with it.
+export const accessRecords = pgTable(
+	'access_records',
+	{
+		id: uuid('id').primaryKey(),
+		readerIdentityId: uuid('reader_identity_id')
+			.notNull()
+			.references(() => readerIdentities.id, { onDelete: 'cascade' }),
+		shareId: uuid('share_id')
+			.notNull()
+			.references(() => shares.id, { onDelete: 'cascade' }),
+		reportId: uuid('report_id')
+			.notNull()
+			.references(() => reports.id, { onDelete: 'cascade' }),
+		accessedAt: timestamp('accessed_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('access_records_reader_identity_id_idx').on(table.readerIdentityId),
+		index('access_records_share_id_idx').on(table.shareId),
+		index('access_records_report_id_idx').on(table.reportId)
+	]
+);
+
+export type AccessRecordRow = typeof accessRecords.$inferSelect;
+
+// In-flight reader verification (FR18). A single-use, 15-minute-TTL token bound
+// to BOTH the share and the requesting email: the clicked link binds back to the
+// share it was requested for AND the address that requested it (forwarding the
+// raw link does not verify a different address - load-bearing for 3.4 restricted
+// mode). The raw token lives only in the emailed URL; the table stores its hash
+// (shared at-rest helper). `consumed_at` flips on the first valid click so a
+// second click is rejected (single-use). CASCADE on the share: a token for a
+// deleted share is dead.
+export const verificationTokens = pgTable(
+	'verification_tokens',
+	{
+		id: uuid('id').primaryKey(),
+		tokenHash: text('token_hash').notNull(),
+		shareId: uuid('share_id')
+			.notNull()
+			.references(() => shares.id, { onDelete: 'cascade' }),
+		email: text('email').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		consumedAt: timestamp('consumed_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('verification_tokens_token_hash_idx').on(table.tokenHash),
+		index('verification_tokens_share_id_idx').on(table.shareId)
+	]
+);
+
+export type VerificationTokenRow = typeof verificationTokens.$inferSelect;
+
+// Reader-realm sessions (NFR12), physically separate from the author `sessions`
+// table so each keeps its own NOT NULL/FK shape and lifecycle (see sessions.ts
+// for the realm rationale). Per-share scope: a session is bound to ONE share +
+// report + reader identity - a session for share A authorizes nothing for share
+// B. Token hashed at rest (shared helper). All FKs CASCADE: a session is dead
+// once its share, report, or identity is gone. `expires_at` carries the
+// configurable reader TTL (default 30 days).
+export const readerSessions = pgTable(
+	'reader_sessions',
+	{
+		id: uuid('id').primaryKey(),
+		tokenHash: text('token_hash').notNull(),
+		shareId: uuid('share_id')
+			.notNull()
+			.references(() => shares.id, { onDelete: 'cascade' }),
+		reportId: uuid('report_id')
+			.notNull()
+			.references(() => reports.id, { onDelete: 'cascade' }),
+		readerIdentityId: uuid('reader_identity_id')
+			.notNull()
+			.references(() => readerIdentities.id, { onDelete: 'cascade' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
+	},
+	(table) => [
+		uniqueIndex('reader_sessions_token_hash_idx').on(table.tokenHash),
+		index('reader_sessions_share_id_idx').on(table.shareId)
+	]
+);
+
+export type ReaderSessionRow = typeof readerSessions.$inferSelect;
