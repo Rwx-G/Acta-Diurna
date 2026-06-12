@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toPreviewView, toReportView } from './document-view.ts';
-import { fullDocument } from '$lib/schema/examples/full.ts';
+import { fullDocument } from '$lib/schema/examples/full';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
 
 function validFull(): DocumentV1 {
