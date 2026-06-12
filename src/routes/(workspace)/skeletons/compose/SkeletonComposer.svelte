@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { applyAction, enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { BRICKS, getBrick } from '$lib/bricks';
 	import type { DocumentV1Input } from '$lib/schema';
@@ -32,7 +32,6 @@
 	const coverBrick = getBrick('cover')!;
 	let draft = $state<DocumentV1Input>(newSkeletonDraft(coverBrick));
 	let saving = $state(false);
-	let savedName = $state<string | null>(null);
 	// null = no JS save yet (fall back to the server `form` prop); [] = success;
 	// entries = the last save failed. Mirrors the 1.5 editor's clientErrors model.
 	let clientErrors = $state<EditorIssue[] | null>(null);
@@ -51,7 +50,6 @@
 		// errors do not linger on elements the author just fixed or removed.
 		clientErrors = null;
 		saveMessage = null;
-		savedName = null;
 	}
 
 	const submitSave: SubmitFunction = ({ formData }) => {
@@ -61,11 +59,12 @@
 		saving = true;
 		return async ({ result }) => {
 			saving = false;
-			if (result.type === 'success') {
+			if (result.type === 'redirect') {
+				// Save persisted: the action redirects to the library. Let the default
+				// action handler perform the navigation.
 				clientErrors = [];
 				saveMessage = null;
-				const payload = result.data as { savedName?: string } | undefined;
-				savedName = payload?.savedName ?? draft.title;
+				await applyAction(result);
 			} else if (result.type === 'failure') {
 				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
 				clientErrors = payload?.errors ?? [];
@@ -98,9 +97,6 @@
 			<Button type="submit" variant="primary" disabled={saving}>
 				{saving ? 'Saving...' : 'Save skeleton'}
 			</Button>
-			{#if savedName}
-				<span class="saved-note" aria-live="polite">Saved "{savedName}"</span>
-			{/if}
 		</div>
 	</div>
 
@@ -166,12 +162,6 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-	}
-
-	.saved-note {
-		font-size: var(--text-sm);
-		color: var(--color-ink-65);
-		white-space: nowrap;
 	}
 
 	.problem {

@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError } from '$lib/server/problem';
@@ -25,8 +25,7 @@ export const actions: Actions = {
 			return fail(400, { message: 'Malformed skeleton payload.', errors: [] });
 		}
 		try {
-			const skeleton = saveSkeleton(structureInput);
-			return { savedName: skeleton.name };
+			await saveSkeleton(structureInput);
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, {
@@ -36,5 +35,7 @@ export const actions: Actions = {
 			}
 			throw thrown;
 		}
+		// Persisted: land on the library where the new skeleton is now listed (FR9).
+		redirect(303, '/skeletons');
 	}
 };

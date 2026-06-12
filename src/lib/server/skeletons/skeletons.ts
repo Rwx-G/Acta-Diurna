@@ -1,34 +1,91 @@
 /**
  * Skeleton service (FR8-11). A skeleton IS a schema-v1 document structure with
  * placeholder bindings - the same `DocumentV1` the renderer and report editor
- * consume, no new schema (story 2.1 Dev Notes).
+ * consume, no new schema (story 2.1 Dev Notes). Story 2.1 built the composer and
+ * validated the structure; story 2.2 persists it to the `skeletons` table and
+ * grows the library + instantiation operations.
  *
- * Story 2.1 builds the composer and validates the structure it produces. This
- * service owns the validate-and-shape seam; persistence (a `skeletons` table and
- * the Drizzle write) is story 2.2, which extends `saveSkeleton` to insert the
- * returned structure. The seam is honest: 2.1 validates and hands back the
- * structure; 2.2 adds storage at the marked point below.
+ * Validate-on-write throughout, like every document write: a structure crosses
+ * into storage only after `validateDocument`, and instantiation reuses the
+ * reports `createReportWithDocument` path so a report from a skeleton goes
+ * through the same write contract as a blank report - only the seed differs.
  */
+import { desc, eq } from 'drizzle-orm';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
+import { getDb } from '$lib/server/db/client';
+import { uuidv7 } from '$lib/server/db/ids';
+import { skeletons, type SkeletonRow } from '$lib/server/db/schema';
+import { createReportWithDocument, type Report } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 
-/** A composed, validated skeleton ready to persist (2.2). */
-export interface SavedSkeleton {
+/** A persisted skeleton. The document title doubles as the unique library name. */
+export interface Skeleton {
+	id: string;
 	name: string;
-	structure: DocumentV1;
+	schemaVersion: number;
+	document: DocumentV1;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/** Library list projection: what the skeleton library renders, nothing more. */
+export interface SkeletonSummary {
+	id: string;
+	name: string;
+	updatedAt: Date;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Postgres unique_violation; a duplicate skeleton name trips `skeletons_name_idx`. */
+const UNIQUE_VIOLATION = '23505';
+
+function toSkeleton(row: SkeletonRow): Skeleton {
+	return {
+		id: row.id,
+		name: row.name,
+		schemaVersion: row.schemaVersion,
+		document: row.document,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt
+	};
+}
+
+function notFound(): AppError {
+	return new AppError({
+		status: 404,
+		title: 'Skeleton not found',
+		type: '/problems/skeleton-not-found'
+	});
+}
+
+function nameTaken(name: string): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Skeleton name already in use',
+		type: '/problems/skeleton-name-taken',
+		detail: `A skeleton named "${name}" already exists. Choose a distinct name.`
+	});
+}
+
+function isUniqueViolation(error: unknown): boolean {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'code' in error &&
+		(error as { code: unknown }).code === UNIQUE_VIOLATION
+	);
 }
 
 /**
- * Validates a composed skeleton structure (validate-on-write, like every
- * document write). Throws a 422 AppError carrying `errors[]` when the structure
- * is invalid (empty section, empty title) so the composer renders each error
- * inline at the offending element - the contract every document write uses.
- *
- * Returns the validated structure. Story 2.2 inserts it into the `skeletons`
- * table here (the document title doubles as the skeleton name) and returns the
- * persisted row id.
+ * Validates a composed skeleton structure (validate-on-write) and persists it.
+ * Throws a 422 AppError carrying `errors[]` when the structure is invalid (empty
+ * section, empty title) so the composer renders each error inline at the
+ * offending element. A name already in library raises a 409
+ * `/problems/skeleton-name-taken` (the unique index is the source of truth; the
+ * pg unique violation is caught and translated). Returns the persisted skeleton.
  */
-export function saveSkeleton(structureInput: unknown): SavedSkeleton {
+export async function saveSkeleton(structureInput: unknown): Promise<Skeleton> {
 	const result = validateDocument(structureInput);
 	if (!result.ok) {
 		throw new AppError({
@@ -43,8 +100,55 @@ export function saveSkeleton(structureInput: unknown): SavedSkeleton {
 		});
 	}
 
-	// --- story 2.2 persistence seam ---
-	// 2.2 inserts `result.document` into the `skeletons` table (UUIDv7 id, name =
-	// title, structure JSONB, schema_version, timestamps) and returns the row id.
-	return { name: result.document.title, structure: result.document };
+	const document = result.document;
+	const now = new Date();
+	const row: SkeletonRow = {
+		id: uuidv7(),
+		name: document.title,
+		schemaVersion: document.version,
+		document,
+		createdAt: now,
+		updatedAt: now
+	};
+	try {
+		await getDb().insert(skeletons).values(row);
+	} catch (error) {
+		if (isUniqueViolation(error)) throw nameTaken(document.title);
+		throw error;
+	}
+	return toSkeleton(row);
+}
+
+/** Lists the skeleton library, most recently updated first (FR9). */
+export async function listSkeletons(): Promise<SkeletonSummary[]> {
+	const rows = await getDb().select().from(skeletons).orderBy(desc(skeletons.updatedAt));
+	return rows.map((row) => ({ id: row.id, name: row.name, updatedAt: row.updatedAt }));
+}
+
+/** Loads one skeleton; 404 when the id is unknown or malformed. */
+export async function getSkeleton(id: string): Promise<Skeleton> {
+	// Boundary check: a malformed id is a 404, not a postgres cast error.
+	if (!UUID_PATTERN.test(id)) throw notFound();
+	const rows = await getDb().select().from(skeletons).where(eq(skeletons.id, id)).limit(1);
+	if (rows.length === 0) throw notFound();
+	return toSkeleton(rows[0]);
+}
+
+/** Deletes a skeleton by id; 404 when unknown or malformed (no cascade exists). */
+export async function deleteSkeleton(id: string): Promise<void> {
+	await getSkeleton(id);
+	await getDb().delete(skeletons).where(eq(skeletons.id, id));
+}
+
+/**
+ * Creates a draft report from a saved skeleton (FR11): the report's sections,
+ * blocks, and bindings mirror the skeleton's structure exactly. Instantiation
+ * reuses the reports `createReportWithDocument` write path with the skeleton
+ * document as the seed, so two reports from one skeleton are structurally
+ * identical (the skeleton's own ids and structure are copied verbatim). 404 when
+ * the skeleton id is unknown.
+ */
+export async function instantiateReport(skeletonId: string): Promise<Report> {
+	const skeleton = await getSkeleton(skeletonId);
+	return createReportWithDocument(skeleton.document);
 }
