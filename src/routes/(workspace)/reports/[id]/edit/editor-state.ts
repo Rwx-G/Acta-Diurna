@@ -22,6 +22,16 @@ export {
 	type ErrorsByKey
 } from '$lib/editor';
 
+/**
+ * A comparison-matrix block offered to the set-membership block editor's source
+ * picker (story 7.4): the block id a set-membership block references, with a
+ * human label (section title + id) for the option text.
+ */
+export interface MatrixBlockOption {
+	id: string;
+	label: string;
+}
+
 // Editor-generated section/block ids only need to satisfy the schema's slug
 // rule (lowercase alphanumerics and hyphens) - they are document-internal
 // anchors, not database keys. The UUIDv7 rule applies only to the report row id,
@@ -78,6 +88,11 @@ export function newBlock(type: BlockType): Block {
 			// Starts with an empty scale ref (not slug-valid): its block schema flags
 			// it; the author picks the scale before saving.
 			return { type, id, scaleRef: '' };
+		case 'set-membership':
+			// Starts with an empty source-block ref (not slug-valid): the document
+			// cross-reference pass flags it; the author picks the comparison-matrix
+			// block before saving.
+			return { type, id, sourceBlockId: '' };
 	}
 }
 

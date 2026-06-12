@@ -9,9 +9,10 @@
 	import IssueList from './IssueList.svelte';
 	import KpiBlockEditor from './KpiBlockEditor.svelte';
 	import LegendBlockEditor from './LegendBlockEditor.svelte';
+	import SetMembershipBlockEditor from './SetMembershipBlockEditor.svelte';
 	import TableBlockEditor from './TableBlockEditor.svelte';
 	import TextBlockEditor from './TextBlockEditor.svelte';
-	import type { EditorIssue } from './editor-state';
+	import type { EditorIssue, MatrixBlockOption } from './editor-state';
 
 	// Thin dispatcher: owns the shared block chrome (header controls, inline
 	// issue list, audience picker) and delegates the type-specific body to one
@@ -26,6 +27,8 @@
 		issues: EditorIssue[];
 		/** Document scales, for the scale-referencing block editors (comparison-matrix, legend). */
 		scales?: Scales;
+		/** Comparison-matrix blocks in the document, for the set-membership block editor. */
+		matrixBlocks?: MatrixBlockOption[];
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -38,6 +41,7 @@
 		count,
 		issues,
 		scales,
+		matrixBlocks,
 		onEdit,
 		onRemove,
 		onMove
@@ -82,6 +86,8 @@
 		<FieldGridBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'legend'}
 		<LegendBlockEditor bind:block {scales} {onEdit} />
+	{:else if block.type === 'set-membership'}
+		<SetMembershipBlockEditor bind:block {matrixBlocks} {onEdit} />
 	{/if}
 </article>
 

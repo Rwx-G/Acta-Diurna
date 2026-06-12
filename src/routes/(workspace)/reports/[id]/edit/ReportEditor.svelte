@@ -53,6 +53,17 @@
 		)
 	);
 
+	// The comparison-matrix blocks in the live document, for the set-membership
+	// block editor's source picker (story 7.4): a set-membership block references
+	// one by id. Recomputed as the author adds/removes matrices.
+	const matrixBlocks = $derived(
+		doc.sections.flatMap((section) =>
+			section.blocks
+				.filter((block) => block.type === 'comparison-matrix')
+				.map((block) => ({ id: block.id, label: `${section.title} - ${block.id}` }))
+		)
+	);
+
 	let dirty = $state(false);
 	let saving = $state(false);
 	// svelte-ignore state_referenced_locally
@@ -275,6 +286,7 @@
 				count={doc.sections.length}
 				errors={errorsByKey}
 				scales={doc.scales}
+				{matrixBlocks}
 				{onEdit}
 				onRemove={() => {
 					doc.sections.splice(sectionIndex, 1);

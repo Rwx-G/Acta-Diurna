@@ -30,6 +30,7 @@ export type BrickId =
 	| 'comparisonMatrix'
 	| 'fieldGrid'
 	| 'legend'
+	| 'setMembership'
 	| 'annex';
 
 /** A library entry: metadata for the BrickCard plus the section factory. */
@@ -324,6 +325,65 @@ function legendBrick(): SkeletonSection {
 	};
 }
 
+/**
+ * Companion scales for the set-membership brick: it embeds its own
+ * comparison-matrix (so the brick is useful standalone - a set-membership block
+ * is empty without a matrix to reference), which references the SAME severity +
+ * shared sources scales the comparison-matrix brick declares. Composing both
+ * bricks merges the identical declarations by key.
+ */
+function setMembershipScales(): Scales {
+	return comparisonMatrixScales();
+}
+
+/**
+ * Set-membership (UpSet): a section pairing a comparison-matrix block with a
+ * set-membership block that references it by id. A set-membership block derives
+ * its UpSet entirely from a comparison-matrix and re-enters no data, so the brick
+ * MUST ship a companion matrix in the same document or the reference dangles; the
+ * brick embeds one in the same section, keeping it self-contained and valid
+ * standalone (the cross-reference pass resolves `sourceBlockId` to the embedded
+ * matrix's id). References the companion `scales` by key (seeded by the composer).
+ */
+function setMembershipBrick(): SkeletonSection {
+	const matrixId = newId();
+	return {
+		id: newId(),
+		title: 'Coverage by source',
+		blocks: [
+			{
+				type: 'comparison-matrix',
+				id: matrixId,
+				severityScale: MATRIX_SEVERITY_SCALE_KEY,
+				sourceScale: SOURCE_SCALE_KEY,
+				findings: [
+					{
+						category: 'Access control',
+						label: 'Name a finding and mark which sources found it.',
+						severity: 'high',
+						sources: {
+							review: { state: 'found', text: 'Confirmed in the manual review.' },
+							scanner: { state: 'missing' }
+						},
+						treatment: {
+							before: 'Describe the state before treatment.',
+							after: 'Describe the state after treatment.',
+							status: 'action'
+						},
+						tag: 'access'
+					}
+				]
+			},
+			{
+				type: 'set-membership',
+				id: newId(),
+				sourceBlockId: matrixId,
+				title: 'Coverage by source combination'
+			}
+		]
+	};
+}
+
 /** Annex: an annex-flagged section with a placeholder note. */
 function annexBrick(): SkeletonSection {
 	return {
@@ -398,6 +458,13 @@ export const BRICKS: readonly Brick[] = [
 		description: 'A swatch-per-entry legend derived from a document scale.',
 		factory: legendBrick,
 		scales: legendScales
+	},
+	{
+		id: 'setMembership',
+		label: 'Coverage by source',
+		description: 'An UpSet matrix paired with a comparison matrix it derives from.',
+		factory: setMembershipBrick,
+		scales: setMembershipScales
 	},
 	{
 		id: 'annex',

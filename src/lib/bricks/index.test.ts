@@ -165,6 +165,28 @@ describe('brick library', () => {
 		expect(validateDocument(document).ok).toBe(true);
 	});
 
+	it('the set-membership brick embeds its own comparison-matrix and references it by id', () => {
+		const brick = getBrick('setMembership')!;
+		expect(brick.scales).toBeDefined();
+		const section = brick.factory();
+		const matrixBlock = section.blocks.find((b) => b.type === 'comparison-matrix');
+		const upsetBlock = section.blocks.find((b) => b.type === 'set-membership') as {
+			sourceBlockId: string;
+		};
+		expect(matrixBlock).toBeDefined();
+		// The set-membership block points at the embedded matrix's id, so the brick
+		// is self-contained: the reference resolves without a sibling brick.
+		expect(upsetBlock.sourceBlockId).toBe(matrixBlock!.id);
+
+		const document: DocumentV1Input = {
+			version: 1,
+			title: 'UpSet skeleton',
+			scales: brick.scales!(),
+			sections: [section]
+		};
+		expect(validateDocument(document).ok).toBe(true);
+	});
+
 	it('getBrick returns undefined for an unknown id', () => {
 		expect(getBrick('nope')).toBeUndefined();
 	});

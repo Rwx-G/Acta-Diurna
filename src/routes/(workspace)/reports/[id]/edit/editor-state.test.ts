@@ -76,6 +76,15 @@ describe('newBlock', () => {
 		expect(result.ok).toBe(false);
 	});
 
+	it('creates a set-membership starter whose validation names the empty source ref', () => {
+		const block = newBlock('set-membership');
+		expect(block.type).toBe('set-membership');
+		// The starter carries an empty sourceBlockId (not slug-valid), so its block
+		// schema flags it; the author picks the comparison matrix before saving.
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

@@ -4,7 +4,7 @@
 	import AudiencePicker from './AudiencePicker.svelte';
 	import BlockEditor from './BlockEditor.svelte';
 	import IssueList from './IssueList.svelte';
-	import { moveItem, newBlock, type ErrorsByKey } from './editor-state';
+	import { moveItem, newBlock, type ErrorsByKey, type MatrixBlockOption } from './editor-state';
 
 	interface Props {
 		section: Section;
@@ -13,6 +13,8 @@
 		errors: ErrorsByKey;
 		/** Document scales, threaded to the comparison-matrix block editor. */
 		scales?: Scales;
+		/** Comparison-matrix blocks in the document, for the set-membership editor. */
+		matrixBlocks?: MatrixBlockOption[];
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -24,6 +26,7 @@
 		count,
 		errors,
 		scales,
+		matrixBlocks,
 		onEdit,
 		onRemove,
 		onMove
@@ -39,7 +42,8 @@
 		'image',
 		'comparison-matrix',
 		'field-grid',
-		'legend'
+		'legend',
+		'set-membership'
 	];
 </script>
 
@@ -82,6 +86,7 @@
 			count={section.blocks.length}
 			issues={errors[`block:${block.id}`] ?? []}
 			{scales}
+			{matrixBlocks}
 			{onEdit}
 			onRemove={() => {
 				section.blocks.splice(blockIndex, 1);

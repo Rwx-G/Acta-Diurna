@@ -43,6 +43,8 @@
 			}
 			case 'legend':
 				return `Legend - ${block.scaleRef || 'no scale'}`;
+			case 'set-membership':
+				return `Set membership - ${block.sourceBlockId ? 'from matrix' : 'no matrix'}`;
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;
