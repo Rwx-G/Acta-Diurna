@@ -1052,6 +1052,111 @@
 										"scaleRef",
 										"entries"
 									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "callout"
+										},
+										"id": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"maxItems": 3,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"tone": {
+											"type": "string",
+											"enum": [
+												"info",
+												"success",
+												"warning",
+												"danger",
+												"neutral"
+											]
+										},
+										"icon": {
+											"type": "string",
+											"enum": [
+												"check",
+												"cross",
+												"alert",
+												"info",
+												"question",
+												"arrow-right",
+												"clock",
+												"database",
+												"shield",
+												"bolt",
+												"flag",
+												"link"
+											]
+										},
+										"kicker": {
+											"type": "string",
+											"minLength": 1,
+											"maxLength": 120
+										},
+										"body": {
+											"minItems": 1,
+											"maxItems": 50,
+											"type": "array",
+											"items": {
+												"maxItems": 200,
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"text": {
+															"type": "string",
+															"maxLength": 5000
+														},
+														"bold": {
+															"type": "boolean"
+														},
+														"italic": {
+															"type": "boolean"
+														},
+														"link": {
+															"type": "object",
+															"properties": {
+																"href": {
+																	"type": "string",
+																	"maxLength": 2000,
+																	"format": "uri",
+																	"pattern": "^https?://"
+																}
+															},
+															"required": [
+																"href"
+															]
+														}
+													},
+													"required": [
+														"text"
+													]
+												}
+											}
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"tone",
+										"body"
+									]
 								}
 							]
 						}

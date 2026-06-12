@@ -69,6 +69,14 @@ export type { SetMembershipBlock } from './blocks/set-membership.ts';
 export { chipClusterBlockSchema, MAX_CHIPS } from './blocks/chip-cluster.ts';
 export type { ChipClusterBlock } from './blocks/chip-cluster.ts';
 
+export {
+	calloutBlockSchema,
+	calloutToneSchema,
+	CALLOUT_TONES,
+	MAX_CALLOUT_PARAGRAPHS
+} from './blocks/callout.ts';
+export type { CalloutBlock, CalloutTone } from './blocks/callout.ts';
+
 export { ICON_NAMES, iconNameSchema } from './icons.ts';
 export type { IconName } from './icons.ts';
 

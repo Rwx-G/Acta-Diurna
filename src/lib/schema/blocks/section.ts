@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { audiencesSchema, idSchema } from './shared.ts';
+import { calloutBlockSchema } from './callout.ts';
 import { chartBlockSchema } from './chart.ts';
 import { chipClusterBlockSchema } from './chip-cluster.ts';
 import { comparisonMatrixBlockSchema } from './comparison-matrix.ts';
@@ -22,7 +23,8 @@ export const blockSchema = z.discriminatedUnion('type', [
 	fieldGridBlockSchema,
 	legendBlockSchema,
 	setMembershipBlockSchema,
-	chipClusterBlockSchema
+	chipClusterBlockSchema,
+	calloutBlockSchema
 ]);
 
 export type Block = z.infer<typeof blockSchema>;
