@@ -1,0 +1,1 @@
+CREATE INDEX "verification_tokens_share_id_email_idx" ON "verification_tokens" USING btree ("share_id","email");

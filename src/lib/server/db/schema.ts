@@ -251,7 +251,10 @@ export const verificationTokens = pgTable(
 	},
 	(table) => [
 		uniqueIndex('verification_tokens_token_hash_idx').on(table.tokenHash),
-		index('verification_tokens_share_id_idx').on(table.shareId)
+		index('verification_tokens_share_id_idx').on(table.shareId),
+		// The dedup read (`hasLiveVerification`) filters on (share_id, email); the
+		// composite index keys that lookup instead of scanning a share's tokens.
+		index('verification_tokens_share_id_email_idx').on(table.shareId, table.email)
 	]
 );
 
