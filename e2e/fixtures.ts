@@ -28,12 +28,14 @@ export const FIXTURE_DOCUMENT = fullDocument;
 
 /**
  * A second seeded report on the DEFAULT theme carrying the Epic 7 correlation
- * blocks: a field-grid header (story 7.3), a comparison-matrix (story 7.2) and a
- * source legend (story 7.3). Kept separate from the shared full fixture so the
- * axe checks run on the default theme (NFR14) without disturbing the full
- * example's snapshots. Severity and sources scales declared at document level;
- * the matrix and legend reference them by key, so this fixture is the MVP
- * correlation report rendered end to end.
+ * blocks: a field-grid header (story 7.3), a comparison-matrix (story 7.2), a
+ * source legend (story 7.3) and a set-membership UpSet (story 7.4). Kept separate
+ * from the shared full fixture so the axe checks run on the default theme (NFR14)
+ * without disturbing the full example's snapshots. Severity and sources scales
+ * declared at document level; the matrix and legend reference them by key, and
+ * the set-membership block references the matrix by id, so this fixture is the
+ * complete correlation report (field grid + matrix + legend + UpSet) rendered end
+ * to end.
  */
 export const MATRIX_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000002';
 
@@ -139,6 +141,12 @@ export const MATRIX_FIXTURE_DOCUMENT = {
 					id: 'source-legend',
 					scaleRef: 'sources',
 					title: 'Sources'
+				},
+				{
+					type: 'set-membership' as const,
+					id: 'coverage-upset',
+					sourceBlockId: 'coverage',
+					title: 'Coverage by source combination'
 				}
 			]
 		}

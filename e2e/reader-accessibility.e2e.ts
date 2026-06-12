@@ -77,3 +77,26 @@ test('the rendered field grid and legend have no axe-core violations (WCAG 2 A/A
 
 	expect(results.violations).toEqual([]);
 });
+
+/**
+ * The set-membership (UpSet) block (story 7.4) on the default theme: an SSR SVG
+ * built from d3-scale/d3-shape (zero hydration), derived from the comparison
+ * matrix it references by id. axe gates the img role, the title/desc accessible
+ * alternative (a words summary of each intersection so the dot pattern is never
+ * the sole signal), the severity-coloured pills and the AA floor. NFR14. The same
+ * fixture carries the field grid, matrix and legend, so this is the complete
+ * correlation report (all four Epic 7 block types) rendered end to end.
+ */
+test('the rendered set-membership UpSet has no axe-core violations (WCAG 2 A/AA)', async ({
+	page
+}) => {
+	await page.goto(MATRIX_VIEW_URL);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Coverage by source combination' })).toBeVisible();
+
+	const results = await new AxeBuilder({ page })
+		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+		.analyze();
+
+	expect(results.violations).toEqual([]);
+});
