@@ -1,0 +1,51 @@
+/*
+ * Acta design tokens (D13): CSS custom properties, no Tailwind.
+ * Minimal slice for the login gateway and workspace shell; the full set
+ * (typography scale, semantic colors, elevation) lands with the renderer
+ * stories. Fonts arrive self-hosted via Fontsource in 1.6; until then the
+ * stacks below resolve to system fonts only (CSP: zero third-party assets).
+ */
+:root {
+	/* Color - brand palette (UX spec, Visual Design Foundation) */
+	--color-ink: #1c1b2e;
+	--color-stone: #f5f1e8;
+	--color-purple: #66023c;
+	--color-purple-on-dark: #a8326e;
+	--color-danger: #a23b3b;
+	--color-surface: #fffdf9;
+
+	/* Typography */
+	--font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+	--font-sans:
+		Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--font-wordmark: Cinzel, Georgia, 'Times New Roman', serif;
+
+	/* Spacing - base unit 4px */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 24px;
+	--space-6: 32px;
+	--space-7: 48px;
+	--space-8: 64px;
+
+	/* Radii and elevation - flat, editorial */
+	--radius-sm: 4px;
+	--radius-md: 8px;
+	--shadow-card: 0 1px 2px rgb(28 27 46 / 8%), 0 4px 16px rgb(28 27 46 / 6%);
+}
+
+body {
+	margin: 0;
+	background: var(--color-stone);
+	color: var(--color-ink);
+	font-family: var(--font-sans);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+:focus-visible {
+	outline: 2px solid var(--color-purple);
+	outline-offset: 2px;
+}
