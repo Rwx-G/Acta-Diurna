@@ -14,6 +14,7 @@ import { listBlockSchema } from './list.ts';
 import { setMembershipBlockSchema } from './set-membership.ts';
 import { tableBlockSchema } from './table.ts';
 import { textBlockSchema } from './text.ts';
+import { timelineBlockSchema } from './timeline.ts';
 
 /** The v1 block types, discriminated on `type`. */
 export const blockSchema = z.discriminatedUnion('type', [
@@ -30,7 +31,8 @@ export const blockSchema = z.discriminatedUnion('type', [
 	calloutBlockSchema,
 	codeBlockSchema,
 	cardGridBlockSchema,
-	listBlockSchema
+	listBlockSchema,
+	timelineBlockSchema
 ]);
 
 export type Block = z.infer<typeof blockSchema>;

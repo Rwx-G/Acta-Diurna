@@ -1397,6 +1397,129 @@
 										"ordered",
 										"items"
 									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "timeline"
+										},
+										"id": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"maxItems": 3,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"title": {
+											"type": "string",
+											"minLength": 1,
+											"maxLength": 200
+										},
+										"milestones": {
+											"minItems": 1,
+											"maxItems": 50,
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"label": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 300
+													},
+													"date": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 120
+													},
+													"detail": {
+														"minItems": 1,
+														"maxItems": 50,
+														"type": "array",
+														"items": {
+															"maxItems": 200,
+															"type": "array",
+															"items": {
+																"type": "object",
+																"properties": {
+																	"text": {
+																		"type": "string",
+																		"maxLength": 5000
+																	},
+																	"bold": {
+																		"type": "boolean"
+																	},
+																	"italic": {
+																		"type": "boolean"
+																	},
+																	"code": {
+																		"type": "boolean"
+																	},
+																	"link": {
+																		"type": "object",
+																		"properties": {
+																			"href": {
+																				"type": "string",
+																				"maxLength": 2000,
+																				"format": "uri",
+																				"pattern": "^https?://"
+																			}
+																		},
+																		"required": [
+																			"href"
+																		]
+																	}
+																},
+																"required": [
+																	"text"
+																]
+															}
+														}
+													},
+													"status": {
+														"type": "object",
+														"properties": {
+															"scaleRef": {
+																"type": "string",
+																"maxLength": 300,
+																"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+															},
+															"entry": {
+																"type": "string",
+																"maxLength": 300,
+																"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+															}
+														},
+														"required": [
+															"scaleRef",
+															"entry"
+														]
+													}
+												},
+												"required": [
+													"label",
+													"status"
+												]
+											}
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"milestones"
+									]
 								}
 							]
 						}

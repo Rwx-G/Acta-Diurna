@@ -102,6 +102,15 @@ export {
 } from './blocks/list.ts';
 export type { ListBlock, ListItem } from './blocks/list.ts';
 
+export {
+	MAX_MILESTONE_DETAIL_PARAGRAPHS,
+	MAX_MILESTONES,
+	milestoneSchema,
+	milestoneStatusSchema,
+	timelineBlockSchema
+} from './blocks/timeline.ts';
+export type { Milestone, MilestoneStatus, TimelineBlock } from './blocks/timeline.ts';
+
 export { ICON_NAMES, iconNameSchema } from './icons.ts';
 export type { IconName } from './icons.ts';
 

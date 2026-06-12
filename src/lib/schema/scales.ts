@@ -210,6 +210,8 @@ export function validateScaleReferences(document: {
 				validateChipClusterRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
 			} else if (block.type === 'table') {
 				validateTableRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
+			} else if (block.type === 'timeline') {
+				validateTimelineRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
 			}
 		}
 	}
@@ -489,6 +491,60 @@ function validateTableRefs(
 					hint: `"${cellKey}" is not an entry of the "${scaleKey}" scale; use one of its declared entry keys, or remove the column scaleRef.`
 				});
 			}
+		}
+	}
+}
+
+/**
+ * Structural view of a timeline block, narrowed by `type` in the loop above.
+ * Typed locally so this isomorphic module does not import the block schema. The
+ * block has already passed its own zod shape validation before this pass runs,
+ * so each milestone `status.scaleRef` / `status.entry` (when present) is a slug.
+ */
+interface TimelineRefView {
+	type: string;
+	milestones?: ReadonlyArray<{
+		label?: unknown;
+		status?: { scaleRef?: unknown; entry?: unknown };
+	}>;
+}
+
+/**
+ * Resolves each timeline milestone's `status` (a `{ scaleRef, entry }` pair)
+ * against the document `scales`, pushing one {@link ScaleReferenceIssue} per
+ * dangling ref: an unknown `status.scaleRef`, or a `status.entry` that is not an
+ * entry of the referenced scale. Each milestone is named by its 1-based position
+ * (and its label when present) so the author can find the offending one. Paths
+ * are built off `basePath` (`['sections', i, 'blocks', j]`).
+ */
+function validateTimelineRefs(
+	block: TimelineRefView,
+	scales: Scales | undefined,
+	basePath: PropertyKey[],
+	issues: ScaleReferenceIssue[]
+): void {
+	const milestones = block.milestones ?? [];
+	for (let m = 0; m < milestones.length; m += 1) {
+		const milestone = milestones[m];
+		const label = typeof milestone.label === 'string' ? milestone.label : `${m + 1}`;
+		const status = milestone.status ?? {};
+		const scaleKey = typeof status.scaleRef === 'string' ? status.scaleRef : undefined;
+		const entryKey = typeof status.entry === 'string' ? status.entry : undefined;
+		const scale = scaleKey ? resolveScaleRef(scales, scaleKey) : undefined;
+		if (scaleKey && !scale) {
+			issues.push({
+				path: [...basePath, 'milestones', m, 'status', 'scaleRef'],
+				message: `Unknown status scale "${scaleKey}" on milestone "${label}".`,
+				hint: `Declare a scale with key "${scaleKey}" in the document scales, or reference an existing scale.`
+			});
+			continue;
+		}
+		if (scale && entryKey && !resolveEntryRef(scale, entryKey)) {
+			issues.push({
+				path: [...basePath, 'milestones', m, 'status', 'entry'],
+				message: `Unknown status "${entryKey}" on milestone "${label}".`,
+				hint: `"${entryKey}" is not an entry of the "${scaleKey}" scale; use one of its declared entry keys.`
+			});
 		}
 	}
 }
