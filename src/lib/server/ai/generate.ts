@@ -41,7 +41,7 @@
  * and never persists invalid.
  */
 import { createHash } from 'node:crypto';
-import { validateDocument, type DocumentV1, type DocumentV1Input } from '$lib/schema';
+import { type DocumentV1Input } from '$lib/schema';
 import {
 	createReportWithDocument,
 	updateReportDocument,
@@ -553,18 +553,4 @@ export async function fillFromOutline(
 		return updateReportDocument(reportId, documentInput, expectedUpdatedAt);
 	}
 	return createReportWithDocument(documentInput);
-}
-
-/** Validates an assembled document without writing - exposed for callers that
- *  want to surface validation errors before a write (and for tests). The service
- *  write re-validates, so this is a convenience, not the gate. */
-export function validateAssembled(
-	outline: Outline,
-	modelOutput: unknown
-): {
-	ok: boolean;
-	document?: DocumentV1;
-} {
-	const result = validateDocument(assembleDocument(outline, modelOutput));
-	return result.ok ? { ok: true, document: result.document } : { ok: false };
 }
