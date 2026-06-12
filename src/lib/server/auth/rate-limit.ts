@@ -169,3 +169,37 @@ export const verificationFailureLimiter: TokenBucketLimiter = new TokenBucketLim
 	VERIFICATION_FAILURE_CAPACITY,
 	VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND
 );
+
+/** API auth (AR12): a small per-IP burst of failed bearer attempts before the limiter engages. */
+const API_AUTH_BUCKET_CAPACITY = 10;
+/** One API auth attempt earned back every 6 seconds once drained. */
+const API_AUTH_REFILL_TOKENS_PER_SECOND = 1 / 6;
+/** Total failed API auth attempts tolerated across ALL callers before the global brake engages. */
+const API_AUTH_FAILURE_CAPACITY = 60;
+/** One global API auth allowance earned back every 5 seconds once drained. */
+const API_AUTH_FAILURE_REFILL_TOKENS_PER_SECOND = 1 / 5;
+
+/** Single global key for the API auth brake (mirrors GLOBAL_LOGIN_FAILURE_KEY). */
+export const GLOBAL_API_AUTH_FAILURE_KEY = 'global:/api/auth';
+
+/**
+ * Per-IP limiter for `/api/*` authentication FAILURES: a bearer that is missing,
+ * malformed, invalid, or revoked consumes a token (a successful auth costs
+ * nothing, so a legitimate script is never throttled). Keyed by IP. Consumed by
+ * the apiAuth hook.
+ */
+export const apiAuthRateLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	API_AUTH_BUCKET_CAPACITY,
+	API_AUTH_REFILL_TOKENS_PER_SECOND
+);
+
+/**
+ * IP-independent second brake for API auth failures: bounds total bearer
+ * guessing when client addresses collapse behind a shared proxy or are spoofed
+ * (the reverse-proxy contract, same second line as login/verification). Consumed
+ * only on a failed API auth attempt.
+ */
+export const apiAuthFailureLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	API_AUTH_FAILURE_CAPACITY,
+	API_AUTH_FAILURE_REFILL_TOKENS_PER_SECOND
+);
