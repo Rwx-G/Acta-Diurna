@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import { formatUtcDateTime } from '$lib/format';
 	import Button from '$lib/ui/Button.svelte';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -14,6 +15,28 @@
 	// Mirror the create-form mode selector so the recipient field shows only for a
 	// restricted share (open shares have no allow-list, FR19).
 	let createMode = $state<'restricted' | 'open'>('restricted');
+
+	// Two-click destructive confirm for revocation (FR20), the same pattern as the
+	// reports-list delete: the first click arms (label -> "Confirm revoke?"), the
+	// second within 5s submits. Revocation is irreversible, so a stray click must
+	// not cut a live link.
+	let confirmingRevokeId = $state<string | null>(null);
+	let confirmRevokeTimer: ReturnType<typeof setTimeout>;
+	const confirmRevoke: SubmitFunction = ({ formData, cancel }) => {
+		const id = String(formData.get('shareId'));
+		if (confirmingRevokeId !== id) {
+			cancel();
+			confirmingRevokeId = id;
+			clearTimeout(confirmRevokeTimer);
+			confirmRevokeTimer = setTimeout(() => (confirmingRevokeId = null), 5000);
+			return;
+		}
+		clearTimeout(confirmRevokeTimer);
+		confirmingRevokeId = null;
+		return async ({ update }) => {
+			await update();
+		};
+	};
 
 	async function copyLink(url: string): Promise<void> {
 		// The raw token lives only in this URL and only on this action result; the
@@ -127,17 +150,30 @@
 									No expiry
 								{/if}
 							</span>
-							<form method="POST" action="?/set-mode" use:enhance class="mode-toggle">
-								<input type="hidden" name="shareId" value={share.id} />
-								<input
-									type="hidden"
-									name="mode"
-									value={share.mode === 'restricted' ? 'open' : 'restricted'}
-								/>
-								<button type="submit" class="link-action">
-									Switch to {share.mode === 'restricted' ? 'open' : 'restricted'}
-								</button>
-							</form>
+							{#if share.status === 'active'}
+								<form method="POST" action="?/set-mode" use:enhance class="mode-toggle">
+									<input type="hidden" name="shareId" value={share.id} />
+									<input
+										type="hidden"
+										name="mode"
+										value={share.mode === 'restricted' ? 'open' : 'restricted'}
+									/>
+									<button type="submit" class="link-action">
+										Switch to {share.mode === 'restricted' ? 'open' : 'restricted'}
+									</button>
+								</form>
+								<form
+									method="POST"
+									action="?/revoke-share"
+									use:enhance={confirmRevoke}
+									class="revoke-form"
+								>
+									<input type="hidden" name="shareId" value={share.id} />
+									<button type="submit" class="link-action danger">
+										{confirmingRevokeId === share.id ? 'Confirm revoke?' : 'Revoke'}
+									</button>
+								</form>
+							{/if}
 						</div>
 
 						{#if share.mode === 'restricted'}
@@ -303,6 +339,14 @@
 		border: none;
 		cursor: pointer;
 		text-decoration: underline;
+	}
+
+	.link-action.danger {
+		color: var(--color-danger);
+	}
+
+	.revoke-form {
+		margin: 0;
 	}
 
 	.recipients-editor {

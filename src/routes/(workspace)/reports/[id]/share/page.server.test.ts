@@ -3,6 +3,7 @@ import {
 	createShare,
 	listShareRecipients,
 	listShares,
+	revokeShare,
 	setShareMode,
 	setShareRecipients,
 	shareUrl
@@ -15,6 +16,7 @@ vi.mock('$lib/server/sharing', () => ({
 	createShare: vi.fn(),
 	listShares: vi.fn(),
 	setShareMode: vi.fn(),
+	revokeShare: vi.fn(),
 	listShareRecipients: vi.fn(),
 	setShareRecipients: vi.fn(),
 	shareUrl: (origin: string, token: string) => `${origin}/r/${token}`
@@ -29,6 +31,7 @@ vi.mock('$lib/server/reader', async () => {
 const createShareMock = vi.mocked(createShare);
 const listSharesMock = vi.mocked(listShares);
 const setShareModeMock = vi.mocked(setShareMode);
+const revokeShareMock = vi.mocked(revokeShare);
 const listShareRecipientsMock = vi.mocked(listShareRecipients);
 const setShareRecipientsMock = vi.mocked(setShareRecipients);
 const getReportMock = vi.mocked(getReport);
@@ -71,6 +74,7 @@ beforeEach(() => {
 	listShareRecipientsMock.mockResolvedValue([]);
 	setShareRecipientsMock.mockResolvedValue(undefined);
 	setShareModeMock.mockResolvedValue(1);
+	revokeShareMock.mockResolvedValue(undefined);
 });
 
 describe('load', () => {
@@ -327,6 +331,27 @@ describe('set-recipients action', () => {
 			actionEvent({ shareId: 's1', recipients: 'a@x.com' })
 		);
 		expect(result).toMatchObject({ status: 422 });
+	});
+});
+
+describe('revoke-share action', () => {
+	it('revokes the share and returns its id', async () => {
+		const result = await actions['revoke-share'](actionEvent({ shareId: 's1' }));
+		expect(revokeShareMock).toHaveBeenCalledWith('s1');
+		expect(result).toMatchObject({ revoked: { shareId: 's1' } });
+	});
+
+	it('400s when the share id is missing', async () => {
+		const result = await actions['revoke-share'](actionEvent({}));
+		expect(result).toMatchObject({ status: 400 });
+		expect(revokeShareMock).not.toHaveBeenCalled();
+	});
+
+	it('is idempotent at the action layer: a second revoke still resolves cleanly', async () => {
+		await actions['revoke-share'](actionEvent({ shareId: 's1' }));
+		const result = await actions['revoke-share'](actionEvent({ shareId: 's1' }));
+		expect(revokeShareMock).toHaveBeenCalledTimes(2);
+		expect(result).toMatchObject({ revoked: { shareId: 's1' } });
 	});
 });
 

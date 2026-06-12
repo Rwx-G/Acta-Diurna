@@ -12,7 +12,8 @@
  * revocation/expiry neutral page (story 3.5) build on one status function; this
  * story does NOT yet enforce that status at the route.
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { destroyReaderSessionsForShare } from '$lib/server/auth/sessions';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { shares, type ShareRow } from '$lib/server/db/schema';
@@ -184,6 +185,31 @@ export async function setShareMode(shareId: string, mode: ShareMode): Promise<nu
 		.where(eq(shares.id, shareId))
 		.returning({ id: shares.id });
 	return updated.length;
+}
+
+/**
+ * Revokes a share (FR20): one-click, immediate, irreversible. Sets `revoked_at`
+ * to now so the reader gate's per-load liveness check (`status !== 'active'`)
+ * serves the neutral page on the very next request - no cache window given the
+ * reader responses are `no-store`. Then sweeps every already-verified reader
+ * session bound to the share via `destroyReaderSessionsForShare`, so a reader
+ * mid-session is cut off immediately (defense in depth: the gate's liveness
+ * re-check alone already stops serving, but dropping the session rows frees them
+ * and removes any lingering credential).
+ *
+ * Idempotent: revoking an already-revoked share is a NO-OP, not an error. The
+ * `WHERE revoked_at IS NULL` guard means a second revoke updates zero rows and
+ * preserves the original revocation instant; the session sweep is run regardless
+ * (it is itself idempotent - a no-op when no sessions remain). A genuinely
+ * unknown share id matches nothing and returns silently (the caller has already
+ * resolved the share from its own report's list, author-realm under the guard).
+ */
+export async function revokeShare(shareId: string): Promise<void> {
+	await getDb()
+		.update(shares)
+		.set({ revokedAt: new Date() })
+		.where(and(eq(shares.id, shareId), isNull(shares.revokedAt)));
+	await destroyReaderSessionsForShare(shareId);
 }
 
 /**

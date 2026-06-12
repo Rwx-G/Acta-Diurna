@@ -7,6 +7,7 @@ export {
 	listShares,
 	getShareByToken,
 	setShareMode,
+	revokeShare,
 	shareStatus,
 	isExpired,
 	shareUrl

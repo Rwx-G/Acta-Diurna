@@ -5,6 +5,7 @@ import { getReport } from '$lib/server/documents/reports';
 import {
 	createShare,
 	listShares,
+	revokeShare,
 	setShareMode,
 	shareUrl,
 	type ShareMode,
@@ -141,5 +142,19 @@ export const actions: Actions = {
 			}
 			throw thrown;
 		}
+	},
+
+	'revoke-share': async ({ request }) => {
+		const data = await request.formData();
+		const shareId = data.get('shareId');
+		if (typeof shareId !== 'string' || shareId.length === 0) {
+			return fail(400, { message: 'Missing share.' });
+		}
+		// One-click, immediate, idempotent (FR20): flips revoked_at and sweeps any
+		// live reader sessions. Revoking an already-revoked share is a no-op, so a
+		// double-submit is harmless. The author owns this report's shares (the route
+		// is under workspaceGuard); revokeShare resolves nothing it was not given.
+		await revokeShare(shareId);
+		return { revoked: { shareId } };
 	}
 };
