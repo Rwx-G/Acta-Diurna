@@ -49,7 +49,35 @@ const envSchema = z
 			.enum(['starttls', 'tls', 'none'], {
 				error: 'must be one of starttls, tls or none'
 			})
-			.optional()
+			.optional(),
+		// LLM endpoint is consumed by the AI connector (Epic 5, story 5.3). The
+		// whole block is optional - the app boots without it and AI generation
+		// simply stays unavailable - but its SHAPE is validated at boot (fail-fast
+		// on a malformed value) and the superRefine below enforces all-or-nothing.
+		// Reachability is NOT tested at boot: an unreachable endpoint must not stop
+		// the container; transport failures surface at generation time as a
+		// problem-details error (the SMTP boot-vs-send split applied to the LLM).
+		// The endpoint can be any OpenAI-compatible base (cloud, a local runtime,
+		// or an Anthropic-compatible proxy) - no default cloud endpoint, no
+		// phone-home (FR33/NFR18). LLM_API_KEY is optional so an unauthenticated
+		// local endpoint (Ollama, llama.cpp) works without a bearer token.
+		LLM_BASE_URL: z
+			.string()
+			.regex(/^https?:\/\/.+/, 'must be an http:// or https:// URL')
+			.optional(),
+		LLM_API_KEY: z.string().min(1).optional(),
+		LLM_MODEL: z.string().min(1).optional(),
+		// SECOND gate, deliberately SEPARATE from the connection config: a
+		// configured endpoint is necessary but NOT sufficient. AI generation also
+		// requires this explicit opt-in, so an operator who sets LLM_* still
+		// consciously enables outbound calls. The connector refuses ANY fetch
+		// unless BOTH the config is present AND this is true. Defaults false:
+		// configuration alone never enables a call (FR33/NFR18 "no call before
+		// explicit opt-in").
+		AI_GENERATION_ENABLED: z
+			.enum(['true', 'false'])
+			.default('false')
+			.transform((value) => value === 'true')
 	})
 	.superRefine((env, ctx) => {
 		if (env.NODE_ENV === 'production' && env.LOG_LEVEL === 'debug') {
@@ -79,6 +107,26 @@ const envSchema = z
 						code: 'custom',
 						path: [key],
 						message: 'required when any SMTP_* variable is set (relay is half-configured)'
+					});
+				}
+			}
+		}
+		// All-or-nothing LLM: if any connection var (LLM_BASE_URL / LLM_API_KEY /
+		// LLM_MODEL) is present, the endpoint essentials (base URL + model) must
+		// both be present so a half-configured connector never reaches generation
+		// time. LLM_API_KEY stays optional (an unauthenticated local endpoint needs
+		// no bearer token). AI_GENERATION_ENABLED is the SEPARATE opt-in gate and is
+		// not part of this all-or-nothing set: opting in without a config is inert
+		// (the connector still refuses, the settings page reports not configured).
+		const llmKeys = ['LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL'] as const;
+		const anyLlm = llmKeys.some((key) => env[key] !== undefined);
+		if (anyLlm) {
+			for (const key of ['LLM_BASE_URL', 'LLM_MODEL'] as const) {
+				if (env[key] === undefined) {
+					ctx.addIssue({
+						code: 'custom',
+						path: [key],
+						message: 'required when any LLM_* variable is set (endpoint is half-configured)'
 					});
 				}
 			}

@@ -17,6 +17,12 @@ const validSmtp = {
 	SMTP_TLS_MODE: 'starttls'
 };
 
+const validLlm = {
+	LLM_BASE_URL: 'https://api.openai.com/v1',
+	LLM_API_KEY: 'sk-secret',
+	LLM_MODEL: 'gpt-4o-mini'
+};
+
 describe('parseEnv', () => {
 	it('parses a valid environment and applies defaults', () => {
 		const env = parseEnv(validEnv);
@@ -81,6 +87,66 @@ describe('parseEnv', () => {
 		void SMTP_FROM;
 		expect(() => parseEnv({ ...validEnv, ...partial })).toThrowError(
 			/SMTP_FROM: required when any SMTP_\* variable is set/
+		);
+	});
+
+	it('parses a complete LLM block', () => {
+		const env = parseEnv({ ...validEnv, ...validLlm });
+
+		expect(env.LLM_BASE_URL).toBe('https://api.openai.com/v1');
+		expect(env.LLM_API_KEY).toBe('sk-secret');
+		expect(env.LLM_MODEL).toBe('gpt-4o-mini');
+	});
+
+	it('parses an LLM block without a key (unauthenticated local endpoint)', () => {
+		const { LLM_API_KEY, ...noKey } = validLlm;
+		void LLM_API_KEY;
+		const env = parseEnv({ ...validEnv, ...noKey, LLM_BASE_URL: 'http://localhost:11434/v1' });
+
+		expect(env.LLM_BASE_URL).toBe('http://localhost:11434/v1');
+		expect(env.LLM_API_KEY).toBeUndefined();
+		expect(env.LLM_MODEL).toBe('gpt-4o-mini');
+	});
+
+	it('accepts an absent LLM block (AI configured later)', () => {
+		const env = parseEnv(validEnv);
+
+		expect(env.LLM_BASE_URL).toBeUndefined();
+		expect(env.LLM_MODEL).toBeUndefined();
+	});
+
+	it('defaults AI_GENERATION_ENABLED to false (opt-in, never enabled by config alone)', () => {
+		expect(parseEnv(validEnv).AI_GENERATION_ENABLED).toBe(false);
+		expect(parseEnv({ ...validEnv, ...validLlm }).AI_GENERATION_ENABLED).toBe(false);
+	});
+
+	it('coerces AI_GENERATION_ENABLED=true to a boolean', () => {
+		expect(
+			parseEnv({ ...validEnv, ...validLlm, AI_GENERATION_ENABLED: 'true' }).AI_GENERATION_ENABLED
+		).toBe(true);
+	});
+
+	it('names AI_GENERATION_ENABLED when it is not true/false', () => {
+		expect(() => parseEnv({ ...validEnv, AI_GENERATION_ENABLED: 'yes' })).toThrowError(
+			/AI_GENERATION_ENABLED/
+		);
+	});
+
+	it('names LLM_BASE_URL when it is not an http(s) URL', () => {
+		expect(() =>
+			parseEnv({ ...validEnv, ...validLlm, LLM_BASE_URL: 'ftp://llm.example.com' })
+		).toThrowError(/LLM_BASE_URL: must be an http:\/\/ or https:\/\/ URL/);
+	});
+
+	it('rejects a half-configured LLM block (key set, base URL and model missing)', () => {
+		expect(() => parseEnv({ ...validEnv, LLM_API_KEY: 'sk-secret' })).toThrowError(
+			/LLM_BASE_URL: required when any LLM_\* variable is set/
+		);
+	});
+
+	it('rejects an LLM block with a base URL but no model', () => {
+		expect(() => parseEnv({ ...validEnv, LLM_BASE_URL: 'https://api.openai.com/v1' })).toThrowError(
+			/LLM_MODEL: required when any LLM_\* variable is set/
 		);
 	});
 
