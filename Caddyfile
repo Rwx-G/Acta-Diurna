@@ -1,0 +1,13 @@
+# Hardened reverse proxy for the docker compose `proxy` profile.
+#
+# Caddy terminates TLS with automatic HTTPS for CADDY_DOMAIN and proxies to the
+# app. The header_up line OVERWRITES any client-supplied X-Forwarded-For with the
+# real peer IP ({remote_host}), so an attacker cannot smuggle a spoofed XFF to mint
+# a fresh per-IP rate-limit bucket. Pair it with ADDRESS_HEADER=x-forwarded-for and
+# ORIGIN=https://<domain> in the app environment so adapter-node reads this value.
+{$CADDY_DOMAIN} {
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto https
+	}
+}
