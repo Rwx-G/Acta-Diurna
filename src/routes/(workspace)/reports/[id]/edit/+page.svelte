@@ -7,5 +7,11 @@
 
 <!-- Keyed remount: navigating between report editors resets the editor state. -->
 {#key data.report.id}
-	<ReportEditor report={data.report} dataSets={data.dataSets} {form} />
+	<ReportEditor
+		report={data.report}
+		dataSets={data.dataSets}
+		skeletons={data.skeletons}
+		aiEnabled={data.aiEnabled}
+		{form}
+	/>
 {/key}

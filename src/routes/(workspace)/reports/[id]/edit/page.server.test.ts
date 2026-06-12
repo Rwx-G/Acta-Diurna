@@ -10,6 +10,9 @@ import {
 	type Report
 } from '$lib/server/documents/reports';
 import { bindBlock, listDataSets, rebindReport, remapField } from '$lib/server/ingestion';
+import { listSkeletons } from '$lib/server/skeletons/skeletons';
+import { isAiEnabled } from '$lib/server/ai/connector';
+import { fillFromOutline, generateOutline, hashOutline } from '$lib/server/ai/generate';
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
@@ -25,6 +28,13 @@ vi.mock('$lib/server/ingestion', () => ({
 	rebindReport: vi.fn(),
 	remapField: vi.fn()
 }));
+vi.mock('$lib/server/skeletons/skeletons', () => ({ listSkeletons: vi.fn() }));
+vi.mock('$lib/server/ai/connector', () => ({ isAiEnabled: vi.fn() }));
+vi.mock('$lib/server/ai/generate', () => ({
+	generateOutline: vi.fn(),
+	fillFromOutline: vi.fn(),
+	hashOutline: vi.fn()
+}));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 
 const getReportMock = vi.mocked(getReport);
@@ -36,6 +46,11 @@ const bindBlockMock = vi.mocked(bindBlock);
 const rebindReportMock = vi.mocked(rebindReport);
 const remapFieldMock = vi.mocked(remapField);
 const logoutMock = vi.mocked(performLogout);
+const listSkeletonsMock = vi.mocked(listSkeletons);
+const isAiEnabledMock = vi.mocked(isAiEnabled);
+const generateOutlineMock = vi.mocked(generateOutline);
+const fillFromOutlineMock = vi.mocked(fillFromOutline);
+const hashOutlineMock = vi.mocked(hashOutline);
 
 const REPORT_ID = '01970000-0000-7000-8000-000000000001';
 
@@ -88,16 +103,29 @@ beforeEach(() => {
 });
 
 describe('load', () => {
-	it('returns the report and the data-set list', async () => {
+	it('returns the report, data sets, skeletons and the AI-enabled flag', async () => {
 		const report = sampleReport();
 		getReportMock.mockResolvedValue(report);
 		listDataSetsMock.mockResolvedValue([]);
+		listSkeletonsMock.mockResolvedValue([]);
+		isAiEnabledMock.mockReturnValue(true);
 
 		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
 
-		expect(result).toEqual({ report, dataSets: [] });
+		expect(result).toEqual({ report, dataSets: [], skeletons: [], aiEnabled: true });
 		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
 		expect(listDataSetsMock).toHaveBeenCalledOnce();
+	});
+
+	it('reports aiEnabled false when the connector is disabled (the entry point hides)', async () => {
+		getReportMock.mockResolvedValue(sampleReport());
+		listDataSetsMock.mockResolvedValue([]);
+		listSkeletonsMock.mockResolvedValue([]);
+		isAiEnabledMock.mockReturnValue(false);
+
+		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+
+		expect(result).toMatchObject({ aiEnabled: false });
 	});
 
 	it('translates a service 404 AppError into a SvelteKit 404', async () => {
@@ -105,6 +133,8 @@ describe('load', () => {
 			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
 		);
 		listDataSetsMock.mockResolvedValue([]);
+		listSkeletonsMock.mockResolvedValue([]);
+		isAiEnabledMock.mockReturnValue(true);
 
 		try {
 			await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
@@ -435,6 +465,178 @@ describe('remap action (FR15)', () => {
 		)) as ActionFailure<{ message: string }>;
 
 		expect(result.status).toBe(404);
+	});
+});
+
+type GenerateOutlineAction = (typeof actions)['generate-outline'];
+
+function generateEvent(
+	action: string,
+	form: Record<string, string>
+): Parameters<GenerateOutlineAction>[0] {
+	const data = new FormData();
+	for (const [key, value] of Object.entries(form)) data.set(key, value);
+	return {
+		params: { id: REPORT_ID },
+		locals: { requestId: 'req-test' },
+		request: new Request(`http://localhost/reports/x/edit?/${action}`, {
+			method: 'POST',
+			body: data
+		})
+	} as Parameters<GenerateOutlineAction>[0];
+}
+
+const sampleOutline = {
+	title: 'Weekly Ops',
+	sections: [{ title: 'Overview', intent: '', blocks: [{ type: 'text', intent: 'sum' }] }]
+};
+
+describe('generate-outline action (FR32 stage 1)', () => {
+	it('requests an outline and returns it with its content hash', async () => {
+		generateOutlineMock.mockResolvedValue(sampleOutline as never);
+		hashOutlineMock.mockReturnValue('hash-abc');
+
+		const result = (await actions['generate-outline'](
+			generateEvent('generate-outline', {
+				intent: 'a weekly review',
+				skeletonId: '',
+				dataSetId: ''
+			})
+		)) as { generate: { stage: string; outline: unknown; outlineHash: string } };
+
+		expect(generateOutlineMock).toHaveBeenCalledOnce();
+		expect(result.generate.stage).toBe('outline');
+		expect(result.generate.outline).toEqual(sampleOutline);
+		expect(result.generate.outlineHash).toBe('hash-abc');
+	});
+
+	it('rejects an empty intent with 400 without calling the connector', async () => {
+		const result = (await actions['generate-outline'](
+			generateEvent('generate-outline', { intent: '   ' })
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(result.status).toBe(400);
+		expect(generateOutlineMock).not.toHaveBeenCalled();
+	});
+
+	it('maps the connector disabled 503 to a failure (AI off -> no usable outline)', async () => {
+		generateOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 503,
+				title: 'AI Generation Disabled',
+				type: '/problems/ai-generation-disabled',
+				detail: 'AI generation is disabled.'
+			})
+		);
+
+		const result = (await actions['generate-outline'](
+			generateEvent('generate-outline', { intent: 'x' })
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(result.status).toBe(503);
+		expect(result.data.generate.message).toContain('disabled');
+	});
+
+	it('maps an outline-stage 502 to a failure naming the stage', async () => {
+		generateOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 502,
+				title: 'AI Generation Failed',
+				type: '/problems/ai-generation-failed',
+				detail:
+					'AI generation failed at the outline stage: no usable outline. Retry the outline stage.'
+			})
+		);
+
+		const result = (await actions['generate-outline'](
+			generateEvent('generate-outline', { intent: 'x' })
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(result.status).toBe(502);
+		expect(result.data.generate.message).toContain('outline');
+	});
+});
+
+describe('generate-fill action (FR32 stage 2)', () => {
+	it('fills the approved outline and returns the saved timestamp', async () => {
+		fillFromOutlineMock.mockResolvedValue(
+			sampleReport({ updatedAt: new Date('2026-06-12T13:00:00Z') })
+		);
+
+		const result = (await actions['generate-fill'](
+			generateEvent('generate-fill', {
+				outline: JSON.stringify(sampleOutline),
+				outlineHash: 'hash-abc'
+			})
+		)) as { generate: { stage: string; savedAt: string } };
+
+		expect(fillFromOutlineMock).toHaveBeenCalledOnce();
+		const [fillInput, reportId] = fillFromOutlineMock.mock.calls[0];
+		expect(reportId).toBe(REPORT_ID);
+		expect(fillInput.approvedHash).toBe('hash-abc');
+		expect(result.generate.stage).toBe('filled');
+		expect(result.generate.savedAt).toBe('2026-06-12T13:00:00.000Z');
+	});
+
+	it('rejects a stale approval (service 409) with a failure, draft untouched', async () => {
+		fillFromOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Outline approval is stale',
+				type: '/problems/ai-outline-stale',
+				detail: 'The outline changed since it was approved.'
+			})
+		);
+
+		const result = (await actions['generate-fill'](
+			generateEvent('generate-fill', {
+				outline: JSON.stringify(sampleOutline),
+				outlineHash: 'stale'
+			})
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(result.status).toBe(409);
+		expect(result.data.generate.message).toContain('changed');
+	});
+
+	it('surfaces an INVALID generated document as 422 with errors[] (the no-bypass validator)', async () => {
+		fillFromOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'Document validation failed',
+				type: '/problems/document-validation',
+				detail: '1 validation error found in the document.',
+				errors: [{ path: 'sections[0].title', message: 'A section needs a title.' }]
+			})
+		);
+
+		const result = (await actions['generate-fill'](
+			generateEvent('generate-fill', {
+				outline: JSON.stringify(sampleOutline),
+				outlineHash: 'hash-abc'
+			})
+		)) as ActionFailure<{ generate: { errors: { path: string }[] } }>;
+
+		expect(result.status).toBe(422);
+		expect(result.data.generate.errors[0].path).toBe('sections[0].title');
+	});
+
+	it('rejects a missing approval hash with 400 without calling the service', async () => {
+		const result = (await actions['generate-fill'](
+			generateEvent('generate-fill', { outline: JSON.stringify(sampleOutline), outlineHash: '' })
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(result.status).toBe(400);
+		expect(fillFromOutlineMock).not.toHaveBeenCalled();
+	});
+
+	it('rejects a malformed outline payload with 400', async () => {
+		const result = (await actions['generate-fill'](
+			generateEvent('generate-fill', { outline: '{not json', outlineHash: 'h' })
+		)) as ActionFailure<{ generate: { message: string } }>;
+
+		expect(result.status).toBe(400);
+		expect(fillFromOutlineMock).not.toHaveBeenCalled();
 	});
 });
 

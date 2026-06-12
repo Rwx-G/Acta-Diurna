@@ -9,6 +9,7 @@
 	import StatusChip from '$lib/ui/StatusChip.svelte';
 	import BlockBinder from './BlockBinder.svelte';
 	import RefillPanel from './RefillPanel.svelte';
+	import GeneratePanel from './GeneratePanel.svelte';
 	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
 	import {
@@ -28,10 +29,12 @@
 	interface Props {
 		report: PageData['report'];
 		dataSets: PageData['dataSets'];
+		skeletons: PageData['skeletons'];
+		aiEnabled: PageData['aiEnabled'];
 		form: ActionData;
 	}
 
-	let { report, dataSets, form }: Props = $props();
+	let { report, dataSets, skeletons, aiEnabled, form }: Props = $props();
 
 	const editable = $derived(report.status === 'draft');
 
@@ -315,6 +318,13 @@
 <BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} />
 
 <RefillPanel {dataSets} disabled={!editable} />
+
+<!-- UX Flow D (FR32): the Generate-with-AI entry point appears only when the
+     connector is configured + opted-in; a disabled instance hides it entirely so
+     the workspace never offers a capability that 503s. -->
+{#if aiEnabled}
+	<GeneratePanel {skeletons} {dataSets} disabled={!editable} />
+{/if}
 
 <style>
 	.editor-toolbar {
