@@ -13,6 +13,8 @@ services:
       NODE_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOADS_DIR: /data/uploads
+      # Reader-realm session lifetime in days (story 3.3); absent -> 30-day default.
+      READER_SESSION_TTL: ${READER_SESSION_TTL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
       SMTP_USER: ${SMTP_USER:-}

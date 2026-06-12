@@ -28,6 +28,15 @@ describe('parseEnv', () => {
 		expect(env.LOG_LEVEL).toBe('info');
 		expect(env.UPLOADS_DIR).toBe('data/uploads');
 		expect(env.SMTP_HOST).toBeUndefined();
+		expect(env.READER_SESSION_TTL).toBeUndefined();
+	});
+
+	it('coerces READER_SESSION_TTL and rejects an out-of-range value', () => {
+		expect(parseEnv({ ...validEnv, READER_SESSION_TTL: '14' }).READER_SESSION_TTL).toBe(14);
+		expect(() => parseEnv({ ...validEnv, READER_SESSION_TTL: '0' })).toThrow(/READER_SESSION_TTL/);
+		expect(() => parseEnv({ ...validEnv, READER_SESSION_TTL: '999' })).toThrow(
+			/READER_SESSION_TTL/
+		);
 	});
 
 	it('coerces PORT and SMTP_PORT from strings', () => {

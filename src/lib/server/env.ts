@@ -23,6 +23,12 @@ const envSchema = z
 		PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 		LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('info'),
 		UPLOADS_DIR: z.string().min(1).default('data/uploads'),
+		// Reader-realm session lifetime in DAYS (story 3.3, FR23). The author realm
+		// is a fixed 7 days; readers are low-privilege and "verify once, read
+		// freely", so their session is longer and operator-tunable. Absent -> the
+		// 30-day default applied in sessions.ts. Bounded so a typo cannot mint a
+		// effectively-immortal session.
+		READER_SESSION_TTL: z.coerce.number().int().min(1).max(365).optional(),
 		// SMTP is consumed by the mailer (Epic 3, story 3.1). The whole block is
 		// optional - an operator may deploy first and configure the relay later -
 		// but its SHAPE is validated at boot (fail-fast on a malformed value) and
