@@ -32,6 +32,17 @@ function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	return { column: column.name, value: param.value };
 }
 
+// `and(eq(id), eq(updated_at))` nests its operands; flatten the leaf eq filters
+// so the optimistic-concurrency WHERE can be decoded the same way a bare eq is.
+function decodeEqFilters(filter: unknown): { column: string; value: unknown }[] {
+	const chunks = (filter as { queryChunks?: unknown[] }).queryChunks ?? [];
+	const hasColumn = chunks.some((chunk) => chunk instanceof Column);
+	if (hasColumn) return [decodeEqFilter(filter)];
+	return chunks.flatMap((chunk) =>
+		chunk && typeof chunk === 'object' && 'queryChunks' in chunk ? decodeEqFilters(chunk) : []
+	);
+}
+
 function decodeOrderBy(order: unknown): { column: string; sql: string } {
 	const chunks = (order as { queryChunks: unknown[] }).queryChunks;
 	const column = chunks.find((chunk): chunk is Column => chunk instanceof Column);
@@ -73,13 +84,27 @@ vi.mock('$lib/server/db/client', () => ({
 		update: () => ({
 			set: (set: Record<string, unknown>) => ({
 				where: (filter: SQL) => {
-					const decoded = decodeEqFilter(filter);
-					dbState.updates.push({ ...decoded, set });
-					if (decoded.column === 'id') {
-						const row = dbState.rowsById.get(String(decoded.value));
-						if (row) dbState.rowsById.set(String(decoded.value), { ...row, ...set });
+					const decoded = decodeEqFilters(filter);
+					const idFilter = decoded.find((entry) => entry.column === 'id');
+					// Record the id-keyed view so existing assertions keep working.
+					if (idFilter) dbState.updates.push({ ...idFilter, set });
+					const row = idFilter ? dbState.rowsById.get(String(idFilter.value)) : undefined;
+					// Every eq leaf must match the stored row for the update to land
+					// (optimistic concurrency joins eq(updated_at)).
+					const matches =
+						row !== undefined &&
+						decoded.every((entry) => {
+							const current = (row as Record<string, unknown>)[
+								entry.column === 'updated_at' ? 'updatedAt' : entry.column
+							];
+							const stored = current instanceof Date ? current.getTime() : current;
+							const wanted = entry.value instanceof Date ? entry.value.getTime() : entry.value;
+							return stored === wanted;
+						});
+					if (matches && idFilter) {
+						dbState.rowsById.set(String(idFilter.value), { ...row, ...set });
 					}
-					return Promise.resolve();
+					return Promise.resolve({ rowCount: matches ? 1 : 0 });
 				}
 			})
 		}),
@@ -270,6 +295,33 @@ describe('updateReportDocument', () => {
 			updateReportDocument('01970000-0000-7000-8000-00000000dead', validDocument()),
 			404
 		);
+	});
+
+	it('writes when expectedUpdatedAt matches the stored timestamp', async () => {
+		const row = seedReport();
+
+		const report = await updateReportDocument(
+			row.id,
+			validDocument('Concurrency Match'),
+			row.updatedAt
+		);
+
+		expect(report.title).toBe('Concurrency Match');
+		expect(dbState.updates).toHaveLength(1);
+	});
+
+	it('throws 409 /problems/report-conflict when expectedUpdatedAt is stale', async () => {
+		const row = seedReport();
+		const stale = new Date(row.updatedAt.getTime() - 1000);
+
+		const error = await expectAppError(
+			updateReportDocument(row.id, validDocument('Loses The Race'), stale),
+			409
+		);
+
+		expect(error.type).toBe('/problems/report-conflict');
+		// The stored row is untouched: the losing write never lands.
+		expect(dbState.rowsById.get(row.id)?.title).toBe('Quarterly Review');
 	});
 });
 

@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import {
 	validateDocument,
 	toProblemDetails,
@@ -59,6 +59,15 @@ function publishedConflict(detail: string): AppError {
 		title: 'Report is published',
 		type: '/problems/report-published',
 		detail
+	});
+}
+
+function reportConflict(): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Report changed concurrently',
+		type: '/problems/report-conflict',
+		detail: 'The report was modified since you loaded it; reload and reapply your change.'
 	});
 }
 
@@ -150,23 +159,32 @@ export async function listReports(): Promise<ReportSummary[]> {
 }
 
 /**
- * Replaces the document of a draft after validate-on-write (D3). The row title
- * and schema version mirror the document so the list never diverges from the
- * content. Throws 422 with `errors[]` on validation failure, 409 on a
- * published report (publishing makes a report read-only until 1.7 grows the
- * lifecycle).
+ * Validates and writes a document onto an already-read draft row, mirroring the
+ * title and version onto the row. Shared by `updateReportDocument` and
+ * `updateReportTitle` so the read happens exactly once per write. When
+ * `expectedUpdatedAt` is given, it joins the WHERE clause and a zero-row update
+ * (someone else wrote in between) raises a 409 conflict (optimistic concurrency,
+ * AR-style); single-writer callers omit it and the row id alone matches.
  */
-export async function updateReportDocument(id: string, documentInput: unknown): Promise<Report> {
-	const row = await getRow(id);
+async function writeDocument(
+	row: ReportRow,
+	documentInput: unknown,
+	expectedUpdatedAt?: Date
+): Promise<Report> {
 	if (row.status === 'published') {
 		throw publishedConflict('Published reports are read-only.');
 	}
 	const document = validateOrThrow(documentInput);
 	const updatedAt = new Date();
-	await getDb()
+	const where =
+		expectedUpdatedAt === undefined
+			? eq(reports.id, row.id)
+			: and(eq(reports.id, row.id), eq(reports.updatedAt, expectedUpdatedAt));
+	const result = await getDb()
 		.update(reports)
 		.set({ title: document.title, schemaVersion: document.version, document, updatedAt })
-		.where(eq(reports.id, id));
+		.where(where);
+	if (expectedUpdatedAt !== undefined && result.rowCount === 0) throw reportConflict();
 	return toReport({
 		...row,
 		title: document.title,
@@ -177,16 +195,30 @@ export async function updateReportDocument(id: string, documentInput: unknown): 
 }
 
 /**
+ * Replaces the document of a draft after validate-on-write (D3). The row title
+ * and schema version mirror the document so the list never diverges from the
+ * content. Throws 422 with `errors[]` on validation failure, 409 on a
+ * published report (publishing makes a report read-only until 1.7 grows the
+ * lifecycle). Pass `expectedUpdatedAt` to opt into optimistic concurrency: a
+ * concurrent write then yields a 409 `/problems/report-conflict` instead of a
+ * silent last-writer-wins overwrite (1.5 is single-writer; Epic 4 opts in).
+ */
+export async function updateReportDocument(
+	id: string,
+	documentInput: unknown,
+	expectedUpdatedAt?: Date
+): Promise<Report> {
+	return writeDocument(await getRow(id), documentInput, expectedUpdatedAt);
+}
+
+/**
  * Renames a draft. The title lives inside the document (single source of
  * truth), so this rewrites `document.title` and re-validates like any other
- * document write.
+ * document write - reading the row once and writing through the shared helper.
  */
 export async function updateReportTitle(id: string, title: string): Promise<Report> {
 	const row = await getRow(id);
-	if (row.status === 'published') {
-		throw publishedConflict('Published reports are read-only.');
-	}
-	return updateReportDocument(id, { ...row.document, title });
+	return writeDocument(row, { ...row.document, title });
 }
 
 /** Deletes a draft; published reports refuse with 409 (no cascade exists yet). */
