@@ -125,7 +125,7 @@
 			<StructureTree bind:sections={draft.sections} errors={errorsByKey} {onChange} />
 		</div>
 
-		<div class="zone preview-zone">
+		<div class="zone preview-zone" aria-label="Live preview">
 			<LivePreview document={draft} />
 		</div>
 	</div>
@@ -173,17 +173,19 @@
 	}
 
 	/* Three zones at the composer full-layout breakpoint (1280px token); the
-	   library collapses into the flow below that, per the UX responsive note. */
+	   library collapses into the flow below that, per the UX responsive note.
+	   The preview keeps a comfortable minimum so the real renderer is not
+	   squeezed below its natural prose width (which clipped long lines). */
 	.zones {
 		display: grid;
-		grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-columns: 220px minmax(0, 1fr) minmax(420px, 1.3fr);
 		gap: var(--space-4);
 		align-items: start;
 	}
 
 	@media (max-width: 1280px) {
 		.zones {
-			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			grid-template-columns: minmax(0, 1fr) minmax(360px, 1.2fr);
 		}
 
 		.library {
@@ -198,8 +200,20 @@
 		}
 	}
 
+	@media (max-width: 880px) {
+		.zones {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
 	.zone {
 		min-width: 0;
+	}
+
+	/* Let the preview scroll horizontally rather than clip the rendered report
+	   if the column is still tighter than its natural prose width. */
+	.preview-zone {
+		overflow-x: auto;
 	}
 
 	.library {
