@@ -21,8 +21,8 @@
 	// right LivePreview (the identical render tier). Owns the in-memory skeleton
 	// draft. Save validates server-side; an invalid structure (empty section,
 	// empty title) comes back as errors[] rendered inline at the offending element
-	// via the reused 1.5 IssueList + error grouping. Persistence is story 2.2; the
-	// save action here validates and returns the structure (no skeletons table yet).
+	// via the reused 1.5 IssueList + error grouping. Save persists to the skeletons
+	// table and redirects to the library (/skeletons).
 	interface Props {
 		form: ActionData;
 	}

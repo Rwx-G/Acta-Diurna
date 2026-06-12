@@ -67,6 +67,14 @@ describe('structurallyEqual', () => {
 		expect(structurallyEqual(a, b)).toBe(false);
 	});
 
+	it('differs when a block audience set changes (visibility is structure)', () => {
+		const a = documentFrom('A', 'dataTable');
+		const b: DocumentV1 = JSON.parse(JSON.stringify(a));
+		b.sections[0].blocks[0].audiences = ['summary'];
+
+		expect(structurallyEqual(a, b)).toBe(false);
+	});
+
 	it('ignores binding.dataSetId: only the field shape is structural', () => {
 		const a = documentFrom('A', 'chartSection');
 		const b: DocumentV1 = JSON.parse(JSON.stringify(a));

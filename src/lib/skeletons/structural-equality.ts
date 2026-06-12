@@ -9,7 +9,7 @@
  *
  * What counts as structure (compared):
  * - section order, each section's `annex` flag and audience set, block count;
- * - block order and `type`;
+ * - block order, `type`, and audience set (audience-gated visibility is structure);
  * - data-bound block `binding.fields` (each field's name + type), order-insensitive.
  *
  * What is ignored (content, not structure): every id, the document/section title,
@@ -31,6 +31,7 @@ interface SectionFingerprint {
 
 interface BlockFingerprint {
 	type: Block['type'];
+	audiences: string[];
 	binding: BindingFingerprint | null;
 }
 
@@ -51,7 +52,11 @@ function blockBinding(block: Block): Binding | undefined {
 }
 
 function fingerprintBlock(block: Block): BlockFingerprint {
-	return { type: block.type, binding: fingerprintBinding(blockBinding(block)) };
+	return {
+		type: block.type,
+		audiences: [...(block.audiences ?? [])].sort(),
+		binding: fingerprintBinding(blockBinding(block))
+	};
 }
 
 function fingerprintSection(section: Section): SectionFingerprint {
