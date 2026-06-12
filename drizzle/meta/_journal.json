@@ -57,6 +57,13 @@
       "when": 1781244615742,
       "tag": "0007_reader_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781247112278,
+      "tag": "0008_share_recipients",
+      "breakpoints": true
     }
   ]
 }

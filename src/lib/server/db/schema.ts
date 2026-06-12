@@ -152,6 +152,33 @@ export const shares = pgTable(
 
 export type ShareRow = typeof shares.$inferSelect;
 
+// A restricted share's allow-list (FR19, story 3.4). One row per authorized
+// email per share. In `restricted` mode the verification gate refuses any email
+// absent from this list - but BEHIND the neutral confirmation, so an off-list
+// email is byte-indistinguishable from an on-list one (NFR9 enumeration-safety).
+// In `open` mode this table is ignored: any verified email may read, so an open
+// share simply has no recipient rows.
+//
+// `email` is normalized (lowercased/trimmed) BEFORE it reaches this table - the
+// same boundary normalization the reader identity/verification path applies - so
+// the unique (share, email) index is a canonical-email membership key and
+// `Foo@X.com` and `foo@x.com` are one entry. CASCADE on the share: a deleted
+// share's allow-list goes with it.
+export const shareRecipients = pgTable(
+	'share_recipients',
+	{
+		id: uuid('id').primaryKey(),
+		shareId: uuid('share_id')
+			.notNull()
+			.references(() => shares.id, { onDelete: 'cascade' }),
+		email: text('email').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [uniqueIndex('share_recipients_share_id_email_idx').on(table.shareId, table.email)]
+);
+
+export type ShareRecipientRow = typeof shareRecipients.$inferSelect;
+
 // A verified reader (FR22). ONE global row per email (the backlog uniqueness
 // decision): the same person verifying against several shares is one identity,
 // and the per-access audit lives in `access_records` (many per identity). The
