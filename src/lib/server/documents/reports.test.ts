@@ -32,8 +32,17 @@ const dbState = vi.hoisted(() => ({
 	inserted: [] as Record<string, unknown>[],
 	orderBys: [] as { column: string; sql: string }[],
 	updates: [] as { column: string; value: unknown; set: Record<string, unknown> }[],
-	deleteFilters: [] as { column: string; value: unknown }[]
+	deleteFilters: [] as { column: string; value: unknown }[],
+	selectProjections: [] as (string[] | undefined)[]
 }));
+
+/** The column names of a drizzle `.select({...})` projection, or undefined for a bare select. */
+function decodeSelectProjection(projection: unknown): string[] | undefined {
+	if (projection === undefined) return undefined;
+	return Object.values(projection as Record<string, unknown>).map((column) =>
+		column instanceof Column ? column.name : String(column)
+	);
+}
 
 function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	const chunks = (filter as { queryChunks: unknown[] }).queryChunks;
@@ -74,23 +83,26 @@ vi.mock('$lib/server/db/client', () => ({
 				return Promise.resolve();
 			}
 		}),
-		select: () => ({
-			from: () => ({
-				where: (filter: SQL) => {
-					const decoded = decodeEqFilter(filter);
-					return {
-						limit: () => {
-							if (decoded.column !== 'id') return Promise.resolve([]);
-							const row = dbState.rowsById.get(String(decoded.value));
-							return Promise.resolve(row ? [row] : []);
-						}
-					};
-				},
-				orderBy: (order: SQL) => {
-					dbState.orderBys.push(decodeOrderBy(order));
-					return Promise.resolve([...dbState.rowsById.values()]);
-				}
-			})
+		select: (projection?: unknown) => ({
+			from: () => {
+				dbState.selectProjections.push(decodeSelectProjection(projection));
+				return {
+					where: (filter: SQL) => {
+						const decoded = decodeEqFilter(filter);
+						return {
+							limit: () => {
+								if (decoded.column !== 'id') return Promise.resolve([]);
+								const row = dbState.rowsById.get(String(decoded.value));
+								return Promise.resolve(row ? [row] : []);
+							}
+						};
+					},
+					orderBy: (order: SQL) => {
+						dbState.orderBys.push(decodeOrderBy(order));
+						return Promise.resolve([...dbState.rowsById.values()]);
+					}
+				};
+			}
 		}),
 		update: () => ({
 			set: (set: Record<string, unknown>) => ({
@@ -190,6 +202,7 @@ beforeEach(() => {
 	dbState.orderBys = [];
 	dbState.updates = [];
 	dbState.deleteFilters = [];
+	dbState.selectProjections = [];
 });
 
 describe('createReport', () => {
@@ -352,6 +365,17 @@ describe('listReports', () => {
 		expect(dbState.orderBys).toHaveLength(1);
 		expect(dbState.orderBys[0].column).toBe('updated_at');
 		expect(dbState.orderBys[0].sql).toContain('desc');
+	});
+
+	it('projects only the summary columns, never the heavy JSONB document columns', async () => {
+		seedReport();
+
+		await listReports();
+
+		expect(dbState.selectProjections).toHaveLength(1);
+		expect(dbState.selectProjections[0]).toEqual(['id', 'title', 'status', 'updated_at']);
+		expect(dbState.selectProjections[0]).not.toContain('document');
+		expect(dbState.selectProjections[0]).not.toContain('published_document');
 	});
 });
 

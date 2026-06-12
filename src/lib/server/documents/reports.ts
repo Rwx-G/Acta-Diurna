@@ -226,9 +226,22 @@ export async function getReport(id: string): Promise<Report> {
 	return toReport(await getRow(id));
 }
 
-/** Lists all reports for the workspace, most recently updated first. */
+/**
+ * Lists all reports for the workspace, most recently updated first. Projects
+ * only the {@link ReportSummary} columns: the two JSONB document columns are
+ * large and the list view never reads them, so selecting them on every
+ * dashboard load is wasted transfer (1.5 performance audit).
+ */
 export async function listReports(): Promise<ReportSummary[]> {
-	const rows = await getDb().select().from(reports).orderBy(desc(reports.updatedAt));
+	const rows = await getDb()
+		.select({
+			id: reports.id,
+			title: reports.title,
+			status: reports.status,
+			updatedAt: reports.updatedAt
+		})
+		.from(reports)
+		.orderBy(desc(reports.updatedAt));
 	return rows.map((row) => ({
 		id: row.id,
 		title: row.title,
