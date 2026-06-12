@@ -178,10 +178,14 @@ Agents discover the published schema via MCP and author natively; built-in conne
 Readers pick their depth (summary/full/technical), presenters get a presenter view, authors get the audit log, data timestamps, themes, and retention controls.
 **FRs covered:** FR16, FR24, FR28, FR29, FR38, FR39
 
-### Epic 7: Rich Block Catalogue - Comparison & Coverage Reporting
+### Epic 7: Rich Block Catalogue
 
-New scope, post-V1 (not in the original FR list). Two generic reporting primitives - a Comparison Matrix (findings x sources with conditional formatting computed from categorical scales) and a Set-Membership / UpSet matrix (which sources cover which findings) - plus document-level categorical scales, a metadata field grid, and a legend. Driven by the real multi-source security-audit correlation report, but the primitives are generic multi-source / coverage reporting, not bespoke: they enrich the catalogue so templates reuse them. Authored as structured JSON (document / API / MCP), not flat-CSV upload.
-**Capabilities (proposed FR40-FR44):** comparison-matrix block, set-membership (UpSet) block, field-grid block, legend block, document-level categorical scales.
+New scope, post-V1 (not in the original FR list). Grows the block catalogue with generic, domain-neutral reporting primitives so templates and AI reuse them instead of bespoke HTML. Two phases:
+
+- **Phase A - Comparison & coverage (7.1-7.4, done):** a Comparison Matrix (findings x sources with conditional formatting computed from categorical scales), a Set-Membership / UpSet matrix, document-level categorical scales, a metadata field grid, and a legend. Driven by the real multi-source security-audit correlation report; authored as structured JSON (document / API / MCP).
+- **Phase B - General report bricks (7.5-7.12):** the components that recur across every operational report (status updates, diagnostics, incident write-ups, inventories) and currently force authors back to hand-written HTML - status badges and scale-driven conditional table formatting, callouts, code blocks, an icon set, card grids, structured lists, timelines, and a field-grid meta-strip. Derived from a corpus of real hand-built reports.
+
+**Capabilities (proposed FR40-FR52):** Phase A - comparison-matrix, set-membership (UpSet), field-grid, legend, categorical scales. Phase B - status badge / chip-cluster + table conditional formatting, callout / admonition, code block + inline code, curated inline-SVG icon set, card grid, structured list / steps, timeline / roadmap, field-grid meta-strip.
 
 ## Epic 1: Foundation & First Beautiful Report
 
@@ -763,7 +767,11 @@ So that different report series can carry different identities.
 **When** audited
 **Then** axe-core checks pass (NFR14); author customization below thresholds surfaces a contrast warning
 
-## Epic 7: Rich Block Catalogue - Comparison & Coverage Reporting
+## Epic 7: Rich Block Catalogue
+
+Grows the block catalogue with generic, domain-neutral primitives so templates and AI compose reports from blocks instead of bespoke HTML. **Phase A (7.1-7.4, done)** delivered comparison & coverage reporting. **Phase B (7.5-7.12)** adds the general report bricks that recur across operational reporting (status updates, diagnostics, incidents, inventories) and that authors otherwise hand-write in HTML; see "Phase B" below after the Phase A stories.
+
+### Phase A: Comparison & coverage reporting (7.1-7.4)
 
 Two generic reporting primitives that enrich the block catalogue: a Comparison Matrix (findings x sources, conditional formatting computed from categorical scales) and a Set-Membership / UpSet matrix (which sources cover which findings), plus document-level categorical scales, a metadata field grid, and a legend. The driver is the real multi-source security-audit correlation report (Synacktiv / PingCastle / PurpleKnight coverage of the same findings), but the primitives are generic multi-source / coverage reporting and stay free of any domain vocabulary. "Data in -> it builds": the author/agent enters the findings once and both matrices derive from them.
 
@@ -872,3 +880,191 @@ So that coverage by source-combination is visible at a glance, with zero extra d
 **Given** a `sourceBlockId` that does not resolve to a Comparison Matrix block in the same document, or findings that are all `none`
 **When** validated or rendered
 **Then** validation flags the dangling reference (problem-details), and an all-`none` data set renders a neutral empty state rather than crashing
+
+### Phase B: General report bricks (7.5-7.12)
+
+The Phase A primitives serve multi-source coverage reporting. Phase B adds the bricks that recur across EVERY operational report - status updates, diagnostics, incident write-ups, tool overviews, inventories - distilled from a corpus of real hand-built HTML reports. Each is generic and domain-neutral (status, callout, code, cards, list, timeline), so a template composes any of those reports from blocks instead of bespoke HTML.
+
+#### Foundational design (resolved at planning, confirm at kickoff)
+
+- **Reuse the categorical scales (7.1), do not invent a colour model.** Every categorical STATE in Phase B - a status badge, a conditionally-formatted table cell, a callout tone, a timeline milestone status - resolves its colour and label from a document-level `scale` entry, exactly as the matrix and legend do. No new per-block colour authoring; the theme palette default + contrast-warning rules from 7.1 apply unchanged.
+- **Curated inline-SVG icon set, not an icon font or library.** Icons are a small FIXED registry (keyed by a name enum, e.g. `check`, `alert`, `info`, `cross`, `arrow-right`, `clock`, `database`, `shield`, ~8-16 entries), inlined as SSR `<svg>` at render. No icon font, no external/CDN asset, no network, no new dependency (consistent with the self-hosted-fonts / no-CDN CSP posture). Icons are decorative (`aria-hidden`); the adjacent text always carries the meaning (NFR14). An unknown icon key fails validation with an actionable problem-details error.
+- **Zero hydration, no client JS.** Every Phase B block is static SSR HTML/SVG within the reader JS budget (NFR3). Specifically the code block ships NO copy-to-clipboard button (that would need hydration) - it is a selectable static `<pre>`; a copy affordance is a later, budgeted enhancement if ever wanted.
+- **Renderer purity & additivity.** All blocks are additive members of the block discriminated union (schema v1 stays valid for every existing document, no version bump), Zod-validated with FR2 actionable errors, renderer-pure (no raw HTML, escaped values only, no `$lib/server` in the render path), AAA report content on the default theme gated by axe-core, colour never the sole signal.
+- **Build order (foundations first).** 7.5 (status badge + conditional table formatting - reuses scales, highest recurrence) and 7.6 (icon set - foundation for callout + cards) land first; 7.7-7.9 consume them; 7.10-7.12 are independent or minor. A useful general report exists after 7.7.
+
+### Story 7.5: Status Badge and Conditional Table Formatting
+
+As an author or agent,
+I want a status badge that renders a categorical scale value as a pill, and a table whose columns can be formatted from a scale,
+So that status updates, roadmaps, requirements and findings tables read at a glance without hand-coloured cells.
+
+**Acceptance Criteria:**
+
+**Given** a `badge` reference to a scale entry (a scale key + an entry key), inline or as a small standalone block, and a `chip-cluster` block listing several such values
+**When** rendered
+**Then** each renders as a pill carrying the entry's colour and label from the scale (the same resolution the legend uses), the label text always present so colour is never the sole signal, and an unknown scale/entry key fails validation with an actionable problem-details error (FR2 parity)
+
+**Given** a `table` block whose column declares a `scaleRef` (a status/severity column)
+**When** rendered
+**Then** that column's cells render as scale-driven badges (colour + label computed at render, never authored per cell), while the other columns render as plain escaped text, and a cell value absent from the referenced scale is an actionable validation error naming the row and column
+
+**Given** an existing `table` with no scale-formatted column
+**When** validated and rendered
+**Then** it is unchanged - the `scaleRef` column formatting is additive and optional
+
+**Given** any of these
+**When** audited
+**Then** they are pure SSR HTML (escaped values only), pass axe-core on the default theme (NFR14), and add no client JS beyond the reader budget (NFR3)
+
+### Story 7.6: Curated Inline-SVG Icon Set
+
+As the platform,
+I want a small fixed registry of inline-SVG icons selectable by name,
+So that callouts and card grids carry meaningful glyphs without an icon font, an external asset, or any new dependency.
+
+**Acceptance Criteria:**
+
+**Given** the icon registry (a fixed name enum, ~8-16 generic icons: e.g. `check`, `alert`, `info`, `cross`, `arrow-right`, `clock`, `database`, `shield`)
+**When** a block references an icon by name
+**Then** the matching SSR `<svg>` is inlined at render (no icon font, no external/CDN fetch, no new dependency), sized and coloured by the surrounding token context
+
+**Given** an icon reference
+**When** rendered
+**Then** the `<svg>` is decorative (`aria-hidden="true"`, `focusable="false"`) and the meaning is carried by adjacent text, so the icon is never the sole signal (NFR14)
+
+**Given** an unknown icon name
+**When** validated
+**Then** an actionable problem-details error names the offending reference and (ideally) lists the valid names (FR2 parity)
+
+**Given** the icon set
+**When** the reader bundle is measured
+**Then** the inlined SVGs stay within the reader JS/asset budget (NFR3) - they are static markup, zero hydration
+
+### Story 7.7: Callout / Admonition Block
+
+As an author or agent,
+I want a tonal callout box with an optional icon, kicker, and rich body,
+So that I can elevate a verdict, a summary, a warning, or a resource list above the body flow.
+
+**Acceptance Criteria:**
+
+**Given** a `callout` block with a `tone` (e.g. `info` | `success` | `warning` | `danger` | `neutral`), an optional `icon` (7.6) and `kicker` label, and a rich-text body
+**When** rendered
+**Then** it renders as a tinted, left-accent-bordered box whose colour derives from the tone (via the theme/scale, not raw hex), with the optional icon + uppercase kicker header and the escaped rich-text body
+
+**Given** the tone
+**When** rendered
+**Then** tone is conveyed by more than colour (the kicker label and/or icon), so the callout meaning survives without colour (NFR14), holding AAA report content on the default theme
+
+**Given** an invalid tone or an unknown icon key
+**When** validated
+**Then** an actionable problem-details error names the offending field (FR2 parity)
+
+**Given** the block
+**When** audited
+**Then** it is SSR, Zod-validated, renderer-pure (escaped body, no raw HTML), within the reader budget
+
+### Story 7.8: Code Block and Inline Code
+
+As an author or agent,
+I want a monospace code block and an inline-code mark,
+So that commands, snippets, and literal identifiers render faithfully in technical reports.
+
+**Acceptance Criteria:**
+
+**Given** a `code` block with a `code` string and an optional `language` label and optional per-line annotations
+**When** rendered
+**Then** it renders as a static, selectable `<pre>` monospace block (escaped content, preserved whitespace/newlines), with the optional language label shown and any annotations rendered as adjacent escaped text - and NO copy-to-clipboard button (zero hydration; the reader budget holds)
+
+**Given** prose containing an inline-code mark
+**When** rendered
+**Then** the marked run renders as a monospace chip (escaped), extending the text block's inline-formatting vocabulary, with no new block needed for inline code
+
+**Given** code content containing HTML-like or script-like text
+**When** rendered
+**Then** it is fully escaped and inert (no raw HTML, no execution) - the renderer-purity guarantee holds for untrusted code content
+
+**Given** the block and the mark
+**When** audited
+**Then** they are SSR, Zod-validated, pass axe-core on the default theme, and add no client JS
+
+### Story 7.9: Card Grid
+
+As an author or agent,
+I want a responsive grid of icon + title + description cards,
+So that I can present a set of takeaways, features, or highlights (the "vision / benefits" summary) without a table or prose.
+
+**Acceptance Criteria:**
+
+**Given** a `card-grid` block with `columns` (1-N, capped) and `items` (each: optional `icon` from 7.6, `title`, short `description`)
+**When** rendered
+**Then** it renders as a responsive N-up grid of cards, each an optional icon + bold title + escaped one-line description, collapsing to one column at the reader mobile breakpoint
+
+**Given** an item with no icon
+**When** rendered
+**Then** the card renders title + description only (the icon is optional), and an unknown icon key is an actionable validation error (FR2 parity)
+
+**Given** the block
+**When** audited
+**Then** it is SSR, Zod-validated, renderer-pure, AAA on the default theme, within the reader budget, icon decorative with the title/description carrying meaning (NFR14)
+
+### Story 7.10: Structured List and Steps Block
+
+As an author or agent,
+I want an ordered or unordered structured list, including a numbered-steps / procedure variant,
+So that remediation procedures and checklists render as first-class blocks, not ad-hoc prose.
+
+**Acceptance Criteria:**
+
+**Given** a `list` block with an `ordered` flag and `items` (each: a lead `term`/`title` and an optional rich-text `description`)
+**When** rendered
+**Then** it renders as an `<ol>` (numbered, for procedures/steps) or `<ul>` (unordered) with the bold lead per item and the escaped description, semantically correct for screen readers
+
+**Given** an ordered steps list
+**When** rendered
+**Then** the step numbering is the native list ordinal (no hand-authored numbers), so reordering items renumbers automatically
+
+**Given** the block
+**When** audited
+**Then** it is SSR, Zod-validated, renderer-pure, passes axe-core, within the reader budget
+
+### Story 7.11: Timeline / Roadmap Block
+
+As an author or agent,
+I want a milestone timeline with per-milestone date and status,
+So that an action plan or roadmap reads as a sequence rather than a status table.
+
+**Acceptance Criteria:**
+
+**Given** a `timeline` block with ordered `milestones` (each: a `label`, optional `date`/phase sub-label, optional rich-text `detail`, and a `status` referencing a scale entry)
+**When** rendered
+**Then** it renders as an ordered SSR timeline (a connector with one node per milestone) where each node shows the label, the optional date sub-label, the detail, and a status badge (colour + label from the referenced scale - reusing 7.5)
+
+**Given** a milestone `status` value absent from the referenced scale
+**When** validated
+**Then** an actionable problem-details error names the offending milestone and value (FR2 parity)
+
+**Given** the block
+**When** audited
+**Then** it is SSR (HTML or SSR SVG connector, zero hydration), Zod-validated, AAA on the default theme, colour never the sole signal (the status label is always present), within the reader budget
+
+### Story 7.12: Field-Grid Meta-Strip Variant
+
+As an author,
+I want a horizontal centred meta-strip layout for the field grid,
+So that a report header can show Author / Date / Scope / Status as a single divided row under the title.
+
+**Acceptance Criteria:**
+
+**Given** an existing `field-grid` block with a `layout` of `strip` (vs the default grid)
+**When** rendered
+**Then** the same `{ label, value }` items render as a horizontal, centred row of label-over-value cells separated by dividers, collapsing gracefully at the reader mobile breakpoint
+
+**Given** a `field-grid` with no `layout` (or `layout: grid`)
+**When** validated and rendered
+**Then** it renders exactly as today - the `layout` field is additive and optional, every existing field-grid unchanged
+
+**Given** the variant
+**When** audited
+**Then** it is SSR, Zod-validated, renderer-pure, AAA on the default theme, within the reader budget
