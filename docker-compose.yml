@@ -19,7 +19,8 @@ services:
       # the app's actionable 413 would be unreachable. Keep this aligned with
       # MAX_UPLOAD_BYTES (a hair above) so the app-level cap is the one that fires.
       BODY_SIZE_LIMIT: ${BODY_SIZE_LIMIT:-52428800}
-      # Reader-realm session lifetime in days (story 3.3); absent -> 30-day default.
+      # Reader-realm session lifetime in days (story 3.3), optional; absent -> no
+      # reader-session expiry (the share governs access). Set to force aging out.
       READER_SESSION_TTL: ${READER_SESSION_TTL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
