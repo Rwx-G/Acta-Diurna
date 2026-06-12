@@ -122,6 +122,9 @@ export type { IconName } from './icons.ts';
 export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 
+export { BINDABLE_BLOCK_TYPES, isBindable } from './blocks/bindable.ts';
+export type { BindableBlock } from './blocks/bindable.ts';
+
 export {
 	categoricalToken,
 	CATEGORICAL_PALETTE_SIZE,

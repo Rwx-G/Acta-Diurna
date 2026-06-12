@@ -15,7 +15,8 @@
  * Both target DRAFTS: `updateReportDocument` refuses a published report (409),
  * so a refill on a published report is a clean conflict, never a silent skip.
  */
-import type { Binding, Block, DocumentV1 } from '$lib/schema';
+import type { Binding, DocumentV1 } from '$lib/schema';
+import { isBindable } from '$lib/schema';
 import { getReport, updateReportDocument, type Report } from '$lib/server/documents/reports';
 import type { DataSetField } from '$lib/server/db/schema';
 import { AppError } from '$lib/server/problem';
@@ -56,10 +57,6 @@ function recoverSlotMapping(binding: Binding): SlotMapping {
 /** The bound field names a block needs present in the fresh data to rebind. */
 function boundFieldNames(binding: Binding): string[] {
 	return binding.fields.filter((field) => field.slot !== undefined).map((field) => field.name);
-}
-
-function isBindable(block: Block): block is Extract<Block, { type: 'table' | 'chart' | 'kpi' }> {
-	return block.type === 'table' || block.type === 'chart' || block.type === 'kpi';
 }
 
 /**

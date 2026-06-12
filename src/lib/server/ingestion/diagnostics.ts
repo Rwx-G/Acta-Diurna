@@ -19,9 +19,8 @@
  * in `distance.ts`.
  */
 import type { Block, DocumentV1, Section } from '$lib/schema';
+import { isBindable } from '$lib/schema';
 import { closestField } from './distance.ts';
-
-const BINDABLE_TYPES = new Set(['table', 'chart', 'kpi']);
 
 /** A block's binding state against a fresh data set (the chip colours). */
 export type BindingState = 'bound' | 'drifted' | 'unresolved';
@@ -55,10 +54,6 @@ export interface BindingSummary {
 	unresolved: number;
 	/** True when every bound block is green (the "all green" header state). */
 	allGreen: boolean;
-}
-
-function isBindable(block: Block): block is Extract<Block, { type: 'table' | 'chart' | 'kpi' }> {
-	return BINDABLE_TYPES.has(block.type);
 }
 
 function blockLabel(sectionTitle: string, blockType: string): string {

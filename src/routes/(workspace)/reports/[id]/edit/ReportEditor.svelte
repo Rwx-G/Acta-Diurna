@@ -5,6 +5,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { formatUtcTime } from '$lib/format';
 	import type { DocumentV1 } from '$lib/schema';
+	import { isBindable } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
 	import BlockBinder from './BlockBinder.svelte';
@@ -43,16 +44,13 @@
 
 	// Data-bindable blocks in the live document (table/chart/kpi), labelled for
 	// the binder's block picker. Recomputed as the author adds/removes blocks.
-	const BINDABLE = new Set(['table', 'chart', 'kpi']);
 	const bindableBlocks = $derived(
 		doc.sections.flatMap((section) =>
-			section.blocks
-				.filter((block) => BINDABLE.has(block.type))
-				.map((block) => ({
-					id: block.id,
-					type: block.type as 'table' | 'chart' | 'kpi',
-					label: `${section.title} - ${block.type}`
-				}))
+			section.blocks.filter(isBindable).map((block) => ({
+				id: block.id,
+				type: block.type,
+				label: `${section.title} - ${block.type}`
+			}))
 		)
 	);
 
