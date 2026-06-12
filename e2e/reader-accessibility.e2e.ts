@@ -1,9 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { FIXTURE_REPORT_ID } from './fixtures.ts';
+import { FIXTURE_REPORT_ID, MATRIX_FIXTURE_REPORT_ID } from './fixtures.ts';
 
 // Authenticated via the `setup` project storage state (config dependency).
 const VIEW_URL = `/reports/${FIXTURE_REPORT_ID}/view`;
+const MATRIX_VIEW_URL = `/reports/${MATRIX_FIXTURE_REPORT_ID}/view`;
 
 /**
  * The CI-gating a11y check (NFR14/15, architecture validation decision). Runs
@@ -30,6 +31,26 @@ test('the table of contents overlay has no axe-core violations', async ({ page }
 	await expect(page.getByRole('dialog', { name: 'Table of contents' })).toBeVisible();
 
 	const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+
+	expect(results.violations).toEqual([]);
+});
+
+/**
+ * The comparison-matrix block (story 7.2) on the default theme: a pure SSR HTML
+ * table whose cell formatting is computed from the document scales. axe gates
+ * its table semantics (th/scope, caption), names and roles, and that colour is
+ * never the sole signal (visually-hidden state labels). NFR14.
+ */
+test('the rendered comparison matrix has no axe-core violations (WCAG 2 A/AA)', async ({
+	page
+}) => {
+	await page.goto(MATRIX_VIEW_URL);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+	await expect(page.getByRole('table')).toBeVisible();
+
+	const results = await new AxeBuilder({ page })
+		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+		.analyze();
 
 	expect(results.violations).toEqual([]);
 });

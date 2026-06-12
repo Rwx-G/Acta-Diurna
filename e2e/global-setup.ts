@@ -12,7 +12,9 @@ import {
 	DB_URL_FILE,
 	E2E_AUTHOR_PASSWORD,
 	FIXTURE_DOCUMENT,
-	FIXTURE_REPORT_ID
+	FIXTURE_REPORT_ID,
+	MATRIX_FIXTURE_DOCUMENT,
+	MATRIX_FIXTURE_REPORT_ID
 } from './fixtures.ts';
 
 const PORT = 4173;
@@ -24,24 +26,29 @@ async function seedFixture(databaseUrl: string): Promise<void> {
 		const db = drizzle(pool);
 		await migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'drizzle') });
 
-		const result = validateDocument(FIXTURE_DOCUMENT);
-		if (!result.ok) {
-			throw new Error(`e2e fixture is invalid: ${JSON.stringify(result.errors.slice(0, 3))}`);
-		}
 		const now = new Date();
-		await db.insert(reports).values({
-			id: FIXTURE_REPORT_ID,
-			title: result.document.title,
-			status: 'published',
-			schemaVersion: result.document.version,
-			document: result.document,
-			// Published fixture carries its publish snapshot (story 1.7): readers are
-			// served `published_document`, frozen at publish time.
-			publishedDocument: result.document,
-			publishedAt: now,
-			createdAt: now,
-			updatedAt: now
-		});
+		for (const { id, document } of [
+			{ id: FIXTURE_REPORT_ID, document: FIXTURE_DOCUMENT },
+			{ id: MATRIX_FIXTURE_REPORT_ID, document: MATRIX_FIXTURE_DOCUMENT }
+		]) {
+			const result = validateDocument(document);
+			if (!result.ok) {
+				throw new Error(`e2e fixture is invalid: ${JSON.stringify(result.errors.slice(0, 3))}`);
+			}
+			await db.insert(reports).values({
+				id,
+				title: result.document.title,
+				status: 'published',
+				schemaVersion: result.document.version,
+				document: result.document,
+				// Published fixture carries its publish snapshot (story 1.7): readers are
+				// served `published_document`, frozen at publish time.
+				publishedDocument: result.document,
+				publishedAt: now,
+				createdAt: now,
+				updatedAt: now
+			});
+		}
 	} finally {
 		await pool.end();
 	}
