@@ -9,6 +9,9 @@ _junk/
 # Node
 node_modules/
 
+# Runtime uploads volume (data sets stored on disk, referenced by data_sets rows)
+data/uploads/
+
 # Build outputs
 build/
 .svelte-kit/
