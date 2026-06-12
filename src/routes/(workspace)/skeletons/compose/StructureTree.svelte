@@ -49,6 +49,8 @@
 				const count = block.entries.length;
 				return `Chip cluster - ${count} chip${count === 1 ? '' : 's'}`;
 			}
+			case 'callout':
+				return `Callout - ${block.tone}`;
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;

@@ -44,7 +44,8 @@
 		'field-grid',
 		'legend',
 		'set-membership',
-		'chip-cluster'
+		'chip-cluster',
+		'callout'
 	];
 </script>
 

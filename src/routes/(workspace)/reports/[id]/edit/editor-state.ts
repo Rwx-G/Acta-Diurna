@@ -98,6 +98,11 @@ export function newBlock(type: BlockType): Block {
 			// block schema flags the empties; the author picks the scale and entries
 			// before saving.
 			return { type, id, scaleRef: '', entries: [''] };
+		case 'callout':
+			// Starts schema-valid: a default tone and one empty body paragraph (like
+			// the text block). The tone is a closed enum, so the starter picks `info`;
+			// no scale or icon is needed to render.
+			return { type, id, tone: 'info', body: [[{ text: '' }]] };
 	}
 }
 

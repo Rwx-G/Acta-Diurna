@@ -85,6 +85,15 @@ describe('newBlock', () => {
 		expect(result.ok).toBe(false);
 	});
 
+	it('creates a schema-valid callout starter (a default tone and an empty body)', () => {
+		const block = newBlock('callout');
+		expect(block.type).toBe('callout');
+		if (block.type === 'callout') expect(block.tone).toBe('info');
+		// Like the text block, the callout starts valid: a tone and one empty body
+		// paragraph, no scale or icon needed.
+		expect(validateDocument(documentWith([block])).ok).toBe(true);
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

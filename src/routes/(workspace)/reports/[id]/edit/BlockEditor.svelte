@@ -2,6 +2,7 @@
 	import type { Block, Scales } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
+	import CalloutBlockEditor from './CalloutBlockEditor.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
 	import ChipClusterBlockEditor from './ChipClusterBlockEditor.svelte';
 	import ComparisonMatrixBlockEditor from './ComparisonMatrixBlockEditor.svelte';
@@ -91,6 +92,8 @@
 		<SetMembershipBlockEditor bind:block {matrixBlocks} {onEdit} />
 	{:else if block.type === 'chip-cluster'}
 		<ChipClusterBlockEditor bind:block {scales} {onEdit} />
+	{:else if block.type === 'callout'}
+		<CalloutBlockEditor bind:block {onEdit} />
 	{/if}
 </article>
 
