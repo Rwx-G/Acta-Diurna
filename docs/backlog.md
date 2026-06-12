@@ -47,7 +47,7 @@ API-design points with no explicit FR/spec answer; resolved with REST/API best-p
 - **App-level document size cap before JSON.parse** (1.5 security audit, Low): currently relies on adapter-node BODY_SIZE_LIMIT (512KB default, env-overridable). Add explicit raw.length check -> 413 in the save action, pin BODY_SIZE_LIMIT in deploy env. Pairs with the 1.2 body-size backlog item.
 - **Global JSON body-size cap on the HTTP layer** - the schema now carries DoS bounds, but `JSON.parse` cost is pre-validation; add a request body limit in hooks before the API stories (target: story 1.4 hooks or 4.2). (1.2 security audit)
 - **Renderer string-sink checklist for story 1.6** - every schema string field (cells, labels, captions, axis labels, kpi values) must reach the DOM via escaped bindings only; `rel="noopener noreferrer"` on external links; consider rejecting cleartext `http://` links later. (1.2 security audit)
-- **CI first-run verification** - the GitHub Actions pipeline is structurally validated but unproven until the next push to main. (1.1 gate)
+- **CI first-run verification** - the GitHub Actions pipeline is structurally validated but unproven until the next push to main. (1.1 gate) -> RESOLVED (2026-06-12): the pipeline runs and passes on every push to main (Epic 3 and Epic 4 version-bump pushes both `completed success` in ~1m30).
 - **.npmrc content unverifiable by agents** (secrets-fence blocks reads by design) - product owner should eyeball it once; expected content is scaffold defaults only. (1.1 security audit)
 
 ## Future Improvements
