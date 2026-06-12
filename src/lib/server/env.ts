@@ -1,5 +1,21 @@
 import { z } from 'zod';
 
+// Loopback hosts are browser "secure contexts": a browser sends `Secure`
+// cookies to http://localhost / 127.0.0.0/8 / [::1] even without TLS, so an
+// http:// ORIGIN on loopback does NOT degrade cookie security. This exempts
+// local runs and the e2e harness (which serves the production build on
+// http://localhost) from the production https-ORIGIN requirement below.
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+function isLoopbackOrigin(origin: string): boolean {
+	try {
+		const { hostname } = new URL(origin);
+		return LOOPBACK_HOSTS.has(hostname) || hostname.startsWith('127.');
+	} catch {
+		return false;
+	}
+}
+
 const envSchema = z
 	.object({
 		NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -108,8 +124,14 @@ const envSchema = z
 		// (cookies.ts isSecureOrigin), so an http:// ORIGIN in production ships
 		// author and reader session cookies WITHOUT Secure - sendable over
 		// plaintext. Refuse to boot rather than silently degrade. Behind a
-		// TLS-terminating proxy, ORIGIN is still the public https:// URL.
-		if (env.NODE_ENV === 'production' && env.ORIGIN.startsWith('http://')) {
+		// TLS-terminating proxy, ORIGIN is still the public https:// URL. A
+		// loopback ORIGIN is exempt (see isLoopbackOrigin): a browser secure
+		// context sends Secure cookies over http to localhost anyway.
+		if (
+			env.NODE_ENV === 'production' &&
+			env.ORIGIN.startsWith('http://') &&
+			!isLoopbackOrigin(env.ORIGIN)
+		) {
 			ctx.addIssue({
 				code: 'custom',
 				path: ['ORIGIN'],

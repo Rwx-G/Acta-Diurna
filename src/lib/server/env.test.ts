@@ -254,6 +254,12 @@ describe('parseEnv', () => {
 		).toThrowError(/ORIGIN: must be an https:\/\/ URL when NODE_ENV=production/);
 	});
 
+	it('accepts an http loopback ORIGIN in production (browser secure context)', () => {
+		for (const origin of ['http://localhost:4173', 'http://127.0.0.1:3000', 'http://[::1]:3000']) {
+			expect(parseEnv({ ...validEnv, NODE_ENV: 'production', ORIGIN: origin }).ORIGIN).toBe(origin);
+		}
+	});
+
 	it('accepts an https ORIGIN in production', () => {
 		const env = parseEnv({
 			...validEnv,
