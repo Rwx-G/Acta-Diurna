@@ -2,9 +2,13 @@ import type { Cookies } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	AUTHOR_COOKIE_NAME,
+	READER_COOKIE_NAME,
 	deleteAuthorCookie,
+	deleteReaderCookie,
 	readAuthorCookie,
-	setAuthorCookie
+	readReaderCookie,
+	setAuthorCookie,
+	setReaderCookie
 } from './cookies';
 
 const env = vi.hoisted(() => ({
@@ -109,6 +113,66 @@ describe('author cookie', () => {
 		deleteAuthorCookie(cookies);
 
 		expect(cookies.jar.has(AUTHOR_COOKIE_NAME)).toBe(false);
+		expect(cookies.lastDeleteOptions).toMatchObject({ path: '/' });
+	});
+});
+
+describe('reader cookie', () => {
+	it('roundtrips under the reader cookie name', () => {
+		const cookies = fakeCookies();
+		setReaderCookie(cookies, 'reader-token', expiresAt);
+
+		expect(readReaderCookie(cookies)).toBe('reader-token');
+		expect(cookies.jar.get(READER_COOKIE_NAME)).not.toBe('reader-token'); // signed
+	});
+
+	it('sets HttpOnly, SameSite=Lax, Path=/ and the configurable expiry', () => {
+		const cookies = fakeCookies();
+		const readerExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+		setReaderCookie(cookies, 'token', readerExpiry);
+
+		expect(cookies.lastSetOptions).toMatchObject({
+			httpOnly: true,
+			sameSite: 'lax',
+			path: '/',
+			expires: readerExpiry
+		});
+	});
+
+	it('strict realm separation: a reader cookie is NOT read as an author session', () => {
+		// The realms share the signing secret and format but use distinct cookie
+		// NAMES, so a valid reader cookie presented to the author reader returns
+		// null - the core NFR12 separation property.
+		const cookies = fakeCookies();
+		setReaderCookie(cookies, 'reader-token', expiresAt);
+
+		expect(readAuthorCookie(cookies)).toBeNull();
+		expect(readReaderCookie(cookies)).toBe('reader-token');
+	});
+
+	it('strict realm separation: an author cookie is NOT read as a reader session', () => {
+		const cookies = fakeCookies();
+		setAuthorCookie(cookies, 'author-token', expiresAt);
+
+		expect(readReaderCookie(cookies)).toBeNull();
+		expect(readAuthorCookie(cookies)).toBe('author-token');
+	});
+
+	it('rejects a tampered reader token (signature mismatch)', () => {
+		const cookies = fakeCookies();
+		setReaderCookie(cookies, 'token', expiresAt);
+		const signed = cookies.jar.get(READER_COOKIE_NAME) as string;
+		cookies.jar.set(READER_COOKIE_NAME, `evil${signed.slice(4)}`);
+
+		expect(readReaderCookie(cookies)).toBeNull();
+	});
+
+	it('deletes on Path=/', () => {
+		const cookies = fakeCookies();
+		setReaderCookie(cookies, 'token', expiresAt);
+		deleteReaderCookie(cookies);
+
+		expect(cookies.jar.has(READER_COOKIE_NAME)).toBe(false);
 		expect(cookies.lastDeleteOptions).toMatchObject({ path: '/' });
 	});
 });

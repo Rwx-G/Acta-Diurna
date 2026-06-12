@@ -135,3 +135,37 @@ export const loginFailureLimiter: TokenBucketLimiter = new TokenBucketLimiter(
 	LOGIN_FAILURE_CAPACITY,
 	LOGIN_FAILURE_REFILL_TOKENS_PER_SECOND
 );
+
+/** Reader verification: a small per-IP burst before the limiter engages. */
+const VERIFICATION_BUCKET_CAPACITY = 5;
+/** One verification attempt earned back every 20 seconds once drained. */
+const VERIFICATION_REFILL_TOKENS_PER_SECOND = 1 / 20;
+/** Total verification attempts tolerated across ALL callers before the global brake engages. */
+const VERIFICATION_FAILURE_CAPACITY = 60;
+/** One global verification allowance earned back every 5 seconds once drained. */
+const VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND = 1 / 5;
+
+/** Single global key for the verification brake (mirrors GLOBAL_LOGIN_FAILURE_KEY). */
+export const GLOBAL_VERIFICATION_KEY = 'global:/r/verify';
+
+/**
+ * Per-IP limiter for the reader verification endpoints (email submission + the
+ * magic-link landing). Keyed by ip + share so probing one share does not starve
+ * another reader's verification on a different share. Consumed by the reader
+ * route handlers.
+ */
+export const verificationRateLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	VERIFICATION_BUCKET_CAPACITY,
+	VERIFICATION_REFILL_TOKENS_PER_SECOND
+);
+
+/**
+ * IP-independent second brake for verification: bounds total verification
+ * traffic when client addresses collapse behind a shared proxy (the
+ * reverse-proxy contract: per-IP limiting degrades there, so this global brake
+ * is the second line). Consumed on every verification attempt.
+ */
+export const verificationFailureLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	VERIFICATION_FAILURE_CAPACITY,
+	VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND
+);
