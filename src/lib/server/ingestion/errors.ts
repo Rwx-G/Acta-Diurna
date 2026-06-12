@@ -68,16 +68,17 @@ export function unsupportedFormat(detail: string): AppError {
 }
 
 /**
- * The honest Excel response (NOT a placeholder): Excel ingestion is named in
- * PRD FR12, but the parser package is a new runtime dependency parked for
- * product-owner approval (backlog "Excel parser dependency choice"). Until then
- * an `.xlsx`/`.xls` upload returns this real 415, never a fake parse.
+ * The honest Excel response (NOT a placeholder): Excel ingestion was named in
+ * PRD FR12 but the product owner DECLINED it (2026-06-12, backlog "Excel parser
+ * dependency choice") - a new parser dependency with a notable CVE surface for a
+ * format CSV/JSON already cover. An `.xlsx`/`.xls` upload returns this real 415
+ * pointing at the supported formats, never a fake parse.
  */
 export function excelNotEnabled(): AppError {
 	return new AppError({
 		status: 415,
-		title: 'Excel ingestion not enabled',
+		title: 'Excel files not supported',
 		type: '/problems/excel-not-enabled',
-		detail: 'Excel ingestion is not yet enabled on this instance.'
+		detail: 'Excel is not supported. Upload a CSV or JSON file instead.'
 	});
 }

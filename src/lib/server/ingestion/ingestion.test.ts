@@ -183,8 +183,8 @@ describe('ingestFile - Excel is parked (honest error)', () => {
 			415
 		);
 		expect(error.type).toBe('/problems/excel-not-enabled');
-		expect(error.detail).toBe('Excel ingestion is not yet enabled on this instance.');
-		// Nothing was stored: the parser package is parked, so no row is written.
+		expect(error.detail).toBe('Excel is not supported. Upload a CSV or JSON file instead.');
+		// Nothing was stored: Excel is declined, so no row is written.
 		expect(dbState.dataSets.size).toBe(0);
 	});
 });

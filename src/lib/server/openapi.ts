@@ -479,7 +479,9 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 						'404': problemResponse('The target report was not found.'),
 						'409': problemResponse('The target report is published (binding targets a draft).'),
 						'413': problemResponse('The body exceeds the 50 MB upload cap.'),
-						'415': problemResponse('Unsupported Content-Type, or Excel ingestion is not enabled.'),
+						'415': problemResponse(
+							'Unsupported Content-Type (Excel is not supported; use CSV or JSON).'
+						),
 						'422': problemResponse('The file could not be parsed (encoding/format).')
 					}
 				}
