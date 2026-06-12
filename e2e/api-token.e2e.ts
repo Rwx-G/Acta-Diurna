@@ -9,20 +9,6 @@ import { E2E_BASE_URL } from './fixtures.ts';
 // The settings POST goes through Playwright's request context with an explicit
 // Origin header (the same HTTP-only CSRF concession the other workspace specs
 // use over plain HTTP; production is HTTPS).
-async function postForm(
-	page: import('@playwright/test').Page,
-	url: string,
-	form: Record<string, string>
-): Promise<{ type?: string; location?: string; data?: unknown }> {
-	const response = await page.request.post(url, {
-		headers: { origin: E2E_BASE_URL, 'content-type': 'application/x-www-form-urlencoded' },
-		form,
-		maxRedirects: 0,
-		failOnStatusCode: false
-	});
-	return (await response.json()) as { type?: string; location?: string; data?: unknown };
-}
-
 test('create a PAT, authenticate the API with it, then revoke', async ({ page }, testInfo) => {
 	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
 
