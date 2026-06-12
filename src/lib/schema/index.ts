@@ -43,6 +43,28 @@ export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 
 export {
+	categoricalToken,
+	CATEGORICAL_PALETTE_SIZE,
+	hexColorSchema,
+	MAX_SCALE_ENTRIES,
+	MAX_SCALES,
+	resolveEntryColor,
+	resolveEntryRef,
+	resolveScaleRef,
+	scaleEntrySchema,
+	scaleSchema,
+	scalesSchema,
+	validateScaleReferences
+} from './scales.ts';
+export type {
+	ResolvedEntryColor,
+	Scale,
+	ScaleEntry,
+	ScaleReferenceIssue,
+	Scales
+} from './scales.ts';
+
+export {
 	documentSchemaV1,
 	getSchema,
 	isSupportedVersion,

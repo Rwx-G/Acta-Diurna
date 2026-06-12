@@ -155,6 +155,27 @@ describe('document schema v1 - valid documents', () => {
 		expect(result.ok).toBe(false);
 	});
 
+	it('validates a v1 document with no scales unchanged (Epic 7 additivity)', () => {
+		// `scales` is additive and optional: a document written before Epic 7 must
+		// validate and parse byte-identically, with no `scales` key introduced.
+		const result = validateDocument(minimalDocument);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.document).toEqual(minimalDocument);
+			expect('scales' in result.document).toBe(false);
+		}
+	});
+
+	it('accepts and preserves document-level scales (Epic 7)', () => {
+		const result = validateDocument(fullDocument);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.document.scales?.[0].key).toBe('severity');
+			expect(result.document.scales?.[0].entries[0].color).toBe('#7a2e3a');
+			expect(result.document.scales?.[1].kind).toBe('nominal');
+		}
+	});
+
 	it('applies table option defaults on parse', () => {
 		const result = validateDocument({
 			version: 1,

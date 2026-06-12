@@ -3,12 +3,37 @@ import type { DocumentV1Input } from '../versions/v1.ts';
 /**
  * Exercises every schema v1 feature: the five block types, audience tags on
  * sections and blocks, an annex section, static data, data bindings (with and
- * without `dataSetId`) and a block carrying both static data and a binding.
+ * without `dataSetId`), a block carrying both static data and a binding, and
+ * document-level categorical scales (Epic 7): a severity scale (ordinal, mixed
+ * explicit/default colours) and a sources scale (nominal, all default colours).
  */
 export const fullDocument: DocumentV1Input = {
 	version: 1,
 	title: 'Quarterly Security Report',
 	theme: 'aurora',
+	scales: [
+		{
+			key: 'severity',
+			label: 'Severity',
+			kind: 'ordinal',
+			entries: [
+				{ key: 'critical', label: 'Critical', color: '#7a2e3a', sublabel: 'Act immediately' },
+				{ key: 'high', label: 'High', color: '#8a5a13' },
+				{ key: 'medium', label: 'Medium' },
+				{ key: 'low', label: 'Low' }
+			]
+		},
+		{
+			key: 'sources',
+			label: 'Detection sources',
+			kind: 'nominal',
+			entries: [
+				{ key: 'siem', label: 'SIEM' },
+				{ key: 'edr', label: 'EDR' },
+				{ key: 'analyst', label: 'Analyst review' }
+			]
+		}
+	],
 	sections: [
 		{
 			id: 'executive-summary',

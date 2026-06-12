@@ -2,6 +2,53 @@
 	"version": 1,
 	"title": "Quarterly Security Report",
 	"theme": "aurora",
+	"scales": [
+		{
+			"key": "severity",
+			"label": "Severity",
+			"kind": "ordinal",
+			"entries": [
+				{
+					"key": "critical",
+					"label": "Critical",
+					"color": "#7a2e3a",
+					"sublabel": "Act immediately"
+				},
+				{
+					"key": "high",
+					"label": "High",
+					"color": "#8a5a13"
+				},
+				{
+					"key": "medium",
+					"label": "Medium"
+				},
+				{
+					"key": "low",
+					"label": "Low"
+				}
+			]
+		},
+		{
+			"key": "sources",
+			"label": "Detection sources",
+			"kind": "nominal",
+			"entries": [
+				{
+					"key": "siem",
+					"label": "SIEM"
+				},
+				{
+					"key": "edr",
+					"label": "EDR"
+				},
+				{
+					"key": "analyst",
+					"label": "Analyst review"
+				}
+			]
+		}
+	],
 	"sections": [
 		{
 			"id": "executive-summary",
