@@ -126,7 +126,13 @@ async function requestVerificationAction(event: RequestEvent) {
 		serveNeutralClosed(event.setHeaders);
 	}
 
-	if (!withinVerificationLimit(getClientAddress(), share.id)) {
+	// The per-IP bucket is consumed first, on EVERY submission, so a single IP is
+	// always bounded. The per-share and global brakes are consumed only once a
+	// GENUINE attempt is established (a plausibly-shaped email below): a malformed
+	// or absent email is a form-shape error, not a real consume attempt, so it must
+	// not drain the shared brakes and let one party lock out verification for the
+	// whole share (or, via the global brake, the whole instance).
+	if (!verificationRateLimiter.consume(`${getClientAddress()}:${share.id}`).allowed) {
 		// A throttled reader gets a generic retry signal, not an enumeration hint.
 		return fail(429, { state: 'throttled' as const });
 	}
@@ -137,7 +143,13 @@ async function requestVerificationAction(event: RequestEvent) {
 	if (!isPlausibleEmail(email)) {
 		// A shape error is a form-validation problem, not an enumeration signal:
 		// it tells the reader to fix their own typo, not whether they are allowed.
+		// It is NOT a genuine attempt, so the shared brakes are left untouched.
 		return fail(400, { state: 'invalid' as const });
+	}
+
+	if (!withinSharedVerificationLimit(share.id)) {
+		// A throttled reader gets a generic retry signal, not an enumeration hint.
+		return fail(429, { state: 'throttled' as const });
 	}
 
 	const verifyUrlFor = (rawToken: string): string =>
@@ -161,15 +173,17 @@ async function requestVerificationAction(event: RequestEvent) {
 }
 
 /**
- * Per-(IP, share) limit, then the IP-independent per-share brake (keyed by share
- * alone), then the IP-independent global brake (the reverse-proxy second line).
- * All three are consumed on every attempt; any tripping throttles the reader.
- * The per-share brake stops one share's flood from draining the global bucket
- * and starving verification on every other share.
+ * The IP-independent per-share brake (keyed by share alone), then the
+ * IP-independent global brake (the reverse-proxy second line). Consumed ONLY once
+ * a genuine attempt is established (a plausibly-shaped email): the per-IP bucket
+ * is charged separately, up front, on every submission. Charging these shared
+ * brakes only on a real attempt stops a party who spams malformed/empty
+ * submissions from draining them and locking out verification for the whole share
+ * (per-share brake) or the whole instance (global brake). The per-share brake
+ * short-circuits before the global brake, so one share's flood never drains the
+ * instance-wide bucket and starves verification on every other share.
  */
-function withinVerificationLimit(clientAddress: string, shareId: string): boolean {
-	const perIp = verificationRateLimiter.consume(`${clientAddress}:${shareId}`);
-	if (!perIp.allowed) return false;
+function withinSharedVerificationLimit(shareId: string): boolean {
 	const perShare = verificationShareLimiter.consume(shareId);
 	if (!perShare.allowed) return false;
 	const global = verificationFailureLimiter.consume(GLOBAL_VERIFICATION_KEY);

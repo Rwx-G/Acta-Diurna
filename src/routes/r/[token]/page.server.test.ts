@@ -236,6 +236,33 @@ describe('request-verification action (enumeration-safety)', () => {
 		expect(mocks.requestVerification).not.toHaveBeenCalled();
 	});
 
+	it('a malformed email does NOT drain the per-share/global brakes (only the per-IP bucket)', async () => {
+		// A malformed/empty submission is a form-shape error, not a genuine consume
+		// attempt. The per-IP bucket charges (a single IP stays bounded), but the
+		// shared brakes are left untouched, so a party spamming junk submissions
+		// cannot lock out verification for the whole share or instance.
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+
+		const result = await actions['request-verification'](actionEvent({ email: 'not-an-email' }));
+
+		expect(result).toMatchObject({ status: 400, data: { state: 'invalid' } });
+		expect(mocks.verificationConsume).toHaveBeenCalledWith('203.0.113.5:share-1');
+		expect(mocks.shareConsume).not.toHaveBeenCalled();
+		expect(mocks.globalConsume).not.toHaveBeenCalled();
+	});
+
+	it('a genuine (plausible) email submission DOES charge the per-share/global brakes', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.requestVerification.mockResolvedValue(undefined);
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toEqual({ state: 'sent' });
+		expect(mocks.verificationConsume).toHaveBeenCalledWith('203.0.113.5:share-1');
+		expect(mocks.shareConsume).toHaveBeenCalledWith('share-1');
+		expect(mocks.globalConsume).toHaveBeenCalledWith('global');
+	});
+
 	it('returns "throttled" when the per-IP limiter trips', async () => {
 		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
 		mocks.verificationConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 30 });

@@ -133,4 +133,53 @@ describe('GET /r/[token]/verify', () => {
 		expect(mocks.shareConsume).toHaveBeenCalledWith('share-1');
 		expect(mocks.globalConsume).toHaveBeenCalledWith('global');
 	});
+
+	it('an empty-token landing GET does NOT drain the per-share/global brakes (only the per-IP bucket)', async () => {
+		// A party holding the public share link spams empty-token landing GETs. The
+		// per-IP bucket still charges (a single IP stays bounded), but the shared
+		// per-share and global brakes are left untouched, so the flood cannot lock
+		// out new-reader verification on this share or any other.
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+
+		// No `?t=` at all, then an explicitly empty `?t=`: both are empty attempts.
+		await expect(GET(event(''))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+		await expect(GET(event('?t='))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+
+		expect(mocks.verificationConsume).toHaveBeenCalledTimes(2);
+		expect(mocks.verificationConsume).toHaveBeenCalledWith('203.0.113.5:share-1');
+		expect(mocks.shareConsume).not.toHaveBeenCalled();
+		expect(mocks.globalConsume).not.toHaveBeenCalled();
+		// An empty token never reaches the consume: it bounces straight to expired.
+		expect(mocks.completeVerification).not.toHaveBeenCalled();
+	});
+
+	it('a real (non-empty) token attempt DOES charge the per-share/global brakes', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.completeVerification.mockResolvedValue(null);
+
+		await expect(GET(event('?t=real'))).rejects.toBeDefined();
+
+		expect(mocks.verificationConsume).toHaveBeenCalledWith('203.0.113.5:share-1');
+		expect(mocks.shareConsume).toHaveBeenCalledWith('share-1');
+		expect(mocks.globalConsume).toHaveBeenCalledWith('global');
+		expect(mocks.completeVerification).toHaveBeenCalledWith('real', 'share-1', 'report-1');
+	});
+
+	it('an empty-token landing whose per-IP bucket is drained still bounces to expired (per-IP stays bounded)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.verificationConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 30 });
+
+		await expect(GET(event(''))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+		expect(mocks.shareConsume).not.toHaveBeenCalled();
+		expect(mocks.globalConsume).not.toHaveBeenCalled();
+	});
 });

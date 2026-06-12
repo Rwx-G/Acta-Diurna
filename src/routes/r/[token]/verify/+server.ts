@@ -48,17 +48,31 @@ export const GET: RequestHandler = async ({
 		serveNeutralClosed(setHeaders);
 	}
 
+	const rawVerification = url.searchParams.get('t') ?? '';
+
 	// Same rate-limit envelope as the email submission: a flood of magic-link
-	// guesses (forged `?t=` values) engages the limiter. When either bucket
-	// denies, short-circuit BEFORE consuming the token so the throttle takes
-	// effect (the buckets are not bookkeeping-only). A throttled landing returns
-	// the IDENTICAL expired bounce as a failed consume, never a distinct 429 page,
-	// so no new enumeration oracle is introduced (NFR9).
-	if (!withinVerificationLimit(getClientAddress(), share.id)) {
+	// guesses (forged `?t=` values) engages the limiter. When a bucket denies,
+	// short-circuit BEFORE consuming the token so the throttle takes effect (the
+	// buckets are not bookkeeping-only). A throttled landing returns the IDENTICAL
+	// expired bounce as a failed consume, never a distinct 429 page, so no new
+	// enumeration oracle is introduced (NFR9).
+	//
+	// Only a NON-EMPTY `?t=` is a genuine token-consume attempt, and only such an
+	// attempt is charged against the shared per-share and global brakes. A
+	// share-link holder spamming empty-token landing GETs is bounded by the per-IP
+	// bucket ALONE, so it cannot drain the per-share/global brakes and lock out
+	// new-reader verification on that share.
+	if (!withinVerificationLimit(getClientAddress(), share.id, rawVerification !== '')) {
 		redirect(303, `/r/${params.token}?expired=1`);
 	}
 
-	const rawVerification = url.searchParams.get('t') ?? '';
+	if (rawVerification === '') {
+		// A magic-link landing with no token (the bare share-link GET) is not a
+		// consume attempt: bounce to the same expired state a failed consume returns,
+		// without touching `completeVerification` or the shared brakes.
+		redirect(303, `/r/${params.token}?expired=1`);
+	}
+
 	const result = await completeVerification(rawVerification, share.id, share.reportId);
 
 	if (!result) {
@@ -74,14 +88,21 @@ export const GET: RequestHandler = async ({
 /**
  * Per-(IP, share) limit, then the IP-independent per-share brake (keyed by share
  * alone), then the IP-independent global brake (the reverse-proxy second line),
- * mirroring the email-submission action. All three are consumed on every
- * landing; any tripping throttles the reader. The per-share brake stops one
- * share's flood from draining the global bucket and starving verification on
- * every other share.
+ * mirroring the email-submission action. The per-IP bucket is consumed on EVERY
+ * landing (so a single IP probing is always bounded); the per-share and global
+ * brakes are consumed ONLY when `tokenAttempt` is true (a non-empty `?t=`). An
+ * empty-token probe is therefore bounded per-IP but cannot drain the shared
+ * brakes - one share-link holder cannot starve new-reader verification on the
+ * share or, via the global brake, on every other share.
  */
-function withinVerificationLimit(clientAddress: string, shareId: string): boolean {
+function withinVerificationLimit(
+	clientAddress: string,
+	shareId: string,
+	tokenAttempt: boolean
+): boolean {
 	const perIp = verificationRateLimiter.consume(`${clientAddress}:${shareId}`);
 	if (!perIp.allowed) return false;
+	if (!tokenAttempt) return true;
 	const perShare = verificationShareLimiter.consume(shareId);
 	if (!perShare.allowed) return false;
 	const global = verificationFailureLimiter.consume(GLOBAL_VERIFICATION_KEY);
