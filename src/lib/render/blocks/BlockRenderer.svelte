@@ -2,6 +2,7 @@
 	import type { ComparisonMatrixBlock as ComparisonMatrixBlockType, Scales } from '$lib/schema';
 	import type { BlockView } from '../document-view.ts';
 	import CalloutBlock from './CalloutBlock.svelte';
+	import CardGridBlock from './CardGridBlock.svelte';
 	import ChartBlock from './ChartBlock.svelte';
 	import ChipClusterBlock from './ChipClusterBlock.svelte';
 	import CodeBlock from './CodeBlock.svelte';
@@ -66,6 +67,8 @@
 			{scales}
 			{theme}
 		/>
+	{:else if view.block.type === 'card-grid'}
+		<CardGridBlock block={view.block} />
 	{/if}
 </div>
 
