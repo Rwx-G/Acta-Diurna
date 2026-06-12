@@ -21,6 +21,12 @@ const envSchema = z
 				'must be an argon2id PHC hash - generate one with: pnpm auth:hash -- <password>'
 			),
 		PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+		// Max connections in the pg pool (src/lib/server/db/client.ts). Default 10
+		// suits a single author plus light reader traffic; raise it for the reader
+		// realm's concurrent load (Epic 3), keeping it under the Postgres
+		// max_connections ceiling minus headroom. Bounded so a typo cannot exhaust
+		// the database's connection slots (huge value) or starve the app (zero).
+		DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 		LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('info'),
 		UPLOADS_DIR: z.string().min(1).default('data/uploads'),
 		// Reader-realm session lifetime in DAYS (story 3.3, FR23), OPTIONAL. Unset

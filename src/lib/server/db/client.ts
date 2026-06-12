@@ -9,7 +9,8 @@ let db: NodePgDatabase<typeof schema> | undefined;
 
 export function getPool(): pg.Pool {
 	if (!pool) {
-		pool = new pg.Pool({ connectionString: serverEnv().DATABASE_URL });
+		const env = serverEnv();
+		pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: env.DB_POOL_MAX });
 		// node-postgres re-emits idle-client errors (backend restart, network
 		// drop) on the pool; without a listener they crash the process.
 		pool.on('error', (error) => {

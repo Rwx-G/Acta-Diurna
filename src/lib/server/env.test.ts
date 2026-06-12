@@ -63,6 +63,13 @@ describe('parseEnv', () => {
 		);
 	});
 
+	it('defaults DB_POOL_MAX, coerces it, and rejects an out-of-range value', () => {
+		expect(parseEnv(validEnv).DB_POOL_MAX).toBe(10);
+		expect(parseEnv({ ...validEnv, DB_POOL_MAX: '25' }).DB_POOL_MAX).toBe(25);
+		expect(() => parseEnv({ ...validEnv, DB_POOL_MAX: '0' })).toThrow(/DB_POOL_MAX/);
+		expect(() => parseEnv({ ...validEnv, DB_POOL_MAX: '500' })).toThrow(/DB_POOL_MAX/);
+	});
+
 	it('coerces PORT and SMTP_PORT from strings', () => {
 		const env = parseEnv({ ...validEnv, ...validSmtp, PORT: '8080', SMTP_PORT: '587' });
 
