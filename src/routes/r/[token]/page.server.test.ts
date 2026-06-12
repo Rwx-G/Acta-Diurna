@@ -1,0 +1,206 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Route-level gate behavior. The services are mocked; this asserts the wiring:
+// neutral 404 for closed/unknown shares, FR23 no-re-verify for a valid session,
+// the email-prompt fallthrough, and the enumeration-safe action (identical
+// `sent` for any plausible email, `invalid` for a malformed one, `throttled`
+// under the limiter).
+
+const mocks = vi.hoisted(() => ({
+	getShareByToken: vi.fn(),
+	readReaderCookie: vi.fn(),
+	validateReaderSession: vi.fn(),
+	getPublishedDocument: vi.fn(),
+	requestVerification: vi.fn(),
+	verificationConsume: vi.fn(),
+	globalConsume: vi.fn()
+}));
+
+vi.mock('$lib/server/sharing', () => ({ getShareByToken: mocks.getShareByToken }));
+vi.mock('$lib/server/auth/cookies', () => ({ readReaderCookie: mocks.readReaderCookie }));
+vi.mock('$lib/server/auth/sessions', () => ({
+	validateReaderSession: mocks.validateReaderSession
+}));
+vi.mock('$lib/server/documents/reports', () => ({
+	getPublishedDocument: mocks.getPublishedDocument
+}));
+vi.mock('$lib/server/auth/rate-limit', () => ({
+	GLOBAL_VERIFICATION_KEY: 'global',
+	verificationRateLimiter: { consume: mocks.verificationConsume },
+	verificationFailureLimiter: { consume: mocks.globalConsume }
+}));
+vi.mock('$lib/server/reader', async () => {
+	const actual = await vi.importActual<typeof import('$lib/server/reader')>('$lib/server/reader');
+	return {
+		// Keep the real email helpers (normalize/isPlausible) so the action's
+		// validation is genuinely exercised; mock only the orchestration + neutral.
+		normalizeEmail: actual.normalizeEmail,
+		isPlausibleEmail: actual.isPlausibleEmail,
+		requestVerification: mocks.requestVerification,
+		serveNeutralClosed: (setHeaders: (h: Record<string, string>) => void) => {
+			setHeaders({ 'cache-control': 'no-store' });
+			throw { __neutral404: true };
+		}
+	};
+});
+
+import { actions, load } from './+page.server';
+
+const ACTIVE_SHARE = {
+	id: 'share-1',
+	reportId: 'report-1',
+	mode: 'open' as const,
+	expiresAt: null,
+	createdAt: new Date(),
+	revokedAt: null,
+	status: 'active' as const
+};
+
+function loadEvent(overrides: Record<string, unknown> = {}) {
+	const setHeaders = vi.fn();
+	const event = {
+		params: { token: 'tok' },
+		url: new URL('https://host/r/tok'),
+		cookies: {},
+		setHeaders,
+		...overrides
+	};
+	return { event: event as never, setHeaders };
+}
+
+function actionEvent(form: Record<string, string>, overrides: Record<string, unknown> = {}) {
+	const body = new URLSearchParams(form);
+	return {
+		params: { token: 'tok' },
+		url: new URL('https://host/r/tok'),
+		request: { formData: () => Promise.resolve(body) },
+		locals: { requestId: 'req-1' },
+		getClientAddress: () => '203.0.113.5',
+		setHeaders: vi.fn(),
+		...overrides
+	} as never;
+}
+
+beforeEach(() => {
+	for (const m of Object.values(mocks)) m.mockReset();
+	mocks.verificationConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+	mocks.globalConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+});
+
+describe('load (the gate)', () => {
+	it('serves the neutral 404 for an unknown token', async () => {
+		mocks.getShareByToken.mockResolvedValue(null);
+		const { event, setHeaders } = loadEvent();
+
+		await expect(load(event)).rejects.toMatchObject({ __neutral404: true });
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
+	});
+
+	it('serves the neutral 404 for a revoked share (no leak)', async () => {
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'revoked' });
+
+		await expect(load(loadEvent().event)).rejects.toMatchObject({ __neutral404: true });
+	});
+
+	it('serves the neutral 404 for an expired share', async () => {
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'expired' });
+
+		await expect(load(loadEvent().event)).rejects.toMatchObject({ __neutral404: true });
+	});
+
+	it('FR23: a valid reader session for THIS share serves the report, no re-verify', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.readReaderCookie.mockReturnValue('reader-token');
+		mocks.validateReaderSession.mockResolvedValue({ id: 's', shareId: 'share-1' });
+		mocks.getPublishedDocument.mockResolvedValue({ version: 1, title: 'Doc', sections: [] });
+
+		const result = await load(loadEvent().event);
+
+		expect(mocks.validateReaderSession).toHaveBeenCalledWith('reader-token', 'share-1');
+		expect(result).toMatchObject({ state: 'verified', renderError: null });
+	});
+
+	it('prompts for email when active and no session', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.readReaderCookie.mockReturnValue(null);
+
+		const result = await load(loadEvent().event);
+
+		expect(result).toEqual({ state: 'prompt' });
+	});
+
+	it('shows the expired card state when ?expired=1 and no session', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.readReaderCookie.mockReturnValue(null);
+
+		const result = await load(loadEvent({ url: new URL('https://host/r/tok?expired=1') }).event);
+
+		expect(result).toEqual({ state: 'expired' });
+	});
+});
+
+describe('request-verification action (enumeration-safety)', () => {
+	it('returns the neutral "sent" for a known-looking email', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.requestVerification.mockResolvedValue(undefined);
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toEqual({ state: 'sent' });
+		expect(mocks.requestVerification).toHaveBeenCalled();
+	});
+
+	it('returns the SAME neutral "sent" for a different email (no enumeration)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.requestVerification.mockResolvedValue(undefined);
+
+		const result = await actions['request-verification'](actionEvent({ email: 'other@x.org' }));
+
+		expect(result).toEqual({ state: 'sent' });
+	});
+
+	it('still returns neutral "sent" when the mailer throws (no leak of a real send)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.requestVerification.mockRejectedValue(new Error('smtp down'));
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toEqual({ state: 'sent' });
+	});
+
+	it('returns the form-shape "invalid" for a malformed email (not an auth signal)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+
+		const result = await actions['request-verification'](actionEvent({ email: 'not-an-email' }));
+
+		expect(result).toMatchObject({ status: 400, data: { state: 'invalid' } });
+		expect(mocks.requestVerification).not.toHaveBeenCalled();
+	});
+
+	it('returns "throttled" when the per-IP limiter trips', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.verificationConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 30 });
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toMatchObject({ status: 429, data: { state: 'throttled' } });
+		expect(mocks.requestVerification).not.toHaveBeenCalled();
+	});
+
+	it('returns "throttled" when the global brake trips (proxy-collapse second line)', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.globalConsume.mockReturnValue({ allowed: false, retryAfterSeconds: 10 });
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toMatchObject({ status: 429, data: { state: 'throttled' } });
+	});
+
+	it('serves the neutral 404 when the share is closed at submission time', async () => {
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'revoked' });
+
+		await expect(
+			actions['request-verification'](actionEvent({ email: 'a@example.com' }))
+		).rejects.toMatchObject({ __neutral404: true });
+	});
+});

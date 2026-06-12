@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import argon2 from 'argon2';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
@@ -7,7 +8,12 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { reports } from '../src/lib/server/db/schema.ts';
 import { validateDocument } from '../src/lib/schema/index.ts';
-import { E2E_AUTHOR_PASSWORD, FIXTURE_DOCUMENT, FIXTURE_REPORT_ID } from './fixtures.ts';
+import {
+	DB_URL_FILE,
+	E2E_AUTHOR_PASSWORD,
+	FIXTURE_DOCUMENT,
+	FIXTURE_REPORT_ID
+} from './fixtures.ts';
 
 const PORT = 4173;
 const BUILD_ENTRY = path.resolve(process.cwd(), 'build/index.js');
@@ -71,6 +77,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
 	const databaseUrl = container.getConnectionUri();
 	await seedFixture(databaseUrl);
+
+	// Hand the ephemeral container URL to specs that need a DB seam (story 3.3's
+	// reader-verification spec inserts a verification token with a KNOWN raw value,
+	// since the magic link is only ever emailed and the at-rest hash is one-way -
+	// there is no SMTP in the e2e stack to capture). Written under the gitignored
+	// .auth dir, alongside the author storage state; never committed.
+	mkdirSync(path.dirname(DB_URL_FILE), { recursive: true });
+	writeFileSync(DB_URL_FILE, databaseUrl, 'utf8');
 
 	const authorPasswordHash = await argon2.hash(E2E_AUTHOR_PASSWORD, { type: argon2.argon2id });
 	const server: ChildProcess = spawn(process.execPath, [BUILD_ENTRY], {
