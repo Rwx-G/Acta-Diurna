@@ -31,7 +31,16 @@
 
 	const sectionIssues = $derived(errors[`section:${section.id}`] ?? []);
 
-	const BLOCK_TYPES: BlockType[] = ['text', 'table', 'chart', 'kpi', 'image', 'comparison-matrix'];
+	const BLOCK_TYPES: BlockType[] = [
+		'text',
+		'table',
+		'chart',
+		'kpi',
+		'image',
+		'comparison-matrix',
+		'field-grid',
+		'legend'
+	];
 </script>
 
 <section class="section-card" aria-label={`Section: ${section.title}`}>

@@ -55,6 +55,27 @@ describe('newBlock', () => {
 		expect(result.ok).toBe(false);
 	});
 
+	it('creates a field-grid starter whose validation names the empty item fields', () => {
+		const block = newBlock('field-grid');
+		expect(block.type).toBe('field-grid');
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.errors.map((error) => error.path)).toContain(
+				'sections[0].blocks[0].items[0].label'
+			);
+		}
+	});
+
+	it('creates a legend starter whose validation names the empty scale ref', () => {
+		const block = newBlock('legend');
+		expect(block.type).toBe('legend');
+		// The starter carries an empty scaleRef (not slug-valid), so its block schema
+		// flags it; the author picks the scale before saving.
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

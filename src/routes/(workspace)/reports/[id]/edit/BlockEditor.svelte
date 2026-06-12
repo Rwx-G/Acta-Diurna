@@ -4,9 +4,11 @@
 	import AudiencePicker from './AudiencePicker.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
 	import ComparisonMatrixBlockEditor from './ComparisonMatrixBlockEditor.svelte';
+	import FieldGridBlockEditor from './FieldGridBlockEditor.svelte';
 	import ImageBlockEditor from './ImageBlockEditor.svelte';
 	import IssueList from './IssueList.svelte';
 	import KpiBlockEditor from './KpiBlockEditor.svelte';
+	import LegendBlockEditor from './LegendBlockEditor.svelte';
 	import TableBlockEditor from './TableBlockEditor.svelte';
 	import TextBlockEditor from './TextBlockEditor.svelte';
 	import type { EditorIssue } from './editor-state';
@@ -22,7 +24,7 @@
 		blockIndex: number;
 		count: number;
 		issues: EditorIssue[];
-		/** Document scales, for the comparison-matrix block's scale selects. */
+		/** Document scales, for the scale-referencing block editors (comparison-matrix, legend). */
 		scales?: Scales;
 		onEdit: () => void;
 		onRemove: () => void;
@@ -76,6 +78,10 @@
 		<ImageBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'comparison-matrix'}
 		<ComparisonMatrixBlockEditor bind:block {scales} {onEdit} />
+	{:else if block.type === 'field-grid'}
+		<FieldGridBlockEditor bind:block {onEdit} />
+	{:else if block.type === 'legend'}
+		<LegendBlockEditor bind:block {scales} {onEdit} />
 	{/if}
 </article>
 

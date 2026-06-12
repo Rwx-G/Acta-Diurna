@@ -37,6 +37,12 @@
 				const count = block.findings.length;
 				return `Comparison matrix - ${count} finding${count === 1 ? '' : 's'}`;
 			}
+			case 'field-grid': {
+				const count = block.items.length;
+				return `Field grid - ${count} field${count === 1 ? '' : 's'}`;
+			}
+			case 'legend':
+				return `Legend - ${block.scaleRef || 'no scale'}`;
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;

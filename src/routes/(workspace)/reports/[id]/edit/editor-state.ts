@@ -69,6 +69,15 @@ export function newBlock(type: BlockType): Block {
 					}
 				]
 			};
+		case 'field-grid':
+			// Starts with one empty item: validation names the empty label/value on
+			// save (errors are guidance, the author is never blocked from adding a
+			// block).
+			return { type, id, items: [{ label: '', value: '' }] };
+		case 'legend':
+			// Starts with an empty scale ref (not slug-valid): its block schema flags
+			// it; the author picks the scale before saving.
+			return { type, id, scaleRef: '' };
 	}
 }
 
