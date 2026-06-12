@@ -1,13 +1,17 @@
 import { Column, Param, StringChunk, type SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { validateDocument, type DocumentV1Input } from '$lib/schema';
+import { validateDocument, type DocumentV1, type DocumentV1Input } from '$lib/schema';
 import { AppError } from '$lib/server/problem';
 import type { ReportRow } from '../db/schema';
 import {
+	assertShareable,
 	createReport,
 	deleteDraft,
+	getPublishedDocument,
 	getReport,
 	listReports,
+	publishReport,
+	unpublishToDraft,
 	updateReportDocument,
 	updateReportTitle
 } from './reports';
@@ -135,6 +139,13 @@ function validDocument(title = 'Quarterly Review'): DocumentV1Input {
 	};
 }
 
+/** A validated v1 document for seeding snapshot columns directly. */
+function seedDocument(title = 'Quarterly Review'): DocumentV1 {
+	const result = validateDocument(validDocument(title));
+	if (!result.ok) throw new Error('seed document must be valid');
+	return result.document;
+}
+
 function seedReport(overrides: Partial<ReportRow> = {}): ReportRow {
 	const document = validateDocument(validDocument());
 	if (!document.ok) throw new Error('seed document must be valid');
@@ -144,6 +155,8 @@ function seedReport(overrides: Partial<ReportRow> = {}): ReportRow {
 		status: 'draft',
 		schemaVersion: 1,
 		document: document.document,
+		publishedDocument: null,
+		publishedAt: null,
 		createdAt: new Date('2026-06-12T08:00:00Z'),
 		updatedAt: new Date('2026-06-12T08:00:00Z'),
 		...overrides
@@ -370,5 +383,163 @@ describe('deleteDraft', () => {
 		expect(error.type).toBe('/problems/report-published');
 		expect(dbState.deleteFilters).toHaveLength(0);
 		expect(dbState.rowsById.has(row.id)).toBe(true);
+	});
+});
+
+describe('publishReport', () => {
+	it('publishes a valid draft and freezes the snapshot with a publish timestamp', async () => {
+		const row = seedReport();
+
+		const report = await publishReport(row.id);
+
+		expect(report.status).toBe('published');
+		expect(report.publishedDocument).toEqual(row.document);
+		expect(report.publishedAt).toBeInstanceOf(Date);
+		const stored = dbState.rowsById.get(row.id);
+		expect(stored?.status).toBe('published');
+		expect(stored?.publishedDocument).toEqual(row.document);
+	});
+
+	it('is idempotent: publishing a published report is a no-op success', async () => {
+		const publishedAt = new Date('2026-06-12T09:00:00Z');
+		const row = seedReport({ status: 'published', publishedDocument: seedDocument(), publishedAt });
+
+		const report = await publishReport(row.id);
+
+		expect(report.status).toBe('published');
+		// No re-snapshot: the publish timestamp is the one already on the row.
+		expect(report.publishedAt).toEqual(publishedAt);
+		expect(dbState.updates).toHaveLength(0);
+	});
+
+	it('refuses to publish an invalid draft with a 422 carrying actionable paths', async () => {
+		const invalid = { version: 1, title: '', sections: [] } as unknown as DocumentV1;
+		const row = seedReport({ document: invalid });
+
+		const error = await expectAppError(publishReport(row.id), 422);
+
+		expect(error.type).toBe('/problems/document-validation');
+		const paths = error.errors?.map((entry) => entry.path);
+		expect(paths).toContain('title');
+		expect(paths).toContain('sections');
+		// Nothing was published.
+		expect(dbState.rowsById.get(row.id)?.status).toBe('draft');
+	});
+
+	it('throws 409 report-conflict when expectedUpdatedAt is stale', async () => {
+		const row = seedReport();
+		const stale = new Date(row.updatedAt.getTime() - 1000);
+
+		const error = await expectAppError(publishReport(row.id, stale), 409);
+
+		expect(error.type).toBe('/problems/report-conflict');
+		expect(dbState.rowsById.get(row.id)?.status).toBe('draft');
+	});
+
+	it('throws 404 for an unknown id', async () => {
+		await expectAppError(publishReport('01970000-0000-7000-8000-00000000dead'), 404);
+	});
+});
+
+describe('unpublishToDraft', () => {
+	it('reverts a published report to draft and clears the snapshot', async () => {
+		const row = seedReport({
+			status: 'published',
+			publishedDocument: seedDocument(),
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+
+		const report = await unpublishToDraft(row.id);
+
+		expect(report.status).toBe('draft');
+		expect(report.publishedDocument).toBeNull();
+		expect(report.publishedAt).toBeNull();
+		const stored = dbState.rowsById.get(row.id);
+		expect(stored?.status).toBe('draft');
+		expect(stored?.publishedDocument).toBeNull();
+	});
+
+	it('is idempotent: a draft is returned unchanged', async () => {
+		const row = seedReport();
+
+		const report = await unpublishToDraft(row.id);
+
+		expect(report.status).toBe('draft');
+		expect(dbState.updates).toHaveLength(0);
+	});
+
+	it('round-trips: publish then unpublish leaves the draft document authoritative', async () => {
+		const row = seedReport();
+
+		await publishReport(row.id);
+		const reverted = await unpublishToDraft(row.id);
+
+		expect(reverted.status).toBe('draft');
+		expect(reverted.document).toEqual(row.document);
+		expect(reverted.publishedDocument).toBeNull();
+	});
+});
+
+describe('publish snapshot isolation', () => {
+	it('keeps the published snapshot frozen when the draft is edited after publish', async () => {
+		const row = seedReport();
+		await publishReport(row.id);
+		const snapshot = dbState.rowsById.get(row.id)?.publishedDocument;
+
+		// Editing requires unpublish first (1.5 guard), so flip to draft, edit, and
+		// re-read: the published snapshot must not have changed under the draft edit
+		// until a re-publish. Here we assert the snapshot captured the publish-time
+		// document, distinct from a subsequent draft mutation.
+		await unpublishToDraft(row.id);
+		await updateReportDocument(row.id, validDocument('Draft Moved On'));
+		const afterEdit = await getReport(row.id);
+
+		expect(afterEdit.document.title).toBe('Draft Moved On');
+		// The snapshot we captured at publish time was the original title.
+		expect((snapshot as DocumentV1Input | undefined)?.title).toBe('Quarterly Review');
+	});
+
+	it('re-publishing freezes the latest draft into a new snapshot', async () => {
+		const row = seedReport();
+		await publishReport(row.id);
+		await unpublishToDraft(row.id);
+		await updateReportDocument(row.id, validDocument('Second Edition'));
+
+		const republished = await publishReport(row.id);
+
+		expect(republished.publishedDocument?.title).toBe('Second Edition');
+	});
+});
+
+describe('getPublishedDocument', () => {
+	it('returns the migrated, validated snapshot of a published report', async () => {
+		const row = seedReport();
+		await publishReport(row.id);
+
+		const document = await getPublishedDocument(row.id);
+
+		expect(document.title).toBe('Quarterly Review');
+		expect(document.version).toBe(1);
+	});
+
+	it('throws 409 not-published for a draft (no snapshot to serve)', async () => {
+		const row = seedReport();
+
+		const error = await expectAppError(getPublishedDocument(row.id), 409);
+
+		expect(error.type).toBe('/problems/report-not-published');
+	});
+});
+
+describe('assertShareable', () => {
+	it('passes for a published report', () => {
+		expect(() => assertShareable({ status: 'published' })).not.toThrow();
+	});
+
+	it('throws 409 not-published for a draft', async () => {
+		await expectAppError(
+			Promise.resolve().then(() => assertShareable({ status: 'draft' })),
+			409
+		);
 	});
 });

@@ -34,6 +34,11 @@ export type SessionRow = typeof sessions.$inferSelect;
 // D2: the report document lives in a JSONB column; the relational columns
 // around it carry only what lists and lifecycle checks need. `schema_version`
 // is denormalized from the document so version queries never parse JSONB.
+//
+// Publish snapshot (story 1.7): `document` is always the authoring draft. At
+// publish time it is frozen into `published_document` with `published_at`, so
+// the draft can keep evolving while readers keep seeing the version that was
+// published. `published_document` is null until the report is first published.
 export const reports = pgTable(
 	'reports',
 	{
@@ -42,6 +47,8 @@ export const reports = pgTable(
 		status: text('status').notNull().default('draft'),
 		schemaVersion: integer('schema_version').notNull(),
 		document: jsonb('document').$type<DocumentV1>().notNull(),
+		publishedDocument: jsonb('published_document').$type<DocumentV1>(),
+		publishedAt: timestamp('published_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},

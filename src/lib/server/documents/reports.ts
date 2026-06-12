@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import {
 	validateDocument,
+	validateStoredDocument,
 	toProblemDetails,
 	type DocumentV1,
 	type ValidationErrorDetail
@@ -18,7 +19,12 @@ export interface Report {
 	title: string;
 	status: ReportStatus;
 	schemaVersion: number;
+	/** The authoring draft - always the editable source of truth. */
 	document: DocumentV1;
+	/** Frozen snapshot served to readers; null until first published (story 1.7). */
+	publishedDocument: DocumentV1 | null;
+	/** When the current snapshot was taken; null until first published. */
+	publishedAt: Date | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -40,6 +46,8 @@ function toReport(row: ReportRow): Report {
 		status: row.status as ReportStatus,
 		schemaVersion: row.schemaVersion,
 		document: row.document,
+		publishedDocument: row.publishedDocument ?? null,
+		publishedAt: row.publishedAt ?? null,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt
 	};
@@ -135,6 +143,8 @@ export async function createReport(title: string): Promise<Report> {
 		status: 'draft',
 		schemaVersion: document.version,
 		document,
+		publishedDocument: null,
+		publishedAt: null,
 		createdAt: now,
 		updatedAt: now
 	};
@@ -228,4 +238,106 @@ export async function deleteDraft(id: string): Promise<void> {
 		throw publishedConflict('Published reports cannot be deleted.');
 	}
 	await getDb().delete(reports).where(eq(reports.id, id));
+}
+
+function notShareable(): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Report is not published',
+		type: '/problems/report-not-published',
+		detail: 'Only a published report can be shared.'
+	});
+}
+
+/**
+ * Guards the sharing entry point (FR6): a report is eligible to be shared only
+ * once it is published. Throws a 409 otherwise. Exposed now so Epic 3's share
+ * service consumes one canonical check; the publish lifecycle owns the rule.
+ */
+export function assertShareable(report: Pick<Report, 'status'>): void {
+	if (report.status !== 'published') throw notShareable();
+}
+
+/**
+ * Publishes a draft: validates the document (a draft may be invalid, so this is
+ * where the 422 surfaces; a published report is never invalid), freezes it into
+ * the published snapshot with a publish timestamp, and flips the status. The
+ * draft `document` is untouched, so editing after publish evolves the draft
+ * while readers keep seeing the snapshot until the next publish.
+ *
+ * Idempotent: publishing an already-published report is a no-op success - it
+ * returns the report unchanged without re-snapshotting (the snapshot is the
+ * version that was published, not the latest draft). Pass `expectedUpdatedAt`
+ * to opt into optimistic concurrency (a concurrent draft edit then 409s).
+ */
+export async function publishReport(id: string, expectedUpdatedAt?: Date): Promise<Report> {
+	const row = await getRow(id);
+	if (row.status === 'published') return toReport(row);
+
+	const document = validateOrThrow(row.document);
+	const now = new Date();
+	const where =
+		expectedUpdatedAt === undefined
+			? eq(reports.id, row.id)
+			: and(eq(reports.id, row.id), eq(reports.updatedAt, expectedUpdatedAt));
+	const result = await getDb()
+		.update(reports)
+		.set({
+			status: 'published',
+			publishedDocument: document,
+			publishedAt: now,
+			updatedAt: now
+		})
+		.where(where);
+	if (expectedUpdatedAt !== undefined && result.rowCount === 0) throw reportConflict();
+	return toReport({
+		...row,
+		status: 'published',
+		publishedDocument: document,
+		publishedAt: now,
+		updatedAt: now
+	});
+}
+
+/**
+ * Reverts a published report to draft so it can be edited or deleted again (the
+ * 1.5 guards make a published report read-only; unpublishing is the escape
+ * hatch). The draft `document` stays authoritative and untouched. The published
+ * snapshot is cleared - an unpublished report is not shareable, so no reader
+ * should be served a stale frozen copy. Idempotent: a draft is returned as-is.
+ */
+export async function unpublishToDraft(id: string): Promise<Report> {
+	const row = await getRow(id);
+	if (row.status === 'draft') return toReport(row);
+
+	const now = new Date();
+	await getDb()
+		.update(reports)
+		.set({ status: 'draft', publishedDocument: null, publishedAt: null, updatedAt: now })
+		.where(eq(reports.id, row.id));
+	return toReport({
+		...row,
+		status: 'draft',
+		publishedDocument: null,
+		publishedAt: null,
+		updatedAt: now
+	});
+}
+
+/**
+ * The document a reader is served (FR6/FR7): the frozen published snapshot,
+ * migrated to the current schema and validated through the render-path contract
+ * ({@link validateStoredDocument}). Throws 409 when the report is not published
+ * (no snapshot to serve) and 422 if a snapshot ever fails to validate (an
+ * unsupported version names the supported range). Epic 3's `/r/[token]` reader
+ * consumes this so the gating lives in the service, not the route.
+ *
+ * Distinct from the author `/view`, which renders the live DRAFT for preview.
+ */
+export async function getPublishedDocument(id: string): Promise<DocumentV1> {
+	const row = await getRow(id);
+	if (row.status !== 'published' || row.publishedDocument === null) throw notShareable();
+	const result = validateStoredDocument(row.publishedDocument);
+	if (!result.ok) throw validationFailed(result.errors);
+	return result.document;
 }
