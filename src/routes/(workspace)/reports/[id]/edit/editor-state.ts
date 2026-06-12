@@ -112,6 +112,11 @@ export function newBlock(type: BlockType): Block {
 			// the empty title/description on save (errors are guidance, the author is
 			// never blocked from adding a block).
 			return { type, id, columns: 2, items: [{ title: '', description: '' }] };
+		case 'list':
+			// Starts ordered (a numbered procedure) with one item carrying an empty
+			// term: validation names the empty term on save (errors are guidance, the
+			// author is never blocked from adding a block).
+			return { type, id, ordered: true, items: [{ term: '' }] };
 	}
 }
 

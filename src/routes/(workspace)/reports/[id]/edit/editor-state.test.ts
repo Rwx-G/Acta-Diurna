@@ -116,6 +116,19 @@ describe('newBlock', () => {
 		}
 	});
 
+	it('creates an ordered list starter whose validation names the empty item term', () => {
+		const block = newBlock('list');
+		expect(block.type).toBe('list');
+		if (block.type === 'list') expect(block.ordered).toBe(true);
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.errors.map((error) => error.path)).toContain(
+				'sections[0].blocks[0].items[0].term'
+			);
+		}
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

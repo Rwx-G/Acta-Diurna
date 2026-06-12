@@ -13,6 +13,7 @@
 	import IssueList from './IssueList.svelte';
 	import KpiBlockEditor from './KpiBlockEditor.svelte';
 	import LegendBlockEditor from './LegendBlockEditor.svelte';
+	import ListBlockEditor from './ListBlockEditor.svelte';
 	import SetMembershipBlockEditor from './SetMembershipBlockEditor.svelte';
 	import TableBlockEditor from './TableBlockEditor.svelte';
 	import TextBlockEditor from './TextBlockEditor.svelte';
@@ -100,6 +101,8 @@
 		<CodeBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'card-grid'}
 		<CardGridBlockEditor bind:block {onEdit} />
+	{:else if block.type === 'list'}
+		<ListBlockEditor bind:block {onEdit} />
 	{/if}
 </article>
 

@@ -47,7 +47,8 @@
 		'chip-cluster',
 		'callout',
 		'code',
-		'card-grid'
+		'card-grid',
+		'list'
 	];
 </script>
 

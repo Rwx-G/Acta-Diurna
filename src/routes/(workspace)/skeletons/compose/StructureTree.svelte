@@ -59,6 +59,11 @@
 				const count = block.items.length;
 				return `Card grid - ${count} card${count === 1 ? '' : 's'}`;
 			}
+			case 'list': {
+				const count = block.items.length;
+				const kind = block.ordered ? 'steps' : 'list';
+				return `List (${kind}) - ${count} item${count === 1 ? '' : 's'}`;
+			}
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;
