@@ -15,6 +15,23 @@
 </script>
 
 <div class="field-grid-editor">
+	<label class="layout-toggle">
+		Layout
+		<select
+			value={block.layout ?? 'grid'}
+			onchange={(event) => {
+				const value = event.currentTarget.value;
+				if (value === 'grid') delete block.layout;
+				else block.layout = 'strip';
+				onEdit();
+			}}
+			aria-label="Field grid layout"
+		>
+			<option value="grid">Grid (two columns)</option>
+			<option value="strip">Strip (centred meta-strip)</option>
+		</select>
+	</label>
+
 	{#each block.items as item, itemIndex (itemIndex)}
 		<div class="field-row">
 			<input
@@ -60,6 +77,26 @@
 </div>
 
 <style>
+	.layout-toggle {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		margin-bottom: var(--space-3);
+		font-size: var(--text-sm);
+		font-weight: 600;
+		color: var(--color-ink-65);
+	}
+
+	.layout-toggle select {
+		padding: var(--space-2) var(--space-3);
+		font: inherit;
+		font-weight: 400;
+		color: inherit;
+		background: var(--color-surface);
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+	}
+
 	.field-row {
 		display: flex;
 		gap: var(--space-2);
