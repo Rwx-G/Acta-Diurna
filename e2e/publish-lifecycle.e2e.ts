@@ -6,11 +6,10 @@ import { E2E_BASE_URL } from './fixtures.ts';
 // renders read-only/published, then unpublish back to an editable draft.
 //
 // The lifecycle POSTs go through Playwright's request context with an explicit
-// Origin header, the same HTTP-only concession the auth helper uses: over plain
-// HTTP the app's `Referrer-Policy: no-referrer` makes Chrome send `Origin: null`
-// on a form navigation, tripping SvelteKit's CSRF check (production serves over
-// HTTPS where the real Origin is sent). The rendered editor pages, asserted
-// after each step, are the actual reader-facing surface.
+// Origin header because the APIRequestContext does not set one automatically
+// the way a real browser form navigation does; it satisfies SvelteKit's CSRF
+// origin check (see e2e/auth.ts). The rendered editor pages, asserted after
+// each step, are the actual reader-facing surface.
 async function postForm(
 	page: import('@playwright/test').Page,
 	url: string

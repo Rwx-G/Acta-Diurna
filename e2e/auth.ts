@@ -5,13 +5,19 @@ import { E2E_AUTHOR_PASSWORD, E2E_BASE_URL } from './fixtures.ts';
  * Signs in as the test author, leaving the page on an authenticated session.
  *
  * The login POST goes through Playwright's request context with an explicit
- * Origin header rather than the rendered form. Over plain HTTP (the e2e
- * server), Chrome strips the Origin to `null` on a form navigation because the
- * app sets `Referrer-Policy: no-referrer` - which trips SvelteKit's CSRF
- * origin check. Production serves over HTTPS, where the real Origin is sent and
- * the form works; this indirection is an HTTP-only test concession, not a
- * product workaround. The session cookie the response sets is shared with the
- * page via the browser context.
+ * Origin header rather than the rendered form. Playwright's `request` API
+ * (APIRequestContext) does not attach an Origin header the way a real browser
+ * form navigation does, so we set it explicitly to satisfy SvelteKit's CSRF
+ * origin check. The session cookie the response sets is shared with the page
+ * via the browser context.
+ *
+ * NOTE: an earlier version of this comment claimed the app's
+ * `Referrer-Policy: no-referrer` was the cause and that it only mattered over
+ * plain HTTP. That was wrong on both counts: `no-referrer` made Chrome send
+ * `Origin: null` on EVERY browser form POST (HTTP and HTTPS alike), which broke
+ * login and authoring in production, not just the tests. Fixed by serving
+ * `Referrer-Policy: same-origin` (src/hooks.server.ts). This e2e indirection
+ * remains only because of the APIRequestContext behavior above.
  */
 export async function signIn(page: Page): Promise<void> {
 	const response = await page.request.post(`${E2E_BASE_URL}/login`, {

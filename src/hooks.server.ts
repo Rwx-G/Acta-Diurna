@@ -59,7 +59,14 @@ function isNoindexReportPath(pathname: string): boolean {
 const securityHeaders: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
 	response.headers.set('X-Content-Type-Options', 'nosniff');
-	response.headers.set('Referrer-Policy', 'no-referrer');
+	// `same-origin`, NOT `no-referrer`: Chrome sends `Origin: null` on a form POST
+	// when the document's policy is `no-referrer`, which trips SvelteKit's CSRF
+	// origin check (403 "Cross-site POST form submissions are forbidden") on every
+	// form in the app - login, authoring, and the reader verify card. `same-origin`
+	// still sends no Referer to any cross-origin destination, so a share token in a
+	// `/r/<token>` URL never leaks externally (the leak-free goal of story 3.5),
+	// while same-origin POSTs carry the Origin the CSRF check needs.
+	response.headers.set('Referrer-Policy', 'same-origin');
 	// CSP is delivered via SvelteKit's meta-tag mode, and browsers ignore
 	// frame-ancestors from a meta-delivered policy. This header-delivered
 	// fallback is what actually blocks clickjacking of report content.
