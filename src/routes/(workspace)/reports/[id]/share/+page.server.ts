@@ -129,7 +129,17 @@ export const actions: Actions = {
 			return fail(400, { message: 'Missing share.' });
 		}
 		const recipients = typeof raw === 'string' ? parseRecipients(raw) : [];
-		await setShareRecipients(shareId, recipients);
-		return { recipientsSet: { shareId, count: recipients.length } };
+		try {
+			// setShareRecipients validates the share id (unknown/malformed -> 404) and
+			// the list size (over the cap -> 422) before any write, so a stale or
+			// garbage shareId is a clean fail, never a 500 from the FK or a cast error.
+			await setShareRecipients(shareId, recipients);
+			return { recipientsSet: { shareId, count: recipients.length } };
+		} catch (thrown) {
+			if (thrown instanceof AppError) {
+				return fail(thrown.status, { message: thrown.detail ?? thrown.title });
+			}
+			throw thrown;
+		}
 	}
 };

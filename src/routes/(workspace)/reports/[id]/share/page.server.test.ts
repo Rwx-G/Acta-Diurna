@@ -298,6 +298,36 @@ describe('set-recipients action', () => {
 		expect(result).toMatchObject({ status: 400 });
 		expect(setShareRecipientsMock).not.toHaveBeenCalled();
 	});
+
+	it('404s (not 500) when setShareRecipients rejects an unknown shareId', async () => {
+		setShareRecipientsMock.mockRejectedValue(
+			new AppError({
+				status: 404,
+				title: 'Share not found',
+				type: '/problems/share-not-found',
+				detail: 'This share does not exist.'
+			})
+		);
+		const result = await actions['set-recipients'](
+			actionEvent({ shareId: 'gone', recipients: 'a@x.com' })
+		);
+		expect(result).toMatchObject({ status: 404, data: { message: 'This share does not exist.' } });
+	});
+
+	it('422s when setShareRecipients rejects an over-cap list', async () => {
+		setShareRecipientsMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'Too many recipients',
+				type: '/problems/share-recipients-limit',
+				detail: 'A share allow-list is limited to 500 recipients.'
+			})
+		);
+		const result = await actions['set-recipients'](
+			actionEvent({ shareId: 's1', recipients: 'a@x.com' })
+		);
+		expect(result).toMatchObject({ status: 422 });
+	});
 });
 
 describe('shareUrl wiring', () => {

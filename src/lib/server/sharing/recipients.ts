@@ -13,12 +13,46 @@
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
-import { shareRecipients } from '$lib/server/db/schema';
+import { shareRecipients, shares } from '$lib/server/db/schema';
+import { AppError } from '$lib/server/problem';
 import { isPlausibleEmail, normalizeEmail } from '$lib/server/reader/email';
 import type { ShareMode } from './shares';
 
 /** A share's mode + id, the minimum `isAuthorizedReader` needs. */
 type AuthorizableShare = { id: string; mode: ShareMode };
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Upper bound on the effective (normalized + deduped) size of a share's
+ * allow-list. The management UI submits a free-text blob that splits into
+ * arbitrarily many rows, so without a cap a single submission could insert an
+ * unbounded set in one transaction - a storage/DoS footgun even in the V1
+ * author realm. 500 distinct recipients per share is well past any realistic
+ * distribution list while still bounding the write.
+ */
+export const MAX_SHARE_RECIPIENTS = 500;
+
+/** 404 for an unknown/malformed share id - mirrors the reports/skeletons boundary. */
+function shareNotFound(): AppError {
+	return new AppError({
+		status: 404,
+		title: 'Share not found',
+		type: '/problems/share-not-found',
+		detail: 'This share does not exist.'
+	});
+}
+
+/** Whether a share row exists for `shareId` (a malformed id can never match). */
+async function shareExists(shareId: string): Promise<boolean> {
+	if (!UUID_PATTERN.test(shareId)) return false;
+	const rows = await getDb()
+		.select({ id: shares.id })
+		.from(shares)
+		.where(eq(shares.id, shareId))
+		.limit(1);
+	return rows.length > 0;
+}
 
 /**
  * Replaces a share's recipient allow-list with `emails`. Each email is
@@ -31,11 +65,28 @@ type AuthorizableShare = { id: string; mode: ShareMode };
  * Open shares can carry a list too (it is simply ignored while the mode is
  * `open`), so switching back to restricted restores a previously-set list; the
  * caller decides whether to clear it.
+ *
+ * Boundary checks before any write: an unknown or malformed `shareId` is a 404
+ * (never an FK/cast error surfaced as a 500), and a list whose effective size
+ * exceeds `MAX_SHARE_RECIPIENTS` is a 422 - both enforced in the service so they
+ * hold regardless of caller. The cap is counted AFTER normalization+dedup, on
+ * the actual row count that would be inserted.
  */
 export async function setShareRecipients(shareId: string, emails: string[]): Promise<void> {
 	const normalized = Array.from(
 		new Set(emails.map(normalizeEmail).filter((email) => isPlausibleEmail(email)))
 	);
+
+	if (normalized.length > MAX_SHARE_RECIPIENTS) {
+		throw new AppError({
+			status: 422,
+			title: 'Too many recipients',
+			type: '/problems/share-recipients-limit',
+			detail: `A share allow-list is limited to ${MAX_SHARE_RECIPIENTS} recipients.`
+		});
+	}
+
+	if (!(await shareExists(shareId))) throw shareNotFound();
 
 	const db = getDb();
 	await db.transaction(async (tx) => {

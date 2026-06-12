@@ -1,15 +1,23 @@
 import { Column, Param } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isAuthorizedReader, listShareRecipients, setShareRecipients } from './recipients';
+import { AppError } from '$lib/server/problem';
+import {
+	isAuthorizedReader,
+	listShareRecipients,
+	MAX_SHARE_RECIPIENTS,
+	setShareRecipients
+} from './recipients';
 import type { ResolvedShare } from './shares';
 
 // In-memory share_recipients store. The mock decodes drizzle eq()/and() chunks
 // to the (share_id, email) it filters on, mirroring the shares.test.ts decoding,
 // and models transaction() as a pass-through so setShareRecipients'
-// delete-then-insert is exercised end to end.
+// delete-then-insert is exercised end to end. `shareIds` is the set of existing
+// share rows the shareExists() boundary check reads.
 const dbState = vi.hoisted(() => ({
 	rows: [] as { id: string; shareId: string; email: string }[],
-	inserted: [] as { id: string; shareId: string; email: string }[]
+	inserted: [] as { id: string; shareId: string; email: string }[],
+	shareIds: new Set<string>()
 }));
 
 // Recursively flatten a drizzle SQL filter (eq / and(eq, eq) / ...) into the
@@ -31,18 +39,26 @@ function flatten(node: unknown, columns: Column[], params: Param[]): void {
 	}
 }
 
-function decodeFilter(filter: unknown): { shareId?: string; email?: string } {
+function decodeFilter(filter: unknown): { shareId?: string; email?: string; id?: string } {
 	const columns: Column[] = [];
 	const params: Param[] = [];
 	flatten(filter, columns, params);
 
-	const result: { shareId?: string; email?: string } = {};
+	const result: { shareId?: string; email?: string; id?: string } = {};
 	for (let i = 0; i < columns.length; i++) {
 		const value = params[i]?.value;
 		if (columns[i].name === 'share_id') result.shareId = value as string;
 		if (columns[i].name === 'email') result.email = value as string;
+		if (columns[i].name === 'id') result.id = value as string;
 	}
 	return result;
+}
+
+// The shares-table existence read: select id from shares where id = ? limit 1.
+function matchesShares(filter: unknown) {
+	const f = decodeFilter(filter);
+	if (f.id !== undefined && dbState.shareIds.has(f.id)) return [{ id: f.id }];
+	return [];
 }
 
 function matches(filter: unknown) {
@@ -73,13 +89,25 @@ const tx = {
 	})
 };
 
+// The shares existence read selects only `id`; the recipients reads select
+// `email`/`id` and filter on `share_id`/`email`. The shares query is the one
+// whose filter decodes to an `id` with no `share_id`/`email`, so `where`
+// dispatches on that without needing the table handle.
+function isSharesQuery(filter: unknown): boolean {
+	const f = decodeFilter(filter);
+	return f.id !== undefined && f.shareId === undefined && f.email === undefined;
+}
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
 		transaction: (fn: (t: typeof tx) => Promise<void>) => fn(tx),
 		select: () => ({
 			from: () => ({
 				where: (filter: unknown) => ({
-					limit: () => Promise.resolve(matches(filter).slice(0, 1)),
+					limit: () =>
+						Promise.resolve(
+							isSharesQuery(filter) ? matchesShares(filter) : matches(filter).slice(0, 1)
+						),
 					orderBy: () =>
 						Promise.resolve(matches(filter).sort((a, b) => a.email.localeCompare(b.email)))
 				})
@@ -89,12 +117,14 @@ vi.mock('$lib/server/db/client', () => ({
 }));
 
 const SHARE_ID = '0197b300-0000-7000-8000-000000000001';
+const OTHER_SHARE_ID = '0197b300-0000-7000-8000-0000000000ff';
 const restricted = { id: SHARE_ID, mode: 'restricted' } as Pick<ResolvedShare, 'id' | 'mode'>;
 const open = { id: SHARE_ID, mode: 'open' } as Pick<ResolvedShare, 'id' | 'mode'>;
 
 beforeEach(() => {
 	dbState.rows = [];
 	dbState.inserted = [];
+	dbState.shareIds = new Set([SHARE_ID, OTHER_SHARE_ID]);
 });
 
 describe('setShareRecipients', () => {
@@ -145,12 +175,59 @@ describe('setShareRecipients', () => {
 	});
 
 	it('does not touch another share list', async () => {
-		const other = '0197b300-0000-7000-8000-0000000000ff';
-		await setShareRecipients(other, ['keep@example.com']);
+		await setShareRecipients(OTHER_SHARE_ID, ['keep@example.com']);
 		await setShareRecipients(SHARE_ID, ['new@example.com']);
 
-		expect(await listShareRecipients(other)).toEqual(['keep@example.com']);
+		expect(await listShareRecipients(OTHER_SHARE_ID)).toEqual(['keep@example.com']);
 		expect(await listShareRecipients(SHARE_ID)).toEqual(['new@example.com']);
+	});
+
+	it('accepts a list exactly at the cap', async () => {
+		const atCap = Array.from(
+			{ length: MAX_SHARE_RECIPIENTS },
+			(_, i) => `recipient-${i}@example.com`
+		);
+		await setShareRecipients(SHARE_ID, atCap);
+		expect(dbState.inserted).toHaveLength(MAX_SHARE_RECIPIENTS);
+	});
+
+	it('rejects a list over the cap with a 422 and writes nothing', async () => {
+		const overCap = Array.from(
+			{ length: MAX_SHARE_RECIPIENTS + 1 },
+			(_, i) => `recipient-${i}@example.com`
+		);
+		await expect(setShareRecipients(SHARE_ID, overCap)).rejects.toMatchObject({
+			status: 422
+		});
+		expect(dbState.inserted).toHaveLength(0);
+		expect(dbState.rows).toHaveLength(0);
+	});
+
+	it('counts the cap after normalization+dedup (duplicates do not count toward it)', async () => {
+		// MAX+1 raw entries, but they collapse to MAX distinct canonical forms, so
+		// the effective row count is at the cap and the write succeeds.
+		const raw = Array.from(
+			{ length: MAX_SHARE_RECIPIENTS },
+			(_, i) => `recipient-${i}@example.com`
+		);
+		raw.push('Recipient-0@Example.com');
+		await setShareRecipients(SHARE_ID, raw);
+		expect(dbState.inserted).toHaveLength(MAX_SHARE_RECIPIENTS);
+	});
+
+	it('404s (AppError) on an unknown share id and writes nothing', async () => {
+		const unknown = '0197b300-0000-7000-8000-000000000999';
+		await expect(setShareRecipients(unknown, ['a@example.com'])).rejects.toMatchObject({
+			status: 404
+		});
+		expect(dbState.inserted).toHaveLength(0);
+	});
+
+	it('404s on a malformed (non-UUID) share id without a DB cast error', async () => {
+		await expect(setShareRecipients('not-a-uuid', ['a@example.com'])).rejects.toBeInstanceOf(
+			AppError
+		);
+		expect(dbState.inserted).toHaveLength(0);
 	});
 });
 
