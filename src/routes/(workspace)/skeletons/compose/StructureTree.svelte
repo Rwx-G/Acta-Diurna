@@ -33,6 +33,10 @@
 				const fields = block.binding?.fields.map((field) => field.name).join(', ');
 				return fields ? `${label} - expects ${fields}` : label;
 			}
+			case 'comparison-matrix': {
+				const count = block.findings.length;
+				return `Comparison matrix - ${count} finding${count === 1 ? '' : 's'}`;
+			}
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;

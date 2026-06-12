@@ -10,7 +10,7 @@
  * refill time (Epic 2). The text in every brick is a real authoring prompt, not
  * lorem, so a freshly composed skeleton reads as guidance.
  */
-import type { Binding, DocumentV1Input } from '$lib/schema';
+import type { Binding, DocumentV1Input, Scales } from '$lib/schema';
 
 /**
  * A section as a producer writes it (input side): the same shape the composer's
@@ -21,7 +21,14 @@ import type { Binding, DocumentV1Input } from '$lib/schema';
 export type SkeletonSection = DocumentV1Input['sections'][number];
 
 /** A brick id, stable across the library; used as the registry key. */
-export type BrickId = 'cover' | 'summary' | 'dataTable' | 'chartSection' | 'kpiRow' | 'annex';
+export type BrickId =
+	| 'cover'
+	| 'summary'
+	| 'dataTable'
+	| 'chartSection'
+	| 'kpiRow'
+	| 'comparisonMatrix'
+	| 'annex';
 
 /** A library entry: metadata for the BrickCard plus the section factory. */
 export interface Brick {
@@ -31,6 +38,14 @@ export interface Brick {
 	description: string;
 	/** Produces a fresh, schema-valid section every call (unique ids). */
 	factory: () => SkeletonSection;
+	/**
+	 * Companion document `scales` a brick's section references by key (Epic 7).
+	 * A comparison-matrix section references a severity and a sources scale, which
+	 * live at document level, not on the section. When present, the composer seeds
+	 * these onto the draft (merging by scale key) so the assembled document
+	 * resolves the references. Absent for every scale-free brick.
+	 */
+	scales?: () => Scales;
 }
 
 // Section/block ids only need to satisfy the schema slug rule (lowercase
@@ -167,6 +182,82 @@ function kpiRowBrick(): SkeletonSection {
 	};
 }
 
+// Stable placeholder scale keys the comparison-matrix brick references. The
+// composer seeds the companion scales (below) under these keys, so the assembled
+// document resolves the block's severity/source references. Module-level
+// constants so the section factory and the scales factory agree on the keys.
+const MATRIX_SEVERITY_SCALE_KEY = 'severity';
+const MATRIX_SOURCE_SCALE_KEY = 'sources';
+
+/**
+ * Companion scales for the comparison-matrix brick: a severity scale (ordinal,
+ * no explicit colours so the palette resolves them AAA-safe) and a sources scale
+ * (nominal). The entry keys match the placeholder finding below. A fresh array
+ * each call so the composer owns a mutable copy.
+ */
+function comparisonMatrixScales(): Scales {
+	return [
+		{
+			key: MATRIX_SEVERITY_SCALE_KEY,
+			label: 'Severity',
+			kind: 'ordinal',
+			entries: [
+				{ key: 'critical', label: 'Critical' },
+				{ key: 'high', label: 'High' },
+				{ key: 'low', label: 'Low' }
+			]
+		},
+		{
+			key: MATRIX_SOURCE_SCALE_KEY,
+			label: 'Sources',
+			kind: 'nominal',
+			entries: [
+				{ key: 'review', label: 'Manual review' },
+				{ key: 'scanner', label: 'Automated scan' }
+			]
+		}
+	];
+}
+
+/**
+ * Comparison matrix: a section with a comparison-matrix block carrying one
+ * placeholder finding. References the companion `scales` by key (seeded by the
+ * composer from `comparisonMatrixScales`), so the assembled document resolves
+ * the severity/source references. The section validates standalone at section
+ * level (the scale-reference pass runs only at document level).
+ */
+function comparisonMatrixBrick(): SkeletonSection {
+	return {
+		id: newId(),
+		title: 'Findings matrix',
+		blocks: [
+			{
+				type: 'comparison-matrix',
+				id: newId(),
+				severityScale: MATRIX_SEVERITY_SCALE_KEY,
+				sourceScale: MATRIX_SOURCE_SCALE_KEY,
+				findings: [
+					{
+						category: 'Access control',
+						label: 'Name a finding and pick its severity.',
+						severity: 'high',
+						sources: {
+							review: { state: 'found', text: 'Confirmed in the manual review.' },
+							scanner: { state: 'missing' }
+						},
+						treatment: {
+							before: 'Describe the state before treatment.',
+							after: 'Describe the state after treatment.',
+							status: 'action'
+						},
+						tag: 'access'
+					}
+				]
+			}
+		]
+	};
+}
+
 /** Annex: an annex-flagged section with a placeholder note. */
 function annexBrick(): SkeletonSection {
 	return {
@@ -221,6 +312,13 @@ export const BRICKS: readonly Brick[] = [
 		label: 'KPI row',
 		description: 'Headline metrics bound to expected fields.',
 		factory: kpiRowBrick
+	},
+	{
+		id: 'comparisonMatrix',
+		label: 'Findings matrix',
+		description: 'A findings-by-sources coverage matrix with severity and treatment.',
+		factory: comparisonMatrixBrick,
+		scales: comparisonMatrixScales
 	},
 	{
 		id: 'annex',

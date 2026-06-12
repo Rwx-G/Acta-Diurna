@@ -146,6 +146,8 @@ describe('saveSkeleton', () => {
 		const draft = {
 			version: 1 as const,
 			title: 'Everything',
+			// Seed companion scales the matrix brick references (Epic 7).
+			scales: BRICKS.flatMap((brick) => brick.scales?.() ?? []),
 			sections: BRICKS.map((brick) => brick.factory())
 		};
 		await expect(saveSkeleton(draft)).resolves.toBeDefined();

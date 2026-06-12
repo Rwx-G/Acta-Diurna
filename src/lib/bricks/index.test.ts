@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { sectionSchema, type DocumentV1Input, validateDocument } from '$lib/schema';
-import { BRICKS, getBrick } from './index.ts';
+import { sectionSchema, type DocumentV1Input, type Scales, validateDocument } from '$lib/schema';
+import { BRICKS, getBrick, type Brick } from './index.ts';
+
+/** Merges a brick's companion scales (Epic 7) so an assembled document resolves
+ *  its scale references; a scale-free brick contributes none. */
+function scalesFor(bricks: readonly Brick[]): Scales {
+	return bricks.flatMap((brick) => brick.scales?.() ?? []);
+}
 
 describe('brick library', () => {
 	it('every brick produces a schema-valid section', () => {
@@ -12,9 +18,11 @@ describe('brick library', () => {
 
 	it('every brick assembles into a valid single-section document', () => {
 		for (const brick of BRICKS) {
+			const scales = scalesFor([brick]);
 			const document: DocumentV1Input = {
 				version: 1,
 				title: 'Skeleton',
+				...(scales.length > 0 ? { scales } : {}),
 				sections: [brick.factory()]
 			};
 			const result = validateDocument(document);
@@ -69,10 +77,32 @@ describe('brick library', () => {
 		const document: DocumentV1Input = {
 			version: 1,
 			title: 'Full skeleton',
+			scales: scalesFor(BRICKS),
 			sections: BRICKS.map((brick) => brick.factory())
 		};
 		const result = validateDocument(document);
 		expect(result.ok).toBe(true);
+	});
+
+	it('the comparison-matrix brick seeds the scales its block references', () => {
+		const brick = getBrick('comparisonMatrix')!;
+		expect(brick.scales).toBeDefined();
+		const document: DocumentV1Input = {
+			version: 1,
+			title: 'Matrix skeleton',
+			scales: brick.scales!(),
+			sections: [brick.factory()]
+		};
+		expect(validateDocument(document).ok).toBe(true);
+
+		// Without the companion scales, the document-level cross-reference pass
+		// flags the dangling severity/source references (FR2).
+		const danglingResult = validateDocument({
+			version: 1,
+			title: 'Matrix skeleton',
+			sections: [brick.factory()]
+		});
+		expect(danglingResult.ok).toBe(false);
 	});
 
 	it('getBrick returns undefined for an unknown id', () => {

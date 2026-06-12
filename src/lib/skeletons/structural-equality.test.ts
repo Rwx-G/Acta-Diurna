@@ -4,9 +4,13 @@ import { validateDocument, type DocumentV1 } from '$lib/schema';
 import { fingerprintStructure, structurallyEqual } from './structural-equality.ts';
 
 function documentFrom(title: string, ...brickIds: string[]): DocumentV1 {
+	// Seed any companion scales the chosen bricks reference (Epic 7) so the
+	// assembled document resolves its scale references.
+	const scales = brickIds.flatMap((id) => getBrick(id)!.scales?.() ?? []);
 	const result = validateDocument({
 		version: 1 as const,
 		title,
+		...(scales.length > 0 ? { scales } : {}),
 		sections: brickIds.map((id) => getBrick(id)!.factory())
 	});
 	if (!result.ok) throw new Error('test document must be valid');

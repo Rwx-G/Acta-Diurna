@@ -14,7 +14,7 @@
 
 <div>
 	{#each BRICKS as brick (brick.id)}
-		<BrickCard {brick} onAdd={() => appendBrick(draft.sections, brick)} />
+		<BrickCard {brick} onAdd={() => appendBrick(draft, brick)} />
 	{/each}
 	<StructureTree bind:sections={draft.sections} {errors} onChange={() => {}} />
 </div>

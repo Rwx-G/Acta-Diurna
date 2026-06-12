@@ -113,7 +113,7 @@
 				<BrickCard
 					{brick}
 					onAdd={() => {
-						appendBrick(draft.sections, brick);
+						appendBrick(draft, brick);
 						onChange();
 					}}
 				/>

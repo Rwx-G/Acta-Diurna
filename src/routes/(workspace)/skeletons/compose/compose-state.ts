@@ -36,7 +36,21 @@ export function newSkeletonDraft(coverBrick: Brick): DocumentV1Input {
 	};
 }
 
-/** Appends a brick's section to the end of the structure (click-to-add). */
-export function appendBrick(sections: SkeletonSection[], brick: Brick): void {
-	sections.push(brick.factory());
+/**
+ * Appends a brick's section to the end of the structure (click-to-add), and
+ * seeds any companion scales (Epic 7) the brick's block references so the
+ * assembled document resolves them. A scale whose key is already on the draft is
+ * not duplicated (unique scale keys are a document constraint), so re-adding the
+ * matrix brick reuses the existing scales.
+ */
+export function appendBrick(draft: DocumentV1Input, brick: Brick): void {
+	draft.sections.push(brick.factory());
+	const companionScales = brick.scales?.();
+	if (!companionScales || companionScales.length === 0) return;
+	const existing = (draft.scales ??= []);
+	for (const scale of companionScales) {
+		if (!existing.some((seeded) => seeded.key === scale.key)) {
+			existing.push(scale);
+		}
+	}
 }
