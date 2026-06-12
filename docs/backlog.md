@@ -17,6 +17,11 @@ Items parked during autonomous development runs: decisions needing the product o
 
 ## Future Improvements
 
+- **Epic 3 prep - realm-parameterized session core** (1.4 architect review): extract createSession(realm)/validateSession(realm)/destroySession(realm-scoped) before reader sessions; reader lifecycle needs configurable TTL, identity/share binding, and record-then-delete (access_records) instead of delete-on-sight.
+- **Epic 4 prep - API error boundary** (1.4 architect review): first /api/v1 story adds a handle segment scoped to /api/* that try/catches resolve and maps thrown AppError to problemResponse - removes per-endpoint catch discipline.
+- **Ops doc - reverse-proxy contract** (1.4 security audit): document ADDRESS_HEADER guidance (only behind a trusted proxy that strips inbound XFF); per-IP limiting collapses behind a proxy - global failure brake added in 1.4 QA as the second line.
+- **`__Host-` cookie prefix** when https-only deployments are the norm (1.4 security audit, optional hardening).
+
 - **e2e fixture strategy: Testcontainers PostgreSQL (decision adopted from 1.3 architect review).** First e2e story (1.6) implements: `@testcontainers/postgresql` ephemeral db per Playwright run, webServer launching `node build` against it, boot migrations give a known state. Drop `--pass-with-no-tests` then; axe-core gate lands there too.
 - **Trivy image scan in CI docker job** (docker.md tooling gap, 1.3 architect review).
 - **Migration failure policy**: bounded retry for transient connection errors + operator recovery runbook; verify drizzle transactional-DDL behavior before complex migrations. App restart is on-failure:5 since 1.3 QA. (1.3 architect review)
