@@ -1,4 +1,4 @@
-import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError, type ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { building } from '$app/environment';
 import { deleteAuthorCookie, readAuthorCookie } from '$lib/server/auth/cookies';
@@ -115,17 +115,60 @@ const authorRealm: Handle = async ({ event, resolve }) => {
 	return await resolve(event);
 };
 
+// Public paths reachable without an author session: the login page and its
+// action, the health probe, future reader routes (`/r/...`, Epic 3), and the
+// SvelteKit asset namespaces. Everything else is the author realm and requires
+// a live session. Defined centrally so the guard has one source of truth.
+export function isPublicPath(pathname: string): boolean {
+	if (pathname === '/login' || pathname === '/healthz') return true;
+	if (pathname === '/r' || pathname.startsWith('/r/')) return true;
+	// SvelteKit-served assets (built client, immutable chunks, prerendered).
+	if (pathname.startsWith('/_app/') || pathname.startsWith('/.well-known/')) return true;
+	if (pathname === '/favicon.ico' || pathname === '/robots.txt') return true;
+	return false;
+}
+
+// Defense-in-depth author guard (the critical 1.5 fix): the (workspace) layout
+// `load` only guards GET page loads - it never runs for form actions or
+// +server endpoints, so a POST to `?/save`/`?/delete`/`/reports/new` reached
+// the action with no session. This handle short-circuits BEFORE resolve()
+// (and therefore before any action runs) for every author-realm request that
+// arrives without a session. Sits after authorRealm so locals.authorSession is
+// already resolved. GET is redirected too (the layout still guards it; this is
+// belt-and-braces). Mutations to /api/* get a 401 problem+json; page form
+// posts get a 303 to /login so the no-JS flow lands somewhere sensible.
+export const workspaceGuard: Handle = async ({ event, resolve }) => {
+	if (event.locals.authorSession || isPublicPath(event.url.pathname)) {
+		return await resolve(event);
+	}
+	if (event.request.method !== 'GET' && event.url.pathname.startsWith('/api/')) {
+		return problemResponse(
+			new AppError({
+				status: 401,
+				title: 'Unauthorized',
+				type: '/problems/unauthenticated',
+				detail: 'An author session is required.'
+			})
+		);
+	}
+	redirect(303, '/login');
+};
+
 // Ordering contract: requestContext FIRST - it provides locals.requestId to
 // every later handle and to handleError. securityHeaders and accessLog wrap
 // the rest so even short-circuited responses (429) carry headers and a log
 // line. authorRealm INNERMOST - it populates locals.authorSession during
 // resolve, which accessLog reads after resolve returns to enrich its line.
+// workspaceGuard sits AFTER authorRealm (it reads the session authorRealm just
+// resolved) and short-circuits author-realm requests with no session before
+// any action or endpoint runs.
 export const handle: Handle = sequence(
 	requestContext,
 	securityHeaders,
 	accessLog,
 	loginRateLimit,
-	authorRealm
+	authorRealm,
+	workspaceGuard
 );
 
 export const handleError: HandleServerError = ({ error, event, status, message }) => {
