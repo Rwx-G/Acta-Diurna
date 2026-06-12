@@ -10,6 +10,8 @@ Items parked during autonomous development runs: decisions needing the product o
 
 ## QA Findings (non-blocking)
 
+- **Multi-author IDOR prep** (1.5 security audit, Info): reports have no owner column; fine for single-author MVP. When multi-author/tenancy lands, add owner/tenant column, filter getRow/listReports by identity, do not rely on UUIDv7 unguessability (timestamp-prefixed).
+- **App-level document size cap before JSON.parse** (1.5 security audit, Low): currently relies on adapter-node BODY_SIZE_LIMIT (512KB default, env-overridable). Add explicit raw.length check -> 413 in the save action, pin BODY_SIZE_LIMIT in deploy env. Pairs with the 1.2 body-size backlog item.
 - **Global JSON body-size cap on the HTTP layer** - the schema now carries DoS bounds, but `JSON.parse` cost is pre-validation; add a request body limit in hooks before the API stories (target: story 1.4 hooks or 4.2). (1.2 security audit)
 - **Renderer string-sink checklist for story 1.6** - every schema string field (cells, labels, captions, axis labels, kpi values) must reach the DOM via escaped bindings only; `rel="noopener noreferrer"` on external links; consider rejecting cleartext `http://` links later. (1.2 security audit)
 - **CI first-run verification** - the GitHub Actions pipeline is structurally validated but unproven until the next push to main. (1.1 gate)
