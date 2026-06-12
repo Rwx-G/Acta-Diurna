@@ -1,0 +1,54 @@
+<script lang="ts">
+	import type { BlockView } from '../document-view.ts';
+	import ChartBlock from './ChartBlock.svelte';
+	import ImageBlock from './ImageBlock.svelte';
+	import KpiBlock from './KpiBlock.svelte';
+	import TableBlock from './TableBlock.svelte';
+	import TextBlock from './TextBlock.svelte';
+
+	// Dispatches a block view to its renderer. An invalid block (preview path
+	// only - the reader always gets a validated document) renders a gentle
+	// in-place notice instead of throwing, so one in-progress block never blanks
+	// the whole preview.
+	let { view }: { view: BlockView } = $props();
+</script>
+
+<div class="block" id={view.anchorId}>
+	{#if view.block === null}
+		<p class="invalid" role="status">
+			{view.invalidNotice ?? 'This block is not valid yet. Fix it in the editor.'}
+		</p>
+	{:else if view.block.type === 'text'}
+		<TextBlock block={view.block} />
+	{:else if view.block.type === 'table'}
+		<TableBlock block={view.block} />
+	{:else if view.block.type === 'chart'}
+		<ChartBlock block={view.block} />
+	{:else if view.block.type === 'kpi'}
+		<KpiBlock block={view.block} />
+	{:else if view.block.type === 'image'}
+		<ImageBlock block={view.block} />
+	{/if}
+</div>
+
+<style>
+	.block {
+		margin: 0 0 var(--space-6);
+		scroll-margin-top: var(--space-6);
+	}
+
+	.block:last-child {
+		margin-bottom: 0;
+	}
+
+	.invalid {
+		margin: 0;
+		padding: var(--space-3) var(--space-4);
+		font-family: var(--font-sans);
+		font-size: var(--text-sm);
+		color: var(--color-amber);
+		background: var(--color-amber-12);
+		border: 1px solid color-mix(in srgb, var(--color-amber) 30%, transparent);
+		border-radius: var(--radius-sm);
+	}
+</style>
