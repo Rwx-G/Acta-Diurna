@@ -5,6 +5,7 @@
 	import { formatUtcDateTime } from '$lib/format';
 	import Button from '$lib/ui/Button.svelte';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
+	import PageHeader from '$lib/ui/PageHeader.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -37,12 +38,15 @@
 	<title>Skeletons - Acta Diurna</title>
 </svelte:head>
 
-<div class="page-header">
-	<h1>Skeletons</h1>
-	{#if data.skeletons.length > 0}
-		<a href={composePath} class="cta">New skeleton</a>
-	{/if}
-</div>
+{#snippet newSkeletonAction()}
+	<a href={composePath} class="cta">New skeleton</a>
+{/snippet}
+
+<PageHeader
+	title="Skeletons"
+	lede="Reusable report structures - every report built from a skeleton shares its shape."
+	action={data.skeletons.length > 0 ? newSkeletonAction : undefined}
+/>
 
 {#if form?.message}
 	<p class="problem" role="alert">{form.message}</p>
@@ -77,18 +81,6 @@
 {/if}
 
 <style>
-	.page-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: var(--space-5);
-	}
-
-	h1 {
-		margin: 0;
-		font-size: 20px;
-	}
-
 	/* Anchor styled as the primary CTA: navigation, not a form submit, so it must
 	   stay an <a> (no button-in-link nesting). */
 	.cta {
@@ -106,6 +98,8 @@
 	}
 
 	.problem {
+		max-width: var(--content-width);
+		margin: 0 auto var(--space-4);
 		padding: var(--space-3) var(--space-4);
 		color: var(--color-danger);
 		background: var(--color-danger-08);
@@ -113,7 +107,8 @@
 	}
 
 	.skeleton-list {
-		margin: 0;
+		max-width: var(--content-width);
+		margin: 0 auto;
 		padding: 0;
 		list-style: none;
 		display: flex;

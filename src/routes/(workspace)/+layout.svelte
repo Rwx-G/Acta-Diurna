@@ -113,8 +113,15 @@
 		color: var(--color-purple);
 	}
 
+	/* Every page lives in a bounded, centered column - no page runs edge to edge.
+	   Tool/canvas pages (editor, composer, preview) fill this --tool-width frame;
+	   content pages (Reports, Skeletons, Data sets, Settings) re-center their own
+	   narrower --content-width column inside it. */
 	main {
 		min-width: 0;
+		width: 100%;
+		max-width: var(--tool-width);
+		margin-inline: auto;
 		padding: var(--space-6) var(--space-7) var(--space-8);
 	}
 </style>

@@ -3,6 +3,7 @@
 	import { formatUtcDateTime } from '$lib/format';
 	import Button from '$lib/ui/Button.svelte';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
+	import PageHeader from '$lib/ui/PageHeader.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -105,13 +106,10 @@
 	<title>Data sets - Acta Diurna</title>
 </svelte:head>
 
-<header class="head">
-	<h1>Data sets</h1>
-	<p class="lede">
-		Upload a CSV or JSON file (up to 50 MB). Its columns are inspected so you can bind them to
-		table, chart, and KPI blocks in a report.
-	</p>
-</header>
+<PageHeader
+	title="Data sets"
+	lede="Upload a CSV or JSON file (up to 50 MB). Its columns are inspected so you can bind them to table, chart, and KPI blocks in a report."
+/>
 
 <form
 	class="uploader"
@@ -214,22 +212,13 @@
 {/if}
 
 <style>
-	.head {
-		max-width: 880px;
-		margin-bottom: var(--space-5);
-	}
-
-	.lede {
-		color: var(--color-ink-65);
-	}
-
 	.uploader {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
 		gap: var(--space-3);
-		max-width: 880px;
-		margin-bottom: var(--space-4);
+		max-width: var(--content-width);
+		margin: 0 auto var(--space-4);
 	}
 
 	.dropzone {
@@ -288,9 +277,9 @@
 
 	.progress {
 		position: relative;
-		max-width: 880px;
+		max-width: var(--content-width);
 		height: 20px;
-		margin-bottom: var(--space-4);
+		margin: 0 auto var(--space-4);
 		background: var(--color-surface);
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-sm);
@@ -313,10 +302,10 @@
 	}
 
 	.message {
-		max-width: 880px;
+		max-width: var(--content-width);
+		margin: 0 auto var(--space-4);
 		padding: var(--space-3) var(--space-4);
 		border-radius: var(--radius-sm);
-		margin-bottom: var(--space-4);
 	}
 
 	.message.ok {
@@ -332,9 +321,9 @@
 	.list {
 		display: grid;
 		gap: var(--space-4);
-		max-width: 880px;
+		max-width: var(--content-width);
+		margin: 0 auto;
 		padding: 0;
-		margin: 0;
 		list-style: none;
 	}
 

@@ -66,6 +66,8 @@
 	--leading-relaxed: 1.6; /* report prose */
 
 	--measure-prose: 70ch; /* max line length for report prose (UX) */
+	--content-width: 960px; /* standard workspace content column (list/form pages) */
+	--tool-width: 1280px; /* wider bounded column for canvas pages (editor, composer) */
 
 	/* --- Spacing - base unit 4px ------------------------------------------- */
 	--space-1: 4px;

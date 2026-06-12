@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { formatUtcDateTime } from '$lib/format';
 	import Button from '$lib/ui/Button.svelte';
+	import PageHeader from '$lib/ui/PageHeader.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -58,10 +59,10 @@
 	<title>Settings - Acta Diurna</title>
 </svelte:head>
 
-<header class="head">
-	<h1>Settings</h1>
-	<p class="lede">Configure and verify the channels Acta Diurna uses to reach your readers.</p>
-</header>
+<PageHeader
+	title="Settings"
+	lede="Configure and verify the channels Acta Diurna uses to reach your readers."
+/>
 
 <section class="panel">
 	<h2>Email delivery</h2>
@@ -222,17 +223,9 @@
 </section>
 
 <style>
-	.head {
-		max-width: 880px;
-		margin-bottom: var(--space-5);
-	}
-
-	.lede {
-		color: var(--color-ink-65);
-	}
-
 	.panel {
-		max-width: 880px;
+		max-width: var(--content-width);
+		margin: 0 auto var(--space-5);
 		padding: var(--space-5);
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-sm);

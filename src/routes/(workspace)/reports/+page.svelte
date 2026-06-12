@@ -5,6 +5,7 @@
 	import { formatUtcDateTime } from '$lib/format';
 	import Button from '$lib/ui/Button.svelte';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
+	import PageHeader from '$lib/ui/PageHeader.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
 	import type { PageProps } from './$types';
 
@@ -39,14 +40,17 @@
 	<title>Reports - Acta Diurna</title>
 </svelte:head>
 
-<div class="page-header">
-	<h1>Reports</h1>
-	{#if data.reports.length > 0}
-		<form method="POST" action={newReportPath}>
-			<Button variant="primary" type="submit">New report</Button>
-		</form>
-	{/if}
-</div>
+{#snippet newReportAction()}
+	<form method="POST" action={newReportPath}>
+		<Button variant="primary" type="submit">New report</Button>
+	</form>
+{/snippet}
+
+<PageHeader
+	title="Reports"
+	lede="Create, edit, and publish your reports."
+	action={data.reports.length > 0 ? newReportAction : undefined}
+/>
 
 {#if form?.message}
 	<p class="problem" role="alert">{form.message}</p>
@@ -96,22 +100,9 @@
 {/if}
 
 <style>
-	.page-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-4);
-		max-width: 1040px;
-		margin-bottom: var(--space-5);
-	}
-
-	h1 {
-		margin: 0;
-		font-size: var(--text-xl);
-	}
-
 	.problem {
-		max-width: 1040px;
+		max-width: var(--content-width);
+		margin: 0 auto var(--space-4);
 		padding: var(--space-3) var(--space-4);
 		color: var(--color-danger);
 		background: var(--color-danger-08);
@@ -119,8 +110,8 @@
 	}
 
 	.report-list {
-		max-width: 1040px;
-		margin: 0;
+		max-width: var(--content-width);
+		margin: 0 auto;
 		padding: 0;
 		list-style: none;
 		display: flex;
