@@ -15,6 +15,7 @@
 	import SetMembershipBlock from './SetMembershipBlock.svelte';
 	import TableBlock from './TableBlock.svelte';
 	import TextBlock from './TextBlock.svelte';
+	import TimelineBlock from './TimelineBlock.svelte';
 
 	// Dispatches a block view to its renderer. An invalid block (preview path
 	// only - the reader always gets a validated document) renders a gentle
@@ -72,6 +73,8 @@
 		<CardGridBlock block={view.block} />
 	{:else if view.block.type === 'list'}
 		<ListBlock block={view.block} />
+	{:else if view.block.type === 'timeline'}
+		<TimelineBlock block={view.block} {scales} {theme} />
 	{/if}
 </div>
 
