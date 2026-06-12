@@ -12,10 +12,12 @@ export {
 	audiencesSchema,
 	bindingFieldSchema,
 	bindingSchema,
+	bindingSlotSchema,
 	idSchema,
+	SLOT_ROLES,
 	SLUG_PATTERN
 } from './blocks/shared.ts';
-export type { Audience, Binding, BindingField } from './blocks/shared.ts';
+export type { Audience, Binding, BindingField, BindingSlot } from './blocks/shared.ts';
 
 export { inlineRunSchema, paragraphSchema, textBlockSchema } from './blocks/text.ts';
 export type { InlineRun, Paragraph, TextBlock } from './blocks/text.ts';

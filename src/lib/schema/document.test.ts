@@ -65,6 +65,96 @@ describe('document schema v1 - valid documents', () => {
 		}
 	});
 
+	it('keeps a binding with no per-field slot valid (additive 2.4 contract stays v1-valid)', () => {
+		// A document written before the 2.4 slot extension: binding fields carry
+		// name+type only, no `slot`. It must still validate unchanged.
+		const result = validateDocument({
+			version: 1,
+			title: 'Slotless',
+			sections: [
+				{
+					id: 'data',
+					title: 'Data',
+					blocks: [
+						{
+							type: 'table',
+							id: 'legacy-table',
+							columns: [{ key: 'item', label: 'Item' }],
+							binding: { fields: [{ name: 'item', type: 'string' }] }
+						}
+					]
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			const table = result.document.sections[0].blocks[0];
+			if (table.type === 'table') {
+				expect(table.binding?.fields[0].slot).toBeUndefined();
+			} else {
+				expect.fail('expected a table block');
+			}
+		}
+	});
+
+	it('accepts per-field slot mappings for table/chart/kpi bindings', () => {
+		const result = validateDocument({
+			version: 1,
+			title: 'Slotted',
+			sections: [
+				{
+					id: 'data',
+					title: 'Data',
+					blocks: [
+						{
+							type: 'chart',
+							id: 'bound-chart',
+							kind: 'line',
+							binding: {
+								fields: [
+									{ name: 'week', type: 'date', slot: { role: 'x' } },
+									{ name: 'count', type: 'number', slot: { role: 'y', seriesName: 'Incidents' } }
+								]
+							}
+						}
+					]
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			const chart = result.document.sections[0].blocks[0];
+			if (chart.type === 'chart') {
+				expect(chart.binding?.fields[0].slot?.role).toBe('x');
+				expect(chart.binding?.fields[1].slot?.seriesName).toBe('Incidents');
+			} else {
+				expect.fail('expected a chart block');
+			}
+		}
+	});
+
+	it('rejects an unknown slot role', () => {
+		const result = validateDocument({
+			version: 1,
+			title: 'Bad slot',
+			sections: [
+				{
+					id: 'data',
+					title: 'Data',
+					blocks: [
+						{
+							type: 'table',
+							id: 'bad-table',
+							columns: [{ key: 'item', label: 'Item' }],
+							binding: { fields: [{ name: 'item', type: 'string', slot: { role: 'series' } }] }
+						}
+					]
+				}
+			]
+		});
+		expect(result.ok).toBe(false);
+	});
+
 	it('applies table option defaults on parse', () => {
 		const result = validateDocument({
 			version: 1,

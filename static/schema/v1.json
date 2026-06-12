@@ -231,6 +231,39 @@
 																	"date",
 																	"boolean"
 																]
+															},
+															"slot": {
+																"type": "object",
+																"properties": {
+																	"role": {
+																		"type": "string",
+																		"enum": [
+																			"column",
+																			"x",
+																			"y",
+																			"value",
+																			"label"
+																		]
+																	},
+																	"key": {
+																		"type": "string",
+																		"minLength": 1,
+																		"maxLength": 300
+																	},
+																	"order": {
+																		"type": "integer",
+																		"minimum": 0,
+																		"maximum": 1000
+																	},
+																	"seriesName": {
+																		"type": "string",
+																		"minLength": 1,
+																		"maxLength": 300
+																	}
+																},
+																"required": [
+																	"role"
+																]
 															}
 														},
 														"required": [
@@ -367,6 +400,39 @@
 																	"date",
 																	"boolean"
 																]
+															},
+															"slot": {
+																"type": "object",
+																"properties": {
+																	"role": {
+																		"type": "string",
+																		"enum": [
+																			"column",
+																			"x",
+																			"y",
+																			"value",
+																			"label"
+																		]
+																	},
+																	"key": {
+																		"type": "string",
+																		"minLength": 1,
+																		"maxLength": 300
+																	},
+																	"order": {
+																		"type": "integer",
+																		"minimum": 0,
+																		"maximum": 1000
+																	},
+																	"seriesName": {
+																		"type": "string",
+																		"minLength": 1,
+																		"maxLength": 300
+																	}
+																},
+																"required": [
+																	"role"
+																]
 															}
 														},
 														"required": [
@@ -496,6 +562,39 @@
 																	"number",
 																	"date",
 																	"boolean"
+																]
+															},
+															"slot": {
+																"type": "object",
+																"properties": {
+																	"role": {
+																		"type": "string",
+																		"enum": [
+																			"column",
+																			"x",
+																			"y",
+																			"value",
+																			"label"
+																		]
+																	},
+																	"key": {
+																		"type": "string",
+																		"minLength": 1,
+																		"maxLength": 300
+																	},
+																	"order": {
+																		"type": "integer",
+																		"minimum": 0,
+																		"maximum": 1000
+																	},
+																	"seriesName": {
+																		"type": "string",
+																		"minLength": 1,
+																		"maxLength": 300
+																	}
+																},
+																"required": [
+																	"role"
 																]
 															}
 														},

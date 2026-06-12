@@ -22,9 +22,46 @@ export const audiencesSchema = z
 	.array(audienceSchema)
 	.max(AUDIENCES.length, `Too many audience tags: ${AUDIENCES.length} maximum.`);
 
+/**
+ * The render slot a bound field feeds, per block type (the canonical 2.4
+ * binding-to-slot contract consumed by the resolver and Epic 2.5 auto-rebind):
+ *
+ * - `column` (table): the field becomes a table column. `key` is the column
+ *   key the row record uses; `order` sets the left-to-right column position.
+ * - `x` (chart): the category/time axis. Exactly one field per chart binding.
+ * - `y` (chart): a value series plotted against `x`. Several `y` fields produce
+ *   several series; `seriesName` overrides the series label (defaults to the
+ *   field name).
+ * - `value` (kpi): the field whose first row feeds the KPI value.
+ * - `label` (kpi): the field whose first row feeds the KPI label (defaults to
+ *   the field name when absent).
+ *
+ * Every member is optional so a schema-v1 document written before this contract
+ * (a binding with no `slot` on its fields) still validates unchanged.
+ */
+export const SLOT_ROLES = ['column', 'x', 'y', 'value', 'label'] as const;
+
+export const bindingSlotSchema = z.object({
+	role: z.enum(SLOT_ROLES),
+	/** Column key for `role: 'column'`; ignored for other roles. */
+	key: z.string().min(1).max(300, 'Slot key too long: 300 characters maximum.').optional(),
+	/** Column order for `role: 'column'`; lower comes first. */
+	order: z.number().int().min(0).max(1000, 'Slot order out of range: 0-1000.').optional(),
+	/** Series label for `role: 'y'`; defaults to the field name. */
+	seriesName: z.string().min(1).max(300, 'Series name too long: 300 characters maximum.').optional()
+});
+
+export type BindingSlot = z.infer<typeof bindingSlotSchema>;
+
 export const bindingFieldSchema = z.object({
 	name: z.string().min(1).max(300, 'Field name too long: 300 characters maximum.'),
-	type: z.enum(['string', 'number', 'date', 'boolean'])
+	type: z.enum(['string', 'number', 'date', 'boolean']),
+	/**
+	 * Optional render-slot mapping (2.4, additive). Absent on legacy bindings and
+	 * on placeholder bindings authored before an upload; present once a field is
+	 * bound to a block slot. The resolver and 2.5 auto-rebind read this.
+	 */
+	slot: bindingSlotSchema.optional()
 });
 
 export type BindingField = z.infer<typeof bindingFieldSchema>;
