@@ -41,7 +41,7 @@ LABEL org.opencontainers.image.title="Acta Diurna" \
       org.opencontainers.image.description="Self-hosted authoring and sharing of periodic data reports" \
       org.opencontainers.image.source="https://github.com/Rwx-G/Acta-Diurna" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.version="0.8.0" \
+      org.opencontainers.image.version="0.9.0" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_DATE}"
 
