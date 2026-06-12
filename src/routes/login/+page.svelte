@@ -70,7 +70,7 @@
 		font: inherit;
 		color: inherit;
 		background: var(--color-stone);
-		border: 1px solid rgb(28 27 46 / 25%);
+		border: 1px solid var(--color-ink-25);
 		border-radius: var(--radius-sm);
 	}
 

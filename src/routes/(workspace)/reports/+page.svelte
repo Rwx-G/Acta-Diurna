@@ -21,7 +21,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: var(--space-3) var(--space-5);
-		border-bottom: 1px solid rgb(28 27 46 / 12%);
+		border-bottom: 1px solid var(--color-ink-12);
 		background: var(--color-surface);
 	}
 
@@ -39,7 +39,7 @@
 		font: inherit;
 		color: var(--color-ink);
 		background: none;
-		border: 1px solid rgb(28 27 46 / 25%);
+		border: 1px solid var(--color-ink-25);
 		border-radius: var(--radius-sm);
 		cursor: pointer;
 	}
@@ -61,6 +61,6 @@
 	}
 
 	.empty {
-		color: rgb(28 27 46 / 65%);
+		color: var(--color-ink-65);
 	}
 </style>

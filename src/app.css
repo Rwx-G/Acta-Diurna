@@ -14,6 +14,11 @@
 	--color-danger: #a23b3b;
 	--color-surface: #fffdf9;
 
+	/* Ink opacity variants - single source for borders and muted text */
+	--color-ink-12: color-mix(in srgb, var(--color-ink) 12%, transparent);
+	--color-ink-25: color-mix(in srgb, var(--color-ink) 25%, transparent);
+	--color-ink-65: color-mix(in srgb, var(--color-ink) 65%, transparent);
+
 	/* Typography */
 	--font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
 	--font-sans:
