@@ -83,6 +83,7 @@ docker compose up -d
 ## Documentation
 
 - [`docs/brief.md`](docs/brief.md) - product brief: vision, scope, kickoff decisions log, open questions
+- [`docs/ops/deployment.md`](docs/ops/deployment.md) - deployment hardening: reverse-proxy contract, ORIGIN, body size, secrets posture, pool sizing
 
 ## License
 
