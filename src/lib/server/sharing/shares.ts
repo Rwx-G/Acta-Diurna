@@ -171,6 +171,22 @@ export async function getShareByToken(rawToken: string): Promise<ResolvedShare |
 }
 
 /**
+ * Switches a share between restricted and open mode (FR19, story 3.4). The
+ * recipient allow-list is left untouched - switching to open simply ignores it,
+ * switching back to restricted re-applies the same list - so the author can
+ * toggle without losing the list. Returns the number of rows updated (0 when the
+ * share id is unknown), the caller maps a miss to a 404.
+ */
+export async function setShareMode(shareId: string, mode: ShareMode): Promise<number> {
+	const updated = await getDb()
+		.update(shares)
+		.set({ mode })
+		.where(eq(shares.id, shareId))
+		.returning({ id: shares.id });
+	return updated.length;
+}
+
+/**
  * Builds the public reader URL for a raw token. The token is the only place the
  * raw value lives; this is the single point that composes it into `/r/[token]`
  * (the reader render route story 3.3 gates). `origin` is the request origin so

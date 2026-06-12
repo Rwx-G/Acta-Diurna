@@ -6,6 +6,7 @@ export {
 	createShare,
 	listShares,
 	getShareByToken,
+	setShareMode,
 	shareStatus,
 	isExpired,
 	shareUrl
@@ -20,3 +21,5 @@ export type {
 } from './shares.ts';
 
 export { generateShareToken, hashShareToken, SHARE_TOKEN_BYTES } from './tokens.ts';
+
+export { setShareRecipients, listShareRecipients, isAuthorizedReader } from './recipients.ts';
