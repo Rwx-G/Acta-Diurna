@@ -12,8 +12,11 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 }));
 
 import { getReport, listReports } from '$lib/server/documents/reports';
+import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { buildMcpServer, MCP_SERVER_NAME } from './server';
+
+const VALID_REPORT_ID = '01970000-0000-7000-8000-000000000001';
 
 const listReportsMock = vi.mocked(listReports);
 const getReportMock = vi.mocked(getReport);
@@ -91,10 +94,34 @@ describe('buildMcpServer', () => {
 	});
 
 	it('get_report calls getReport(id) with the passed argument', async () => {
-		getReportMock.mockResolvedValue({ id: 'rep-1' } as unknown as Awaited<
+		getReportMock.mockResolvedValue({ id: VALID_REPORT_ID } as unknown as Awaited<
 			ReturnType<typeof getReport>
 		>);
-		await client.callTool({ name: 'get_report', arguments: { id: 'rep-1' } });
-		expect(getReportMock).toHaveBeenCalledWith('rep-1');
+		await client.callTool({ name: 'get_report', arguments: { id: VALID_REPORT_ID } });
+		expect(getReportMock).toHaveBeenCalledWith(VALID_REPORT_ID);
+	});
+
+	it('rejects a malformed get_report id at the SDK tool boundary (no service call)', async () => {
+		// Defense in depth: the z.string().uuid() inputSchema bounces a malformed id
+		// before the handler runs, so the documents service is never reached.
+		const result = await client.callTool({ name: 'get_report', arguments: { id: 'not-a-uuid' } });
+		expect(result.isError).toBe(true);
+		expect(getReportMock).not.toHaveBeenCalled();
+	});
+
+	it('still reaches the service for a valid-shape unknown id (404 isError tool result)', async () => {
+		getReportMock.mockRejectedValue(
+			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
+		);
+		const result = await client.callTool({
+			name: 'get_report',
+			arguments: { id: VALID_REPORT_ID }
+		});
+		expect(getReportMock).toHaveBeenCalledWith(VALID_REPORT_ID);
+		expect(result.isError).toBe(true);
+		const content = result.content as { type: string; text: string }[];
+		const problem = JSON.parse(content[0].text) as { status: number; type: string };
+		expect(problem.status).toBe(404);
+		expect(problem.type).toBe('/problems/report-not-found');
 	});
 });

@@ -78,7 +78,11 @@ export function buildMcpServer(): McpServer {
 			description:
 				'Returns one full report (draft document, published snapshot, status, timestamps) ' +
 				'by id. An unknown id is a not-found error result.',
-			inputSchema: { id: z.string().describe('The report id (UUID).') },
+			// Validated as a UUID at the SDK tool boundary (defense in depth): a
+			// malformed id is rejected before the handler runs, mirroring the
+			// service's UUID_PATTERN 404 one layer earlier. A valid-but-unknown id
+			// still reaches the service and surfaces its 404 as an isError result.
+			inputSchema: { id: z.string().uuid().describe('The report id (UUID).') },
 			annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
 		},
 		({ id }) => getReportTool(id)
