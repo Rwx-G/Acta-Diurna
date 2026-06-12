@@ -10,6 +10,7 @@ import { fieldGridBlockSchema } from './field-grid.ts';
 import { imageBlockSchema } from './image.ts';
 import { kpiBlockSchema } from './kpi.ts';
 import { legendBlockSchema } from './legend.ts';
+import { listBlockSchema } from './list.ts';
 import { setMembershipBlockSchema } from './set-membership.ts';
 import { tableBlockSchema } from './table.ts';
 import { textBlockSchema } from './text.ts';
@@ -28,7 +29,8 @@ export const blockSchema = z.discriminatedUnion('type', [
 	chipClusterBlockSchema,
 	calloutBlockSchema,
 	codeBlockSchema,
-	cardGridBlockSchema
+	cardGridBlockSchema,
+	listBlockSchema
 ]);
 
 export type Block = z.infer<typeof blockSchema>;

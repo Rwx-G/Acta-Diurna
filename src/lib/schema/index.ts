@@ -94,6 +94,14 @@ export {
 } from './blocks/card-grid.ts';
 export type { CardGridBlock, CardItem } from './blocks/card-grid.ts';
 
+export {
+	listBlockSchema,
+	listItemSchema,
+	MAX_LIST_ITEMS,
+	MAX_LIST_ITEM_PARAGRAPHS
+} from './blocks/list.ts';
+export type { ListBlock, ListItem } from './blocks/list.ts';
+
 export { ICON_NAMES, iconNameSchema } from './icons.ts';
 export type { IconName } from './icons.ts';
 

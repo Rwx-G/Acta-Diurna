@@ -46,7 +46,7 @@ describe('validateDocument - invalid corpus', () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0].path).toBe('sections[0].blocks[0].type');
 		expect(errors[0].hint).toBe(
-			'Valid block types: text, table, chart, kpi, image, comparison-matrix, field-grid, legend, set-membership, chip-cluster, callout, code, card-grid.'
+			'Valid block types: text, table, chart, kpi, image, comparison-matrix, field-grid, legend, set-membership, chip-cluster, callout, code, card-grid, list.'
 		);
 	});
 
