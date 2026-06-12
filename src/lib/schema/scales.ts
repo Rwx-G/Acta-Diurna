@@ -198,10 +198,44 @@ export function validateScaleReferences(document: {
 			const block = blocks[b];
 			if (block.type === 'comparison-matrix') {
 				validateComparisonMatrixRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
+			} else if (block.type === 'legend') {
+				validateLegendRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
 			}
 		}
 	}
 	return issues;
+}
+
+/**
+ * Structural view of a legend block, narrowed by `type` in the loop above. Typed
+ * locally so this isomorphic module does not import the block schema. The block
+ * has already passed its own zod shape validation before this pass runs, so the
+ * `scaleRef` field is present and slug-shaped.
+ */
+interface LegendRefView {
+	type: string;
+	scaleRef?: unknown;
+}
+
+/**
+ * Resolves a legend block's `scaleRef` against the document `scales`, pushing one
+ * {@link ScaleReferenceIssue} when the referenced scale is not declared. The path
+ * is built off `basePath` (`['sections', i, 'blocks', j]`).
+ */
+function validateLegendRefs(
+	block: LegendRefView,
+	scales: Scales | undefined,
+	basePath: PropertyKey[],
+	issues: ScaleReferenceIssue[]
+): void {
+	const scaleKey = typeof block.scaleRef === 'string' ? block.scaleRef : undefined;
+	if (scaleKey && !resolveScaleRef(scales, scaleKey)) {
+		issues.push({
+			path: [...basePath, 'scaleRef'],
+			message: `Unknown legend scale: ${scaleKey}.`,
+			hint: `Declare a scale with key "${scaleKey}" in the document scales, or reference an existing scale.`
+		});
+	}
 }
 
 /**

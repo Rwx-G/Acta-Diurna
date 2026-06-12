@@ -858,6 +858,102 @@
 										"sourceScale",
 										"findings"
 									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "field-grid"
+										},
+										"id": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"maxItems": 3,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"items": {
+											"minItems": 1,
+											"maxItems": 24,
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"label": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 200
+													},
+													"value": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 500
+													}
+												},
+												"required": [
+													"label",
+													"value"
+												]
+											}
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"items"
+									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "legend"
+										},
+										"id": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"maxItems": 3,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"scaleRef": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"title": {
+											"type": "string",
+											"minLength": 1,
+											"maxLength": 200
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"scaleRef"
+									]
 								}
 							]
 						}

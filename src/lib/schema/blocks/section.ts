@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { audiencesSchema, idSchema } from './shared.ts';
 import { chartBlockSchema } from './chart.ts';
 import { comparisonMatrixBlockSchema } from './comparison-matrix.ts';
+import { fieldGridBlockSchema } from './field-grid.ts';
 import { imageBlockSchema } from './image.ts';
 import { kpiBlockSchema } from './kpi.ts';
+import { legendBlockSchema } from './legend.ts';
 import { tableBlockSchema } from './table.ts';
 import { textBlockSchema } from './text.ts';
 
@@ -14,7 +16,9 @@ export const blockSchema = z.discriminatedUnion('type', [
 	chartBlockSchema,
 	kpiBlockSchema,
 	imageBlockSchema,
-	comparisonMatrixBlockSchema
+	comparisonMatrixBlockSchema,
+	fieldGridBlockSchema,
+	legendBlockSchema
 ]);
 
 export type Block = z.infer<typeof blockSchema>;

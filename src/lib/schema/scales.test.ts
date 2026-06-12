@@ -326,3 +326,51 @@ describe('validateScaleReferences - comparison-matrix cross references', () => {
 		}
 	});
 });
+
+describe('validateScaleReferences - legend cross references', () => {
+	const sourcesScale: Scale = {
+		key: 'sources',
+		label: 'Sources',
+		kind: 'nominal',
+		entries: [
+			{ key: 'siem', label: 'SIEM' },
+			{ key: 'edr', label: 'EDR' }
+		]
+	};
+
+	function legendDoc(block: Record<string, unknown>, scales: Scale[] = [sourcesScale]) {
+		return {
+			version: 1 as const,
+			title: 'Audit',
+			scales,
+			sections: [{ id: 'overview', title: 'Overview', blocks: [block] }]
+		};
+	}
+
+	function validLegendBlock(overrides: Record<string, unknown> = {}) {
+		return { type: 'legend', id: 'source-legend', scaleRef: 'sources', ...overrides };
+	}
+
+	it('passes when the scaleRef resolves', () => {
+		expect(validateDocument(legendDoc(validLegendBlock())).ok).toBe(true);
+	});
+
+	it('flags an unknown scaleRef at the block path (FR2)', () => {
+		const result = validateDocument(legendDoc(validLegendBlock({ scaleRef: 'ghost' })));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('scaleRef'));
+			expect(issue?.path).toBe('sections[0].blocks[0].scaleRef');
+			expect(issue?.message).toContain('ghost');
+		}
+	});
+
+	it('returns the issue via the seam directly', () => {
+		const issues = validateScaleReferences({
+			scales: [sourcesScale],
+			sections: [{ blocks: [{ type: 'legend', scaleRef: 'ghost' } as { type: string }] }]
+		});
+		expect(issues).toHaveLength(1);
+		expect(issues[0].path).toEqual(['sections', 0, 'blocks', 0, 'scaleRef']);
+	});
+});
