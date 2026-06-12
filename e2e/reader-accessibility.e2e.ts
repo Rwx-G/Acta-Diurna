@@ -54,3 +54,26 @@ test('the rendered comparison matrix has no axe-core violations (WCAG 2 A/AA)', 
 
 	expect(results.violations).toEqual([]);
 });
+
+/**
+ * The field-grid header and the source legend (story 7.3) on the default theme.
+ * The field grid is a semantic <dl> of escaped label/value pairs; the legend
+ * renders one swatch per scale entry, each carrying its text label so colour is
+ * never the sole signal. axe gates the metadata-list semantics, the swatch text
+ * labels, and the AA floor. NFR14. The same fixture carries the matrix, so this
+ * is the MVP correlation report (field grid + matrix + legend) rendered end to
+ * end.
+ */
+test('the rendered field grid and legend have no axe-core violations (WCAG 2 A/AA)', async ({
+	page
+}) => {
+	await page.goto(MATRIX_VIEW_URL);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+	await expect(page.getByText('Author', { exact: true })).toBeVisible();
+
+	const results = await new AxeBuilder({ page })
+		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+		.analyze();
+
+	expect(results.violations).toEqual([]);
+});

@@ -27,11 +27,13 @@ export const FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000001';
 export const FIXTURE_DOCUMENT = fullDocument;
 
 /**
- * A second seeded report on the DEFAULT theme carrying a comparison-matrix block
- * (Epic 7, story 7.2). Kept separate from the shared full fixture so the matrix
- * axe check runs on the default theme (NFR14) without disturbing the full
+ * A second seeded report on the DEFAULT theme carrying the Epic 7 correlation
+ * blocks: a field-grid header (story 7.3), a comparison-matrix (story 7.2) and a
+ * source legend (story 7.3). Kept separate from the shared full fixture so the
+ * axe checks run on the default theme (NFR14) without disturbing the full
  * example's snapshots. Severity and sources scales declared at document level;
- * the block references them by key.
+ * the matrix and legend reference them by key, so this fixture is the MVP
+ * correlation report rendered end to end.
  */
 export const MATRIX_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000002';
 
@@ -61,6 +63,22 @@ export const MATRIX_FIXTURE_DOCUMENT = {
 		}
 	],
 	sections: [
+		{
+			id: 'overview',
+			title: 'Overview',
+			blocks: [
+				{
+					type: 'field-grid' as const,
+					id: 'metadata',
+					items: [
+						{ label: 'Author', value: 'Security team' },
+						{ label: 'Date', value: 'Q2 2026' },
+						{ label: 'Scope', value: 'Production estate' },
+						{ label: 'Status', value: 'Final' }
+					]
+				}
+			]
+		},
 		{
 			id: 'findings',
 			title: 'Findings',
@@ -115,6 +133,12 @@ export const MATRIX_FIXTURE_DOCUMENT = {
 							}
 						}
 					]
+				},
+				{
+					type: 'legend' as const,
+					id: 'source-legend',
+					scaleRef: 'sources',
+					title: 'Sources'
 				}
 			]
 		}
