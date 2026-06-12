@@ -64,6 +64,10 @@
 				const kind = block.ordered ? 'steps' : 'list';
 				return `List (${kind}) - ${count} item${count === 1 ? '' : 's'}`;
 			}
+			case 'timeline': {
+				const count = block.milestones.length;
+				return `Timeline - ${count} milestone${count === 1 ? '' : 's'}`;
+			}
 			default: {
 				// A new block type must add a case above rather than fall through silently.
 				const exhaustive: never = block;

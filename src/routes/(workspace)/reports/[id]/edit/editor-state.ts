@@ -117,6 +117,17 @@ export function newBlock(type: BlockType): Block {
 			// term: validation names the empty term on save (errors are guidance, the
 			// author is never blocked from adding a block).
 			return { type, id, ordered: true, items: [{ term: '' }] };
+		case 'timeline':
+			// Starts with one milestone carrying an empty label and an empty status
+			// ref (not slug-valid): the block schema flags the empty label and the
+			// document cross-reference pass flags the empty status, so the author picks
+			// the scale, an entry, and a label before saving (errors are guidance, the
+			// author is never blocked from adding a block).
+			return {
+				type,
+				id,
+				milestones: [{ label: '', status: { scaleRef: '', entry: '' } }]
+			};
 	}
 }
 

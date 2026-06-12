@@ -129,6 +129,19 @@ describe('newBlock', () => {
 		}
 	});
 
+	it('creates a timeline starter whose validation names the empty milestone label', () => {
+		const block = newBlock('timeline');
+		expect(block.type).toBe('timeline');
+		if (block.type === 'timeline') expect(block.milestones).toHaveLength(1);
+		const result = validateDocument(documentWith([block]));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.errors.map((error) => error.path)).toContain(
+				'sections[0].blocks[0].milestones[0].label'
+			);
+		}
+	});
+
 	it('assigns a fresh slug-valid id per block', () => {
 		const first = newBlock('text');
 		const second = newBlock('text');

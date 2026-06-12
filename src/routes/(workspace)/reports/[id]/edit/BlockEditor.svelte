@@ -17,6 +17,7 @@
 	import SetMembershipBlockEditor from './SetMembershipBlockEditor.svelte';
 	import TableBlockEditor from './TableBlockEditor.svelte';
 	import TextBlockEditor from './TextBlockEditor.svelte';
+	import TimelineBlockEditor from './TimelineBlockEditor.svelte';
 	import type { EditorIssue, MatrixBlockOption } from './editor-state';
 
 	// Thin dispatcher: owns the shared block chrome (header controls, inline
@@ -103,6 +104,8 @@
 		<CardGridBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'list'}
 		<ListBlockEditor bind:block {onEdit} />
+	{:else if block.type === 'timeline'}
+		<TimelineBlockEditor bind:block {scales} {onEdit} />
 	{/if}
 </article>
 

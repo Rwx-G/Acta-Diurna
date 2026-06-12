@@ -48,7 +48,8 @@
 		'callout',
 		'code',
 		'card-grid',
-		'list'
+		'list',
+		'timeline'
 	];
 </script>
 
