@@ -63,6 +63,9 @@ export type { FieldGridBlock, FieldItem } from './blocks/field-grid.ts';
 export { legendBlockSchema } from './blocks/legend.ts';
 export type { LegendBlock } from './blocks/legend.ts';
 
+export { setMembershipBlockSchema } from './blocks/set-membership.ts';
+export type { SetMembershipBlock } from './blocks/set-membership.ts';
+
 export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 

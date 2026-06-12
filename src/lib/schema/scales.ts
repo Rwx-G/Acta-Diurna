@@ -189,9 +189,13 @@ export interface ScaleReferenceIssue {
  */
 export function validateScaleReferences(document: {
 	scales?: Scales;
-	sections: ReadonlyArray<{ blocks: ReadonlyArray<{ type: string }> }>;
+	sections: ReadonlyArray<{ blocks: ReadonlyArray<{ type: string; id?: unknown }> }>;
 }): ScaleReferenceIssue[] {
 	const issues: ScaleReferenceIssue[] = [];
+	// 7.4: an index of the ids that resolve to a comparison-matrix block anywhere
+	// in the document, so a set-membership block's `sourceBlockId` can be checked
+	// against it (the referenced block can live in any section).
+	const matrixBlockIds = collectMatrixBlockIds(document.sections);
 	for (let s = 0; s < document.sections.length; s += 1) {
 		const blocks = document.sections[s].blocks;
 		for (let b = 0; b < blocks.length; b += 1) {
@@ -200,10 +204,65 @@ export function validateScaleReferences(document: {
 				validateComparisonMatrixRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
 			} else if (block.type === 'legend') {
 				validateLegendRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
+			} else if (block.type === 'set-membership') {
+				validateSetMembershipRefs(block, matrixBlockIds, ['sections', s, 'blocks', b], issues);
 			}
 		}
 	}
 	return issues;
+}
+
+/**
+ * Collects the ids of every `comparison-matrix` block across the document's
+ * sections, so a `set-membership` block can resolve its `sourceBlockId` against a
+ * block in any section (a whole-document concern, not a block-local one).
+ */
+function collectMatrixBlockIds(
+	sections: ReadonlyArray<{ blocks: ReadonlyArray<{ type: string; id?: unknown }> }>
+): Set<string> {
+	const ids = new Set<string>();
+	for (const section of sections) {
+		for (const block of section.blocks) {
+			if (block.type === 'comparison-matrix' && typeof block.id === 'string') {
+				ids.add(block.id);
+			}
+		}
+	}
+	return ids;
+}
+
+/**
+ * Structural view of a set-membership block, narrowed by `type` in the loop
+ * above. Typed locally so this isomorphic module does not import the block
+ * schema. The block has already passed its own zod shape validation before this
+ * pass runs, so `sourceBlockId` is present and slug-shaped.
+ */
+interface SetMembershipRefView {
+	type: string;
+	sourceBlockId?: unknown;
+}
+
+/**
+ * Resolves a set-membership block's `sourceBlockId` against the ids of the
+ * document's comparison-matrix blocks, pushing one {@link ScaleReferenceIssue}
+ * when the id matches no block, or matches a block that is not a
+ * comparison-matrix. The path is built off `basePath`
+ * (`['sections', i, 'blocks', j]`).
+ */
+function validateSetMembershipRefs(
+	block: SetMembershipRefView,
+	matrixBlockIds: ReadonlySet<string>,
+	basePath: PropertyKey[],
+	issues: ScaleReferenceIssue[]
+): void {
+	const sourceBlockId = typeof block.sourceBlockId === 'string' ? block.sourceBlockId : undefined;
+	if (sourceBlockId && !matrixBlockIds.has(sourceBlockId)) {
+		issues.push({
+			path: [...basePath, 'sourceBlockId'],
+			message: `Unknown comparison-matrix block: ${sourceBlockId}.`,
+			hint: `"${sourceBlockId}" does not match a comparison-matrix block in this document; set sourceBlockId to the id of an existing comparison-matrix block.`
+		});
+	}
 }
 
 /**

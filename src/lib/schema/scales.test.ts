@@ -374,3 +374,97 @@ describe('validateScaleReferences - legend cross references', () => {
 		expect(issues[0].path).toEqual(['sections', 0, 'blocks', 0, 'scaleRef']);
 	});
 });
+
+describe('validateScaleReferences - set-membership cross references', () => {
+	const sourcesScale: Scale = {
+		key: 'sources',
+		label: 'Sources',
+		kind: 'nominal',
+		entries: [
+			{ key: 'siem', label: 'SIEM' },
+			{ key: 'edr', label: 'EDR' }
+		]
+	};
+
+	function matrixBlock(id = 'coverage'): Record<string, unknown> {
+		return {
+			type: 'comparison-matrix',
+			id,
+			severityScale: 'severity',
+			sourceScale: 'sources',
+			findings: [
+				{
+					category: 'Access',
+					label: 'Weak policy',
+					severity: 'high',
+					sources: { siem: { state: 'found' }, edr: { state: 'missing' } },
+					treatment: { before: 'a', after: 'b', status: 'action' }
+				}
+			]
+		};
+	}
+
+	function upsetBlock(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+		return { type: 'set-membership', id: 'upset', sourceBlockId: 'coverage', ...overrides };
+	}
+
+	/** A document carrying a matrix block + a set-membership block in given sections. */
+	function doc(blocks: Record<string, unknown>[][]): unknown {
+		return {
+			version: 1 as const,
+			title: 'Audit',
+			scales: [severityScale, sourcesScale],
+			sections: blocks.map((sectionBlocks, index) => ({
+				id: `s${index}`,
+				title: `Section ${index}`,
+				blocks: sectionBlocks
+			}))
+		};
+	}
+
+	it('passes when sourceBlockId resolves to a comparison-matrix block', () => {
+		expect(validateDocument(doc([[matrixBlock(), upsetBlock()]])).ok).toBe(true);
+	});
+
+	it('resolves a matrix block in a DIFFERENT section (document-wide)', () => {
+		expect(validateDocument(doc([[matrixBlock()], [upsetBlock()]])).ok).toBe(true);
+	});
+
+	it('flags a sourceBlockId matching no block at the block path (FR2)', () => {
+		const result = validateDocument(doc([[matrixBlock(), upsetBlock({ sourceBlockId: 'ghost' })]]));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('sourceBlockId'));
+			expect(issue?.path).toBe('sections[0].blocks[1].sourceBlockId');
+			expect(issue?.message).toContain('ghost');
+		}
+	});
+
+	it('flags a sourceBlockId pointing at a non-matrix block (FR2)', () => {
+		const textBlock = { type: 'text', id: 'note', paragraphs: [[{ text: 'x' }]] };
+		const result = validateDocument(doc([[textBlock, upsetBlock({ sourceBlockId: 'note' })]]));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('sourceBlockId'));
+			expect(issue?.path).toBe('sections[0].blocks[1].sourceBlockId');
+			expect(issue?.message).toContain('note');
+		}
+	});
+
+	it('returns the issue via the seam directly', () => {
+		const issues = validateScaleReferences({
+			sections: [
+				{
+					blocks: [
+						{ type: 'set-membership', id: 'upset', sourceBlockId: 'ghost' } as {
+							type: string;
+							id: string;
+						}
+					]
+				}
+			]
+		});
+		expect(issues).toHaveLength(1);
+		expect(issues[0].path).toEqual(['sections', 0, 'blocks', 0, 'sourceBlockId']);
+	});
+});
