@@ -60,6 +60,7 @@
 		"@fontsource/cinzel": "5.2.8",
 		"@fontsource/inter": "5.2.8",
 		"@fontsource/source-serif-4": "5.2.9",
+		"@modelcontextprotocol/sdk": "1.29.0",
 		"argon2": "0.44.0",
 		"d3-scale": "4.0.2",
 		"d3-shape": "3.2.0",
