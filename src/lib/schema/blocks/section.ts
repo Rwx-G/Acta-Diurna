@@ -3,6 +3,7 @@ import { audiencesSchema, idSchema } from './shared.ts';
 import { calloutBlockSchema } from './callout.ts';
 import { chartBlockSchema } from './chart.ts';
 import { chipClusterBlockSchema } from './chip-cluster.ts';
+import { codeBlockSchema } from './code.ts';
 import { comparisonMatrixBlockSchema } from './comparison-matrix.ts';
 import { fieldGridBlockSchema } from './field-grid.ts';
 import { imageBlockSchema } from './image.ts';
@@ -24,7 +25,8 @@ export const blockSchema = z.discriminatedUnion('type', [
 	legendBlockSchema,
 	setMembershipBlockSchema,
 	chipClusterBlockSchema,
-	calloutBlockSchema
+	calloutBlockSchema,
+	codeBlockSchema
 ]);
 
 export type Block = z.infer<typeof blockSchema>;

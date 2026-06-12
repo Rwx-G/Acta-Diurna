@@ -5,11 +5,15 @@ import { audiencesSchema, idSchema } from './shared.ts';
  * Narrative content is data, never HTML (XSS rule, architecture cross-cutting
  * concern 2). Inline runs carry the only formatting the renderer honors;
  * links are restricted to http(s) so no scriptable URL ever enters a document.
+ * The `code` mark (Story 7.8) renders the run as an escaped monospace chip
+ * (a `<code>` span), the inline twin of the code block - additive, so a run
+ * without it renders exactly as before.
  */
 export const inlineRunSchema = z.object({
 	text: z.string().max(5000, 'Run text too long: 5000 characters maximum.'),
 	bold: z.boolean().optional(),
 	italic: z.boolean().optional(),
+	code: z.boolean().optional(),
 	link: z
 		.object({
 			href: z

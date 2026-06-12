@@ -77,6 +77,15 @@ export {
 } from './blocks/callout.ts';
 export type { CalloutBlock, CalloutTone } from './blocks/callout.ts';
 
+export {
+	codeAnnotationSchema,
+	codeBlockSchema,
+	MAX_CODE_ANNOTATIONS,
+	MAX_CODE_LENGTH,
+	MAX_CODE_LINES
+} from './blocks/code.ts';
+export type { CodeAnnotation, CodeBlock } from './blocks/code.ts';
+
 export { ICON_NAMES, iconNameSchema } from './icons.ts';
 export type { IconName } from './icons.ts';
 
