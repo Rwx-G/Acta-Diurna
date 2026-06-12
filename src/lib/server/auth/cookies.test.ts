@@ -139,6 +139,21 @@ describe('reader cookie', () => {
 		});
 	});
 
+	it('sets a persistent ~400-day-capped cookie when the session has no expiry (null)', () => {
+		const cookies = fakeCookies();
+		const before = Date.now();
+		setReaderCookie(cookies, 'token', null);
+		const after = Date.now();
+		const maxDaysMs = 400 * 24 * 60 * 60 * 1000;
+
+		// No DB expiry -> the cookie is still persistent (the session never ends),
+		// capped at the browser's ~400-day cookie lifetime maximum.
+		const expires = cookies.lastSetOptions?.expires as Date;
+		expect(expires).toBeInstanceOf(Date);
+		expect(expires.getTime()).toBeGreaterThanOrEqual(before + maxDaysMs);
+		expect(expires.getTime()).toBeLessThanOrEqual(after + maxDaysMs);
+	});
+
 	it('strict realm separation: a reader cookie is NOT read as an author session', () => {
 		// The realms share the signing secret and format but use distinct cookie
 		// NAMES, so a valid reader cookie presented to the author reader returns

@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReaderSessionRow, SessionRow } from '../db/schema';
 import {
 	AUTHOR_SESSION_TTL_MS,
-	READER_SESSION_DEFAULT_TTL_MS,
 	createAuthorSession,
 	createReaderSession,
 	destroyReaderSession,
@@ -220,14 +219,12 @@ describe('destroySession', () => {
 });
 
 describe('createReaderSession', () => {
-	it('stores only the token hash, binds share/report/identity, applies the 30-day default TTL', async () => {
-		const before = Date.now();
+	it('stores only the token hash, binds share/report/identity, has NO expiry when READER_SESSION_TTL is unset', async () => {
 		const { token, expiresAt } = await createReaderSession({
 			shareId: 'share-9',
 			reportId: 'report-9',
 			readerIdentityId: 'identity-9'
 		});
-		const after = Date.now();
 
 		expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
 		const inserted = dbState.inserted[0];
@@ -236,11 +233,12 @@ describe('createReaderSession', () => {
 		expect(inserted.shareId).toBe('share-9');
 		expect(inserted.reportId).toBe('report-9');
 		expect(inserted.readerIdentityId).toBe('identity-9');
-		expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + READER_SESSION_DEFAULT_TTL_MS);
-		expect(expiresAt.getTime()).toBeLessThanOrEqual(after + READER_SESSION_DEFAULT_TTL_MS);
+		// Default: no time bound. The share governs access, not a session TTL.
+		expect(expiresAt).toBeNull();
+		expect(inserted.expiresAt).toBeNull();
 	});
 
-	it('honors READER_SESSION_TTL (days) when set', async () => {
+	it('honors READER_SESSION_TTL (days) when set: the session ages out after N days', async () => {
 		env.READER_SESSION_TTL = 1;
 		const before = Date.now();
 		const { expiresAt } = await createReaderSession({
@@ -251,8 +249,9 @@ describe('createReaderSession', () => {
 		const after = Date.now();
 		const oneDay = 24 * 60 * 60 * 1000;
 
-		expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + oneDay);
-		expect(expiresAt.getTime()).toBeLessThanOrEqual(after + oneDay);
+		expect(expiresAt).not.toBeNull();
+		expect(expiresAt!.getTime()).toBeGreaterThanOrEqual(before + oneDay);
+		expect(expiresAt!.getTime()).toBeLessThanOrEqual(after + oneDay);
 	});
 });
 
@@ -279,7 +278,25 @@ describe('validateReaderSession (per-share scope)', () => {
 		await expect(validateReaderSession('reader-token', 'share-2')).resolves.toBeNull();
 	});
 
-	it('returns null and deletes an expired reader session', async () => {
+	it('resolves a session with no expiry (expiresAt null) and never sweeps it', async () => {
+		const row = seedReaderSession('eternal-reader', { expiresAt: null });
+
+		const session = await validateReaderSession('eternal-reader', 'share-1');
+
+		expect(session).toEqual({
+			id: row.id,
+			shareId: row.shareId,
+			reportId: row.reportId,
+			readerIdentityId: row.readerIdentityId,
+			createdAt: row.createdAt,
+			expiresAt: null
+		});
+		// A null-expiry session is the default and must not be deleted on sight.
+		expect(dbState.readerSessions.size).toBe(1);
+		expect(dbState.deleteFilters).toHaveLength(0);
+	});
+
+	it('returns null and deletes a reader session past its explicit (operator-set) expiry', async () => {
 		seedReaderSession('expired-reader', { expiresAt: new Date(Date.now() - 1) });
 
 		await expect(validateReaderSession('expired-reader', 'share-1')).resolves.toBeNull();

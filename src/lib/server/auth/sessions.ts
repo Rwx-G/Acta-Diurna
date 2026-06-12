@@ -12,8 +12,11 @@ import { serverEnv } from '../env';
  * versa - and they differ in three ways the realm config below captures:
  *
  *   - TTL: author is a fixed 7 days (single known user, a hard lifetime bound is
- *     simplest); reader is configurable via READER_SESSION_TTL (default 30 days)
- *     because FR23 wants "verify once, read freely" for a low-privilege reader.
+ *     simplest); reader sessions have NO expiry by default (FR23 "verify once,
+ *     read freely") - access is governed entirely by the share's own expiry +
+ *     revocation, which the reader gate re-checks on every load. READER_SESSION_TTL
+ *     is an OPTIONAL operator override that, when set to N days, makes reader
+ *     sessions age out; unset (the default) means a reader session never expires.
  *   - Binding: an author session authorizes the whole workspace; a reader session
  *     is bound to ONE share/report (per-share scope, backlog decision) - a session
  *     verified for report A grants nothing for report B.
@@ -31,12 +34,15 @@ import { serverEnv } from '../env';
 /** Author sessions: fixed 7-day expiry, no sliding renewal. */
 export const AUTHOR_SESSION_TTL_MS: number = 7 * 24 * 60 * 60 * 1000;
 
-/** Reader-session default lifetime when READER_SESSION_TTL is unset (30 days). */
-export const READER_SESSION_DEFAULT_TTL_MS: number = 30 * 24 * 60 * 60 * 1000;
-
-function readerSessionTtlMs(): number {
+/**
+ * Reader-session TTL in milliseconds, or null when there is no time bound. null
+ * is the default (READER_SESSION_TTL unset): reader sessions never age out on
+ * their own and the share governs access. A number is the optional operator
+ * override (READER_SESSION_TTL = N days).
+ */
+function readerSessionTtlMs(): number | null {
 	const days = serverEnv().READER_SESSION_TTL;
-	return days === undefined ? READER_SESSION_DEFAULT_TTL_MS : days * 24 * 60 * 60 * 1000;
+	return days === undefined ? null : days * 24 * 60 * 60 * 1000;
 }
 
 const TOKEN_BYTES = 32;
@@ -54,12 +60,21 @@ export interface ReaderSession {
 	reportId: string;
 	readerIdentityId: string;
 	createdAt: Date;
-	expiresAt: Date;
+	/** null = no time bound (the default); a Date = the optional operator-set expiry. */
+	expiresAt: Date | null;
 }
 
+/** Author-realm creation result: a reader session always has a concrete expiry. */
 export interface CreatedSession {
 	token: string;
 	expiresAt: Date;
+}
+
+/** Reader-realm creation result: expiry is null when no TTL override is configured. */
+export interface CreatedReaderSession {
+	token: string;
+	/** null = no expiry (the default); a Date = the optional operator-set expiry. */
+	expiresAt: Date | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -128,15 +143,19 @@ export interface CreateReaderSessionInput {
 /**
  * Creates a reader-realm session bound to one share/report (per-share scope).
  * The token reaches the caller once (the `acta_reader` cookie); only its hash is
- * stored. The lifetime is the configurable reader TTL. The access-records audit
- * row is written by the verification flow, not here, so this stays a pure
- * session-store concern (the caller owns the find-or-create identity + audit).
+ * stored. By default the session has NO expiry (`expires_at` is null): access is
+ * governed by the share, which the gate re-checks on every load. When the
+ * operator sets READER_SESSION_TTL, the session also ages out after that many
+ * days. The access-records audit row is written by the verification flow, not
+ * here, so this stays a pure session-store concern (the caller owns the
+ * find-or-create identity + audit).
  */
 export async function createReaderSession(
 	input: CreateReaderSessionInput
-): Promise<CreatedSession> {
+): Promise<CreatedReaderSession> {
 	const token = randomBytes(TOKEN_BYTES).toString('base64url');
-	const expiresAt = new Date(Date.now() + readerSessionTtlMs());
+	const ttlMs = readerSessionTtlMs();
+	const expiresAt = ttlMs === null ? null : new Date(Date.now() + ttlMs);
 
 	await getDb()
 		.insert(readerSessions)
@@ -155,8 +174,10 @@ export async function createReaderSession(
 /**
  * Resolves a raw token to a live reader session for a SPECIFIC share. A session
  * verified for another share returns null even with a valid token (per-share
- * scope, NFR12): the share id is part of the validation, not just the token.
- * Expired rows are deleted on sight.
+ * scope, NFR12): the share id is part of the validation, not just the token. A
+ * null `expires_at` (the default) NEVER expires - the share governs access. A
+ * non-null `expires_at` (the operator TTL override) is deleted on sight once
+ * past.
  */
 export async function validateReaderSession(
 	token: string,
@@ -171,7 +192,7 @@ export async function validateReaderSession(
 	const row = rows[0];
 
 	if (!row) return null;
-	if (row.expiresAt.getTime() <= Date.now()) {
+	if (row.expiresAt !== null && row.expiresAt.getTime() <= Date.now()) {
 		await db.delete(readerSessions).where(eq(readerSessions.id, row.id));
 		return null;
 	}

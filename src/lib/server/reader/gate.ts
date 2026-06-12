@@ -22,7 +22,7 @@ import { sendMail } from '$lib/server/mail/send';
 import { isAuthorizedReader } from '$lib/server/sharing';
 import type { ResolvedShare } from '$lib/server/sharing';
 import { logger } from '$lib/server/logger';
-import { createReaderSession, type CreatedSession } from '$lib/server/auth/sessions';
+import { createReaderSession, type CreatedReaderSession } from '$lib/server/auth/sessions';
 
 /**
  * Issues a verification token for (share, normalizedEmail) and sends the magic
@@ -81,7 +81,7 @@ export async function requestVerification(
 }
 
 export interface CompletedVerification {
-	session: CreatedSession;
+	session: CreatedReaderSession;
 	reportId: string;
 }
 
