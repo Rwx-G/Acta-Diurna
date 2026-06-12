@@ -21,6 +21,12 @@ export interface CsvTable {
  * and newlines are data. Unquoted fields end at the next comma or line break.
  */
 function tokenize(text: string): string[][] {
+	// Strip a single leading UTF-8 BOM (U+FEFF). TextDecoder('utf-8', { fatal:
+	// true }) does NOT strip it, so a Windows/Excel UTF-8 export would otherwise
+	// glue the BOM onto the first header name (e.g. "item" becomes the BOM plus
+	// "item") and break binding resolution silently.
+	if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
 	const records: string[][] = [];
 	let record: string[] = [];
 	let field = '';

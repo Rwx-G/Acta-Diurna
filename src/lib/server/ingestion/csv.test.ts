@@ -62,4 +62,14 @@ describe('parseCsv', () => {
 	it('rejects an entirely empty file', () => {
 		expect(() => parseCsv('')).toThrow(ParseError);
 	});
+
+	it('strips a leading UTF-8 BOM so the first column name is clean', () => {
+		// The most common real-world CSV: a Windows/Excel UTF-8 export prepends a
+		// BOM (U+FEFF). It must not glue onto the first header name.
+		const bom = String.fromCharCode(0xfeff);
+		const table = parseCsv(`${bom}item,count\napples,3`);
+		expect(table.columns).toEqual(['item', 'count']);
+		// A binding keyed on the first column resolves against the clean name.
+		expect(table.rows[0].item).toBe('apples');
+	});
 });

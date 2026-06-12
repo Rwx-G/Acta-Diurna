@@ -12,6 +12,23 @@ describe('inferValueType - precedence', () => {
 		expect(inferValueType('42')).toBe('number');
 		expect(inferValueType('-3.14')).toBe('number');
 		expect(inferValueType('1e3')).toBe('number');
+		expect(inferValueType('-0.5')).toBe('number');
+		expect(inferValueType('.5')).toBe('number');
+		expect(inferValueType('+5')).toBe('number');
+	});
+
+	it('keeps a single 0 a number but a leading-zero integer a string (padded id/zip)', () => {
+		expect(inferValueType('0')).toBe('number');
+		expect(inferValueType('007')).toBe('string');
+		expect(inferValueType('00')).toBe('string');
+		// 4-digit, no leading zero, stays a number (year-like).
+		expect(inferValueType('2026')).toBe('number');
+	});
+
+	it('rejects hex/binary/octal literals as numbers (string)', () => {
+		expect(inferValueType('0x1F')).toBe('string');
+		expect(inferValueType('0b101')).toBe('string');
+		expect(inferValueType('0o17')).toBe('string');
 	});
 
 	it('treats ISO dates and date-times as date', () => {

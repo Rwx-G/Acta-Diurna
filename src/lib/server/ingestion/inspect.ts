@@ -24,11 +24,22 @@ export type FieldType = DataSetField['type'];
 const ISO_DATE_PATTERN =
 	/^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
 
+// Plain decimal or scientific notation only. `Number()` would accept hex
+// (`0x1F`), binary (`0b101`), octal (`0o17`) and turn zero-padded ids/zips
+// (`007`) into numbers, losing their string meaning; those must stay strings.
+const DECIMAL_NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+// A multi-digit integer with a leading zero (`007`, `00`) is an identifier
+// pattern (zip, padded id), not a number. A single `0` and any value with a
+// decimal point or exponent are fine.
+const LEADING_ZERO_INTEGER_PATTERN = /^[+-]?0\d+$/;
+
 function isFiniteNumberString(value: string): boolean {
 	// Reject empty and whitespace-only; Number('') is 0, a footgun here.
 	if (value.trim().length === 0) return false;
-	const n = Number(value);
-	return Number.isFinite(n);
+	if (!DECIMAL_NUMBER_PATTERN.test(value)) return false;
+	if (LEADING_ZERO_INTEGER_PATTERN.test(value)) return false;
+	return Number.isFinite(Number(value));
 }
 
 function isIsoDateString(value: string): boolean {
