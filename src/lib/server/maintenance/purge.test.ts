@@ -34,7 +34,13 @@ interface DeletedRows {
 	[table: string]: Record<string, unknown>[];
 }
 
-/** A fake db whose delete().where().returning() yields the rows staged per table. */
+/**
+ * A fake db whose delete().where() resolves to a `{ rowCount }` result (the
+ * count-only path purgeVerificationTokens uses), and whose where().returning()
+ * yields the rows staged per table (the storage-path path purgeOrphanDataSets
+ * uses). The where() result is a thenable so it works with or without a trailing
+ * returning().
+ */
 function fakeDb(staged: DeletedRows) {
 	const whereCalls: { table: string }[] = [];
 	const db = {
@@ -43,9 +49,11 @@ function fakeDb(staged: DeletedRows) {
 			return {
 				where: () => {
 					whereCalls.push({ table: name });
-					return {
-						returning: () => Promise.resolve(staged[name] ?? [])
-					};
+					const rows = staged[name] ?? [];
+					const result = Promise.resolve({ rowCount: rows.length });
+					return Object.assign(result, {
+						returning: () => Promise.resolve(rows)
+					});
 				}
 			};
 		}

@@ -44,11 +44,13 @@ export function orphanCutoff(now: Date, retentionDays: number): Date {
  * with no audit value. Returns the number of rows removed.
  */
 export async function purgeVerificationTokens(db: Db, now: Date): Promise<number> {
-	const deleted = await db
+	// No RETURNING: the sweep only needs the count, so `rowCount` gives it without
+	// transferring every deleted id back. (purgeOrphanDataSets DOES need RETURNING,
+	// for the storage paths to unlink.)
+	const result = await db
 		.delete(verificationTokens)
-		.where(or(isNotNull(verificationTokens.consumedAt), lt(verificationTokens.expiresAt, now)))
-		.returning({ id: verificationTokens.id });
-	return deleted.length;
+		.where(or(isNotNull(verificationTokens.consumedAt), lt(verificationTokens.expiresAt, now)));
+	return result.rowCount ?? 0;
 }
 
 /**
