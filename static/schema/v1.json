@@ -231,6 +231,11 @@
 														"type": "string",
 														"minLength": 1,
 														"maxLength": 300
+													},
+													"scaleRef": {
+														"type": "string",
+														"maxLength": 300,
+														"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 													}
 												},
 												"required": [
@@ -994,6 +999,58 @@
 										"type",
 										"id",
 										"sourceBlockId"
+									]
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "chip-cluster"
+										},
+										"id": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"audiences": {
+											"maxItems": 3,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
+										},
+										"scaleRef": {
+											"type": "string",
+											"maxLength": 300,
+											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+										},
+										"entries": {
+											"minItems": 1,
+											"maxItems": 64,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"maxLength": 300,
+												"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+											}
+										},
+										"title": {
+											"type": "string",
+											"minLength": 1,
+											"maxLength": 200
+										}
+									},
+									"required": [
+										"type",
+										"id",
+										"scaleRef",
+										"entries"
 									]
 								}
 							]

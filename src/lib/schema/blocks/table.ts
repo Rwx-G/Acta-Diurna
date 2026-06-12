@@ -12,7 +12,15 @@ export type TableCell = z.infer<typeof tableCellSchema>;
 
 export const tableColumnSchema = z.object({
 	key: z.string().min(1).max(300, 'Column key too long: 300 characters maximum.'),
-	label: z.string().min(1).max(300, 'Column label too long: 300 characters maximum.')
+	label: z.string().min(1).max(300, 'Column label too long: 300 characters maximum.'),
+	// Optional conditional formatting (Epic 7, Story 7.5): a document `scales` key.
+	// When set, this column's cells render as scale-driven badges (colour + label
+	// computed at render from the scale entry whose key the cell value matches),
+	// instead of plain text. Additive and optional: a column with no `scaleRef`
+	// renders byte-identically to before. The `scaleRef` and every cell value in
+	// the column are cross-referenced against the document `scales` in the
+	// document-level pass (`scales.ts` `validateScaleReferences`).
+	scaleRef: idSchema.optional()
 });
 
 export type TableColumn = z.infer<typeof tableColumnSchema>;

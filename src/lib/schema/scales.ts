@@ -206,6 +206,10 @@ export function validateScaleReferences(document: {
 				validateLegendRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
 			} else if (block.type === 'set-membership') {
 				validateSetMembershipRefs(block, matrixBlockIds, ['sections', s, 'blocks', b], issues);
+			} else if (block.type === 'chip-cluster') {
+				validateChipClusterRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
+			} else if (block.type === 'table') {
+				validateTableRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
 			}
 		}
 	}
@@ -364,6 +368,126 @@ function validateComparisonMatrixRefs(
 						hint: `"${sourceEntryKey}" is not an entry of the "${sourceKey}" scale; use one of its declared entry keys.`
 					});
 				}
+			}
+		}
+	}
+}
+
+/**
+ * Structural view of a chip-cluster block, narrowed by `type` in the loop above.
+ * Typed locally so this isomorphic module does not import the block schema. The
+ * block has already passed its own zod shape validation before this pass runs,
+ * so `scaleRef` is a slug and `entries` is a string array.
+ */
+interface ChipClusterRefView {
+	type: string;
+	scaleRef?: unknown;
+	entries?: ReadonlyArray<unknown>;
+}
+
+/**
+ * Resolves a chip-cluster block's `scaleRef` against the document `scales`, then
+ * each listed entry key against that scale, pushing one {@link
+ * ScaleReferenceIssue} per dangling ref: an unknown `scaleRef`, or an `entries`
+ * key that is not an entry of the referenced scale. Paths are built off
+ * `basePath` (`['sections', i, 'blocks', j]`).
+ */
+function validateChipClusterRefs(
+	block: ChipClusterRefView,
+	scales: Scales | undefined,
+	basePath: PropertyKey[],
+	issues: ScaleReferenceIssue[]
+): void {
+	const scaleKey = typeof block.scaleRef === 'string' ? block.scaleRef : undefined;
+	const scale = scaleKey ? resolveScaleRef(scales, scaleKey) : undefined;
+	if (scaleKey && !scale) {
+		issues.push({
+			path: [...basePath, 'scaleRef'],
+			message: `Unknown chip-cluster scale: ${scaleKey}.`,
+			hint: `Declare a scale with key "${scaleKey}" in the document scales, or reference an existing scale.`
+		});
+		return;
+	}
+	if (!scale) {
+		return;
+	}
+	const entries = block.entries ?? [];
+	for (let e = 0; e < entries.length; e += 1) {
+		const entryKey = typeof entries[e] === 'string' ? (entries[e] as string) : undefined;
+		if (entryKey && !resolveEntryRef(scale, entryKey)) {
+			issues.push({
+				path: [...basePath, 'entries', e],
+				message: `Unknown chip "${entryKey}" on chip cluster.`,
+				hint: `"${entryKey}" is not an entry of the "${scaleKey}" scale; use one of its declared entry keys.`
+			});
+		}
+	}
+}
+
+/**
+ * Structural view of a table block, narrowed by `type` in the loop above. Typed
+ * locally so this isomorphic module does not import the block schema. The block
+ * has already passed its own zod shape validation before this pass runs, so each
+ * column `scaleRef` (when present) is a slug and `rows` is a record array.
+ */
+interface TableRefView {
+	type: string;
+	columns?: ReadonlyArray<{ key?: unknown; label?: unknown; scaleRef?: unknown }>;
+	rows?: ReadonlyArray<Record<string, unknown>>;
+}
+
+/**
+ * Resolves a table block's per-column `scaleRef` formatting against the document
+ * `scales`, pushing one {@link ScaleReferenceIssue} per dangling ref: a column
+ * `scaleRef` that names no declared scale, or a static cell value in a
+ * scaleRef-formatted column that is not an entry of the referenced scale (named
+ * by row and column so the author can find it). Columns with no `scaleRef` are
+ * untouched (additive). Paths are built off `basePath`
+ * (`['sections', i, 'blocks', j]`).
+ */
+function validateTableRefs(
+	block: TableRefView,
+	scales: Scales | undefined,
+	basePath: PropertyKey[],
+	issues: ScaleReferenceIssue[]
+): void {
+	const columns = block.columns ?? [];
+	const rows = block.rows ?? [];
+	for (let c = 0; c < columns.length; c += 1) {
+		const column = columns[c];
+		const scaleKey = typeof column.scaleRef === 'string' ? column.scaleRef : undefined;
+		if (!scaleKey) {
+			continue;
+		}
+		const columnKey = typeof column.key === 'string' ? column.key : undefined;
+		const columnLabel = typeof column.label === 'string' ? column.label : (columnKey ?? `${c + 1}`);
+		const scale = resolveScaleRef(scales, scaleKey);
+		if (!scale) {
+			issues.push({
+				path: [...basePath, 'columns', c, 'scaleRef'],
+				message: `Unknown table column scale: ${scaleKey}.`,
+				hint: `Declare a scale with key "${scaleKey}" in the document scales, or reference an existing scale.`
+			});
+			continue;
+		}
+		if (!columnKey) {
+			continue;
+		}
+		for (let r = 0; r < rows.length; r += 1) {
+			const value = rows[r][columnKey];
+			// An empty cell (absent, null or empty string) renders blank, not a badge,
+			// so it is not a dangling reference. Only a non-empty value must match an
+			// entry of the scale.
+			if (value === undefined || value === null || value === '') {
+				continue;
+			}
+			const cellKey = typeof value === 'string' ? value : String(value);
+			if (!resolveEntryRef(scale, cellKey)) {
+				issues.push({
+					path: [...basePath, 'rows', r, columnKey],
+					message: `Unknown value "${cellKey}" in row ${r + 1}, column "${columnLabel}".`,
+					hint: `"${cellKey}" is not an entry of the "${scaleKey}" scale; use one of its declared entry keys, or remove the column scaleRef.`
+				});
 			}
 		}
 	}

@@ -66,6 +66,9 @@ export type { LegendBlock } from './blocks/legend.ts';
 export { setMembershipBlockSchema } from './blocks/set-membership.ts';
 export type { SetMembershipBlock } from './blocks/set-membership.ts';
 
+export { chipClusterBlockSchema, MAX_CHIPS } from './blocks/chip-cluster.ts';
+export type { ChipClusterBlock } from './blocks/chip-cluster.ts';
+
 export { blockSchema, sectionSchema } from './blocks/section.ts';
 export type { Block, BlockType, Section } from './blocks/section.ts';
 
