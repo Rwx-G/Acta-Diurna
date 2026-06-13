@@ -23,7 +23,8 @@
 		"test": "vitest run",
 		"schema:export": "node scripts/export-schema.ts",
 		"reader:budget": "node scripts/reader-bundle-size.ts",
-		"auth:hash": "node scripts/hash-password.ts"
+		"auth:hash": "node scripts/hash-password.ts",
+		"smtp:test": "node scripts/smtp-test.ts"
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "4.11.3",
