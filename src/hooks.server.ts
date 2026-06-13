@@ -12,7 +12,7 @@ import {
 	loginRateLimiter
 } from '$lib/server/auth/rate-limit';
 import { validateAuthorSession } from '$lib/server/auth/sessions';
-import { inheritLegacyOwnership } from '$lib/server/authors';
+import { inheritLegacyOwnership, purgeStaleNullAuthorSessions } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv } from '$lib/server/env';
@@ -50,6 +50,11 @@ export const init: ServerInit = async () => {
 	// traffic. A failure here means ownership is unenforceable, so it is fatal.
 	try {
 		await inheritLegacyOwnership();
+		// Multi-mode boot only (no-op in single mode): drop pre-flip password author
+		// sessions that carry no author id, so a single->multi flip forces a fresh
+		// magic-link sign-in instead of letting a stale session act as the initial
+		// owner (story 8.3 security fix).
+		await purgeStaleNullAuthorSessions();
 	} catch (error) {
 		logger.fatal({ err: error }, 'ownership inheritance failed, refusing to start');
 		throw error;

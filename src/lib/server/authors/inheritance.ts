@@ -21,22 +21,24 @@
  * (the services stamp `ownerForInsert`), so only genuine pre-8.2 rows are ever
  * null and eligible.
  */
-import { isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '$lib/server/db/client';
-import { apiTokens, dataSets, reports } from '$lib/server/db/schema';
+import { apiTokens, dataSets, reports, sessions, skeletons } from '$lib/server/db/schema';
 import { logger } from '$lib/server/logger';
+import { isMultiAuthor } from '$lib/server/mode';
 import { ensureImplicitAuthor } from './identity';
 
 /**
- * Assigns every owner-less report, data set, and API token to the implicit
- * author. Seeds the implicit author first (so the FK target exists), then runs
- * the three guarded UPDATEs. Returns the number of rows inherited per table for
+ * Assigns every owner-less report, data set, skeleton, and API token to the
+ * implicit author. Seeds the implicit author first (so the FK target exists), then
+ * runs the four guarded UPDATEs. Returns the number of rows inherited per table for
  * the boot log.
  */
 export async function inheritLegacyOwnership(): Promise<{
 	authorId: string;
 	reports: number;
 	dataSets: number;
+	skeletons: number;
 	apiTokens: number;
 }> {
 	const authorId = await ensureImplicitAuthor();
@@ -54,6 +56,12 @@ export async function inheritLegacyOwnership(): Promise<{
 		.where(isNull(dataSets.ownerId))
 		.returning({ id: dataSets.id });
 
+	const inheritedSkeletons = await db
+		.update(skeletons)
+		.set({ ownerId: authorId })
+		.where(isNull(skeletons.ownerId))
+		.returning({ id: skeletons.id });
+
 	const inheritedTokens = await db
 		.update(apiTokens)
 		.set({ ownerId: authorId })
@@ -64,10 +72,37 @@ export async function inheritLegacyOwnership(): Promise<{
 		authorId,
 		reports: inheritedReports.length,
 		dataSets: inheritedDataSets.length,
+		skeletons: inheritedSkeletons.length,
 		apiTokens: inheritedTokens.length
 	};
-	if (counts.reports + counts.dataSets + counts.apiTokens > 0) {
+	if (counts.reports + counts.dataSets + counts.skeletons + counts.apiTokens > 0) {
 		logger.info(counts, 'legacy ownership inherited by the initial owner');
 	}
 	return counts;
+}
+
+/**
+ * Purges stale null-author author sessions on a multi-mode boot (story 8.3
+ * security fix). A pre-flip password author session carries `author_id = NULL`
+ * (single mode minted no per-author identity); after SMTP is enabled the instance
+ * is multi mode, where `resolveAuthorScope(null)` falls back to the implicit
+ * (now INITIAL_OWNER) author - so a stale null-author session would act as the
+ * initial owner WITHOUT the magic-link proof. Deleting these sessions forces a
+ * fresh magic-link sign-in after the flip.
+ *
+ * Single mode is a NO-OP: a null author id is the legitimate single-mode shape, so
+ * the purge runs ONLY in multi mode. Idempotent: a second multi boot finds no
+ * null-author author sessions to delete. Reader/PAT sessions live in other tables;
+ * real-author sessions carry a non-null author id and are untouched.
+ */
+export async function purgeStaleNullAuthorSessions(): Promise<number> {
+	if (!isMultiAuthor()) return 0;
+	const deleted = await getDb()
+		.delete(sessions)
+		.where(and(eq(sessions.realm, 'author'), isNull(sessions.authorId)))
+		.returning({ id: sessions.id });
+	if (deleted.length > 0) {
+		logger.info({ purged: deleted.length }, 'stale null-author sessions purged on multi-mode boot');
+	}
+	return deleted.length;
 }
