@@ -14,12 +14,21 @@ import type { DocumentV1 } from '$lib/schema';
 
 // Both realms (D4) share this table; only the author realm is implemented in
 // 1.4, the reader realm (Epic 3) reuses the same shape with realm='reader'.
+//
+// `author_id` (Epic 8, story 8.3) binds an author-realm session to the author it
+// authenticated, so the workspace resolves the REAL logged-in author (tenancy,
+// 8.2) instead of the implicit one. Nullable because a single-mode author session
+// carries no per-author identity (one implicit author owns everything, the column
+// stays null and `resolveAuthorScope` falls back to the implicit author) - only a
+// multi-mode magic-link session populates it. ON DELETE CASCADE: an author row
+// removed takes its live sessions with it (a session with no author is dead).
 export const sessions = pgTable(
 	'sessions',
 	{
 		id: uuid('id').primaryKey(),
 		realm: text('realm').notNull(),
 		tokenHash: text('token_hash').notNull(),
+		authorId: uuid('author_id').references(() => authors.id, { onDelete: 'cascade' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 		metadata: jsonb('metadata').$type<Record<string, unknown>>()
@@ -381,3 +390,39 @@ export const apiTokens = pgTable(
 );
 
 export type ApiTokenRow = typeof apiTokens.$inferSelect;
+
+// In-flight AUTHOR magic-link verification (Epic 8, story 8.3). The author-realm
+// parallel of `verification_tokens`: a single-use, 15-minute-TTL token bound to
+// the requesting EMAIL alone (no share - an author signs in to the whole
+// workspace, not to one report). The two tables are kept PHYSICALLY SEPARATE so
+// the realms never blur (NFR12): a reader verification token (share-bound) can
+// never open an author session and an author token can never verify a reader
+// share - they live in different tables consumed by different functions, and an
+// author token has no share id to resolve.
+//
+// The raw token lives only in the emailed URL; the table stores its SHA-256 hash
+// (shared at-rest helper). `consumed_at` flips on the first valid click so a
+// second click is rejected (single-use). `email` is normalized (lowercased/
+// trimmed) BEFORE it reaches this table, the same boundary normalization the
+// reader path applies, so the dedup lookup keys on a canonical address. No FK:
+// the author row does not exist yet on a FIRST sign-in (it is minted on consume),
+// so the token binds the email, not an author id.
+export const authorVerificationTokens = pgTable(
+	'author_verification_tokens',
+	{
+		id: uuid('id').primaryKey(),
+		tokenHash: text('token_hash').notNull(),
+		email: text('email').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		consumedAt: timestamp('consumed_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('author_verification_tokens_token_hash_idx').on(table.tokenHash),
+		// The dedup read (`hasLiveAuthorVerification`) filters on email; this index
+		// keys that lookup instead of scanning the table.
+		index('author_verification_tokens_email_idx').on(table.email)
+	]
+);
+
+export type AuthorVerificationTokenRow = typeof authorVerificationTokens.$inferSelect;

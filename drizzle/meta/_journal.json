@@ -99,6 +99,13 @@
       "when": 1781378664428,
       "tag": "0013_authors_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781384477369,
+      "tag": "0014_author_magic_link",
+      "breakpoints": true
     }
   ]
 }
