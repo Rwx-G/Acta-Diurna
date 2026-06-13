@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { createApiToken, listApiTokens, revokeApiToken } from '$lib/server/auth/api-tokens';
 import { performLogout } from '$lib/server/auth/logout';
 import { mailerConfig } from '$lib/server/mail/mailer';
@@ -25,7 +26,7 @@ export const load: PageServerLoad = async () => {
 		ai: ai
 			? { configured: true as const, baseUrl: ai.baseUrl, model: ai.model, enabled: isAiEnabled() }
 			: null,
-		tokens: await listApiTokens()
+		tokens: await listApiTokens(await resolveAuthorScope())
 	};
 };
 
@@ -97,7 +98,7 @@ export const actions: Actions = {
 				token: { created: false as const, message: 'Enter a name for the token.' }
 			});
 		}
-		const { token, summary } = await createApiToken(name.trim());
+		const { token, summary } = await createApiToken(name.trim(), await resolveAuthorScope());
 		return { token: { created: true as const, raw: token, name: summary.name } };
 	},
 	// D10: revoke a token (idempotent). The list reloads showing the revoked chip.
@@ -107,7 +108,7 @@ export const actions: Actions = {
 		if (typeof id !== 'string' || id.length === 0) {
 			return fail(400, { token: { created: false as const, message: 'Missing token id.' } });
 		}
-		await revokeApiToken(id);
+		await revokeApiToken(id, await resolveAuthorScope());
 		return { token: { revoked: true as const } };
 	},
 	logout: async ({ cookies }) => {

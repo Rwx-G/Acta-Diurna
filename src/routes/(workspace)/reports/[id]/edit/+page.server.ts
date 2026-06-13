@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { performLogout } from '$lib/server/auth/logout';
 import {
 	getReport,
@@ -31,9 +32,10 @@ import { applyNarrativeFields } from './editor-state';
 
 export const load: PageServerLoad = async ({ params }) => {
 	try {
+		const scope = await resolveAuthorScope();
 		return {
-			report: await getReport(params.id),
-			dataSets: await listDataSets(),
+			report: await getReport(params.id, scope),
+			dataSets: await listDataSets(scope),
 			// FR33/FR32: the Generate-with-AI entry point is offered only when the
 			// connector is configured AND opted-in. When disabled the workspace hides
 			// the trigger (no offer of a capability that 503s); the panel renders the
@@ -55,6 +57,7 @@ export const actions: Actions = {
 		const raw = data.get('document');
 		return runAction(
 			async () => {
+				const scope = await resolveAuthorScope();
 				let documentInput: unknown;
 				if (typeof raw === 'string') {
 					if (raw.length > MAX_DOCUMENT_BYTES) {
@@ -71,10 +74,10 @@ export const actions: Actions = {
 				} else {
 					// No-JS baseline: apply the posted narrative fields onto the
 					// stored document, then validate like any other write.
-					const current = await getReport(params.id);
+					const current = await getReport(params.id, scope);
 					documentInput = applyNarrativeFields(current.document, data);
 				}
-				const report = await updateReportDocument(params.id, documentInput);
+				const report = await updateReportDocument(params.id, documentInput, scope);
 				return { savedAt: report.updatedAt.toISOString() };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
@@ -96,7 +99,13 @@ export const actions: Actions = {
 		}
 		return runAction(
 			async () => {
-				const report = await bindBlock(params.id, blockId, dataSetId, slotMapping);
+				const report = await bindBlock(
+					params.id,
+					blockId,
+					dataSetId,
+					slotMapping,
+					await resolveAuthorScope()
+				);
 				return { boundAt: report.updatedAt.toISOString() };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
@@ -113,7 +122,7 @@ export const actions: Actions = {
 		}
 		return runAction(
 			async () => {
-				const result = await rebindReport(params.id, dataSetId);
+				const result = await rebindReport(params.id, dataSetId, await resolveAuthorScope());
 				return {
 					reboundAt: result.report.updatedAt.toISOString(),
 					diagnostics: result.diagnostics,
@@ -142,7 +151,8 @@ export const actions: Actions = {
 					blockId,
 					dataSetId,
 					expectedField,
-					availableField
+					availableField,
+					await resolveAuthorScope()
 				);
 				return { remappedAt: report.updatedAt.toISOString() };
 			},
@@ -170,12 +180,15 @@ export const actions: Actions = {
 		}
 		return runAction(
 			async () => {
-				const outline = await generateOutline({
-					intent,
-					skeletonId,
-					dataSetId,
-					requestId: locals.requestId
-				});
+				const outline = await generateOutline(
+					{
+						intent,
+						skeletonId,
+						dataSetId,
+						requestId: locals.requestId
+					},
+					await resolveAuthorScope()
+				);
 				return {
 					generate: {
 						stage: 'outline' as const,
@@ -231,6 +244,7 @@ export const actions: Actions = {
 						dataSetId,
 						requestId: locals.requestId
 					},
+					await resolveAuthorScope(),
 					params.id
 				);
 				return {
@@ -245,7 +259,7 @@ export const actions: Actions = {
 		// them at the failing blocks, reusing the save-path rendering.
 		return runAction(
 			async () => {
-				const report = await publishReport(params.id);
+				const report = await publishReport(params.id, await resolveAuthorScope());
 				return { published: true, status: report.status };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
@@ -254,7 +268,7 @@ export const actions: Actions = {
 	unpublish: async ({ params }) => {
 		return runAction(
 			async () => {
-				const report = await unpublishToDraft(params.id);
+				const report = await unpublishToDraft(params.id, await resolveAuthorScope());
 				return { published: false, status: report.status };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })

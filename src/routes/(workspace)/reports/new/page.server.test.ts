@@ -4,7 +4,12 @@ import { createReport, type Report } from '$lib/server/documents/reports';
 import { actions, load } from './+page.server';
 import { DEFAULT_REPORT_TITLE } from './constants';
 
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
 vi.mock('$lib/server/documents/reports', () => ({ createReport: vi.fn() }));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 
 const createReportMock = vi.mocked(createReport);
 
@@ -39,6 +44,6 @@ describe('create action', () => {
 		} catch (thrown) {
 			expectRedirect(thrown, '/reports/01970000-0000-7000-8000-000000000001/edit');
 		}
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE);
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE, TEST_SCOPE);
 	});
 });

@@ -6,6 +6,9 @@ import { validateDocument } from '$lib/schema';
 import { load } from './+page.server';
 
 vi.mock('$lib/server/documents/reports', () => ({ getReport: vi.fn() }));
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
 
 const getReportMock = vi.mocked(getReport);
 

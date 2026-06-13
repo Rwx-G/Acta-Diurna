@@ -9,6 +9,10 @@ vi.mock('$lib/server/ingestion', async (importOriginal) => {
 	};
 });
 
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
+
 import { ingestFile, MAX_UPLOAD_BYTES, type DataSet } from '$lib/server/ingestion';
 import { actions } from './+page.server';
 

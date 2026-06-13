@@ -1,12 +1,13 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { performLogout } from '$lib/server/auth/logout';
 import { ingestFile, listDataSets, MAX_UPLOAD_BYTES, readStreamToCap } from '$lib/server/ingestion';
 import { tooLarge } from '$lib/server/ingestion/errors';
 import { AppError } from '$lib/server/problem';
 
 export const load: PageServerLoad = async () => {
-	return { dataSets: await listDataSets() };
+	return { dataSets: await listDataSets(await resolveAuthorScope()) };
 };
 
 /**
@@ -54,7 +55,7 @@ export const actions: Actions = {
 			return fail(400, { message: 'Choose a file to upload.' });
 		}
 		try {
-			const dataSet = await ingestFile({ file });
+			const dataSet = await ingestFile({ file, scope: await resolveAuthorScope() });
 			return { uploaded: { id: dataSet.id, filename: dataSet.filename } };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {

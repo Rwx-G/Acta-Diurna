@@ -1,11 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { performLogout } from '$lib/server/auth/logout';
 import { deleteDraft, duplicateReport, listReports } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 
 export const load: PageServerLoad = async () => {
-	return { reports: await listReports() };
+	return { reports: await listReports(await resolveAuthorScope()) };
 };
 
 export const actions: Actions = {
@@ -14,7 +15,7 @@ export const actions: Actions = {
 		const id = data.get('id');
 		if (typeof id !== 'string') return fail(400, { message: 'Missing report id.' });
 		try {
-			await deleteDraft(id);
+			await deleteDraft(id, await resolveAuthorScope());
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, { message: thrown.detail ?? thrown.title });
@@ -30,7 +31,7 @@ export const actions: Actions = {
 		if (typeof id !== 'string') return fail(400, { message: 'Missing report id.' });
 		let newId: string;
 		try {
-			const report = await duplicateReport(id);
+			const report = await duplicateReport(id, await resolveAuthorScope());
 			newId = report.id;
 		} catch (thrown) {
 			if (thrown instanceof AppError) {

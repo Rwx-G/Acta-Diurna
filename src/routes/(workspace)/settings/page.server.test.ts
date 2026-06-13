@@ -27,6 +27,11 @@ vi.mock('$lib/server/mail/mailer', () => ({ mailerConfig }));
 vi.mock('$lib/server/ai/connector', () => ({ aiConfig, chatComplete, isAiEnabled }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 vi.mock('$lib/server/auth/api-tokens', () => ({ createApiToken, listApiTokens, revokeApiToken }));
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 vi.mock('$lib/server/auth/rate-limit', () => ({
 	testSendLimiter: { consume: testSendConsume }
 }));
@@ -306,14 +311,14 @@ describe('create-token action', () => {
 
 		const result = await runTokenAction('create-token', { name: 'CI deploy' });
 
-		expect(createApiToken).toHaveBeenCalledWith('CI deploy');
+		expect(createApiToken).toHaveBeenCalledWith('CI deploy', TEST_SCOPE);
 		expect(result.token).toEqual({ created: true, raw: 'acta_pat_RAW', name: 'CI deploy' });
 	});
 
 	it('trims the name before minting', async () => {
 		createApiToken.mockResolvedValue({ token: 'acta_pat_X', summary: { name: 'CI' } });
 		await runTokenAction('create-token', { name: '  CI  ' });
-		expect(createApiToken).toHaveBeenCalledWith('CI');
+		expect(createApiToken).toHaveBeenCalledWith('CI', TEST_SCOPE);
 	});
 
 	it('rejects an empty name with a 400 and mints nothing', async () => {
@@ -333,7 +338,7 @@ describe('revoke-token action', () => {
 
 		const result = await runTokenAction('revoke-token', { tokenId: 't1' });
 
-		expect(revokeApiToken).toHaveBeenCalledWith('t1');
+		expect(revokeApiToken).toHaveBeenCalledWith('t1', TEST_SCOPE);
 		expect(result.token).toEqual({ revoked: true });
 	});
 

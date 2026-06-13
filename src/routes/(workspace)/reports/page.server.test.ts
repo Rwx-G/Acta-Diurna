@@ -11,6 +11,11 @@ import {
 import { AppError } from '$lib/server/problem';
 import { actions, load } from './+page.server';
 
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
 vi.mock('$lib/server/documents/reports', () => ({
 	deleteDraft: vi.fn(),
@@ -68,7 +73,10 @@ describe('delete action', () => {
 
 		const result = await actions.delete(deleteEvent(data));
 
-		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith('01970000-0000-7000-8000-000000000001');
+		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith(
+			'01970000-0000-7000-8000-000000000001',
+			TEST_SCOPE
+		);
 		expect(result).toEqual({ deleted: true });
 	});
 
@@ -121,7 +129,8 @@ describe('duplicate action', () => {
 			).toBe(true);
 		}
 		expect(duplicateReportMock).toHaveBeenCalledExactlyOnceWith(
-			'01970000-0000-7000-8000-000000000001'
+			'01970000-0000-7000-8000-000000000001',
+			TEST_SCOPE
 		);
 	});
 

@@ -22,6 +22,11 @@ vi.mock('$lib/server/sharing', () => ({
 	shareUrl: (origin: string, token: string) => `${origin}/r/${token}`
 }));
 vi.mock('$lib/server/documents/reports', () => ({ getReport: vi.fn() }));
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 // Use the real email helpers so recipient parsing/normalization is exercised.
 vi.mock('$lib/server/reader', async () => {
 	const actual = await vi.importActual<typeof import('$lib/server/reader')>('$lib/server/reader');
@@ -87,7 +92,7 @@ describe('load', () => {
 		expect(result).toBeDefined();
 		expect(result!.report.status).toBe('published');
 		expect(result!.shares).toEqual([]);
-		expect(listSharesMock).toHaveBeenCalledWith(REPORT_ID);
+		expect(listSharesMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE);
 	});
 
 	it('does not leak a raw token: load never touches the token service', async () => {
@@ -116,7 +121,7 @@ describe('create-share action', () => {
 
 		const result = await actions['create-share'](createEvent({ mode: 'restricted' }));
 
-		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, {
+		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE, {
 			mode: 'restricted',
 			expiresAt: null
 		});
@@ -142,7 +147,7 @@ describe('create-share action', () => {
 			createEvent({ mode: 'restricted', expiresAt: '2026-12-31T23:59' })
 		);
 
-		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, {
+		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE, {
 			mode: 'restricted',
 			expiresAt: new Date('2026-12-31T23:59:00Z')
 		});
@@ -163,7 +168,10 @@ describe('create-share action', () => {
 
 		await actions['create-share'](createEvent({ mode: 'open' }));
 
-		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, { mode: 'open', expiresAt: null });
+		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE, {
+			mode: 'open',
+			expiresAt: null
+		});
 	});
 
 	it('translates a draft refusal AppError into a fail with its message', async () => {
@@ -236,7 +244,11 @@ describe('create-share with an initial recipient list', () => {
 			createEvent({ mode: 'restricted', recipients: 'On@List.com, other@x.org' })
 		);
 
-		expect(setShareRecipientsMock).toHaveBeenCalledWith('s9', ['on@list.com', 'other@x.org']);
+		expect(setShareRecipientsMock).toHaveBeenCalledWith(
+			's9',
+			['on@list.com', 'other@x.org'],
+			TEST_SCOPE
+		);
 	});
 
 	it('does not set a list for an open share', async () => {
@@ -261,13 +273,13 @@ describe('create-share with an initial recipient list', () => {
 describe('set-mode action', () => {
 	it('flips a share to open', async () => {
 		const result = await actions['set-mode'](actionEvent({ shareId: 's1', mode: 'open' }));
-		expect(setShareModeMock).toHaveBeenCalledWith('s1', 'open');
+		expect(setShareModeMock).toHaveBeenCalledWith('s1', 'open', TEST_SCOPE);
 		expect(result).toMatchObject({ modeSet: { shareId: 's1', mode: 'open' } });
 	});
 
 	it('defaults an unknown mode value to restricted', async () => {
 		await actions['set-mode'](actionEvent({ shareId: 's1', mode: 'garbage' }));
-		expect(setShareModeMock).toHaveBeenCalledWith('s1', 'restricted');
+		expect(setShareModeMock).toHaveBeenCalledWith('s1', 'restricted', TEST_SCOPE);
 	});
 
 	it('404s when the share id is unknown', async () => {
@@ -289,13 +301,13 @@ describe('set-recipients action', () => {
 			actionEvent({ shareId: 's1', recipients: 'A@X.com\nb@x.com; A@X.com, not-an-email' })
 		);
 
-		expect(setShareRecipientsMock).toHaveBeenCalledWith('s1', ['a@x.com', 'b@x.com']);
+		expect(setShareRecipientsMock).toHaveBeenCalledWith('s1', ['a@x.com', 'b@x.com'], TEST_SCOPE);
 		expect(result).toMatchObject({ recipientsSet: { shareId: 's1', count: 2 } });
 	});
 
 	it('an empty submission clears the list', async () => {
 		const result = await actions['set-recipients'](actionEvent({ shareId: 's1', recipients: '' }));
-		expect(setShareRecipientsMock).toHaveBeenCalledWith('s1', []);
+		expect(setShareRecipientsMock).toHaveBeenCalledWith('s1', [], TEST_SCOPE);
 		expect(result).toMatchObject({ recipientsSet: { shareId: 's1', count: 0 } });
 	});
 
@@ -339,7 +351,7 @@ describe('set-recipients action', () => {
 describe('revoke-share action', () => {
 	it('revokes the share and returns its id', async () => {
 		const result = await actions['revoke-share'](actionEvent({ shareId: 's1' }));
-		expect(revokeShareMock).toHaveBeenCalledWith('s1');
+		expect(revokeShareMock).toHaveBeenCalledWith('s1', TEST_SCOPE);
 		expect(result).toMatchObject({ revoked: { shareId: 's1' } });
 	});
 

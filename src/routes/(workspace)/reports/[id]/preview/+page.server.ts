@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { getReport } from '$lib/server/documents/reports';
 import { AppError, errorPageShape } from '$lib/server/problem';
 
@@ -13,7 +14,7 @@ import { AppError, errorPageShape } from '$lib/server/problem';
  */
 export const load: PageServerLoad = async ({ params }) => {
 	try {
-		const report = await getReport(params.id);
+		const report = await getReport(params.id, await resolveAuthorScope());
 		return { reportId: report.id, document: report.document };
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));

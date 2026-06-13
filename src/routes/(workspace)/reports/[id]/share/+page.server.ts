@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import type { ReportStatus } from '$lib/server/documents/reports';
 import { getReport } from '$lib/server/documents/reports';
 import {
@@ -35,8 +36,9 @@ interface SharePageData {
  */
 export const load: PageServerLoad = async ({ params }): Promise<SharePageData> => {
 	try {
-		const report = await getReport(params.id);
-		const summaries = await listShares(report.id);
+		const scope = await resolveAuthorScope();
+		const report = await getReport(params.id, scope);
+		const summaries = await listShares(report.id, scope);
 		// One batched read for every share's allow-list, not one query per share.
 		const recipientsByShare = await listRecipientsForShares(summaries.map((share) => share.id));
 		const shares = summaries.map((share) => ({
@@ -95,10 +97,11 @@ export const actions: Actions = {
 				: [];
 
 		try {
-			const { token, share } = await createShare(params.id, { mode, expiresAt });
+			const scope = await resolveAuthorScope();
+			const { token, share } = await createShare(params.id, scope, { mode, expiresAt });
 			// A restricted share with an initial recipient list set in one gesture.
 			if (mode === 'restricted' && recipients.length > 0) {
-				await setShareRecipients(share.id, recipients);
+				await setShareRecipients(share.id, recipients, scope);
 			}
 			return { created: { url: shareUrl(url.origin, token), share } };
 		} catch (thrown) {
@@ -117,7 +120,7 @@ export const actions: Actions = {
 			return fail(400, { message: 'Missing share.' });
 		}
 		const mode: ShareMode = rawMode === 'open' ? 'open' : 'restricted';
-		const updated = await setShareMode(shareId, mode);
+		const updated = await setShareMode(shareId, mode, await resolveAuthorScope());
 		if (updated === 0) return fail(404, { message: 'Share not found.' });
 		return { modeSet: { shareId, mode } };
 	},
@@ -131,10 +134,10 @@ export const actions: Actions = {
 		}
 		const recipients = typeof raw === 'string' ? parseRecipients(raw) : [];
 		try {
-			// setShareRecipients validates the share id (unknown/malformed -> 404) and
-			// the list size (over the cap -> 422) before any write, so a stale or
+			// setShareRecipients validates the share id (unknown/malformed/foreign -> 404)
+			// and the list size (over the cap -> 422) before any write, so a stale or
 			// garbage shareId is a clean fail, never a 500 from the FK or a cast error.
-			await setShareRecipients(shareId, recipients);
+			await setShareRecipients(shareId, recipients, await resolveAuthorScope());
 			return { recipientsSet: { shareId, count: recipients.length } };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
@@ -152,9 +155,9 @@ export const actions: Actions = {
 		}
 		// One-click, immediate, idempotent (FR20): flips revoked_at and sweeps any
 		// live reader sessions. Revoking an already-revoked share is a no-op, so a
-		// double-submit is harmless. The author owns this report's shares (the route
-		// is under workspaceGuard); revokeShare resolves nothing it was not given.
-		await revokeShare(shareId);
+		// double-submit is harmless. revokeShare gates on ownership (story 8.2): a
+		// share the author does not own is a silent no-op, never a cross-author revoke.
+		await revokeShare(shareId, await resolveAuthorScope());
 		return { revoked: { shareId } };
 	}
 };

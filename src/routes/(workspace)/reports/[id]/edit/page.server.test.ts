@@ -36,6 +36,11 @@ vi.mock('$lib/server/ai/generate', () => ({
 	hashOutline: vi.fn()
 }));
 vi.mock('$lib/server/auth/logout', () => ({ performLogout: vi.fn() }));
+vi.mock('$lib/server/authors', () => ({
+	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 
 const getReportMock = vi.mocked(getReport);
 const updateMock = vi.mocked(updateReportDocument);
@@ -113,7 +118,7 @@ describe('load', () => {
 		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
 
 		expect(result).toEqual({ report, dataSets: [], skeletons: [], aiEnabled: true });
-		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
 		expect(listDataSetsMock).toHaveBeenCalledOnce();
 	});
 
@@ -155,7 +160,7 @@ describe('save action', () => {
 
 		const result = await actions.save(saveEvent(data));
 
-		expect(updateMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, document);
+		expect(updateMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, document, TEST_SCOPE);
 		expect(result).toEqual({ savedAt: '2026-06-12T10:15:00.000Z' });
 		expect(getReportMock).not.toHaveBeenCalled();
 	});
@@ -254,7 +259,7 @@ describe('save action', () => {
 
 		await actions.save(saveEvent(data));
 
-		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
 		const submitted = updateMock.mock.calls[0][1] as DocumentV1;
 		expect(submitted.title).toBe('Edited Without JS');
 		expect(submitted.sections[0].title).toBe('Renamed Section');
@@ -296,7 +301,8 @@ describe('bind action', () => {
 			REPORT_ID,
 			'weekly-table',
 			'01970000-0000-7000-8000-0000000000bb',
-			{ week: { role: 'column' } }
+			{ week: { role: 'column' } },
+			TEST_SCOPE
 		);
 		expect(result).toEqual({ boundAt: '2026-06-12T11:00:00.000Z' });
 	});
@@ -372,7 +378,8 @@ describe('rebind action (FR14)', () => {
 
 		expect(rebindReportMock).toHaveBeenCalledExactlyOnceWith(
 			REPORT_ID,
-			'01970000-0000-7000-8000-0000000000bb'
+			'01970000-0000-7000-8000-0000000000bb',
+			TEST_SCOPE
 		);
 		expect(result).toMatchObject({
 			reboundAt: '2026-06-12T12:00:00.000Z',
@@ -426,7 +433,8 @@ describe('remap action (FR15)', () => {
 			'severity-table',
 			'd',
 			'count',
-			'counts'
+			'counts',
+			TEST_SCOPE
 		);
 		expect(result).toEqual({ remappedAt: '2026-06-12T12:30:00.000Z' });
 	});
@@ -577,7 +585,7 @@ describe('generate-fill action (FR32 stage 2)', () => {
 		)) as { generate: { stage: string; savedAt: string } };
 
 		expect(fillFromOutlineMock).toHaveBeenCalledOnce();
-		const [fillInput, reportId] = fillFromOutlineMock.mock.calls[0];
+		const [fillInput, , reportId] = fillFromOutlineMock.mock.calls[0];
 		expect(reportId).toBe(REPORT_ID);
 		expect(fillInput.approvedHash).toBe('hash-abc');
 		expect(result.generate.stage).toBe('filled');
@@ -722,7 +730,7 @@ describe('publish action', () => {
 
 		const result = await actions.publish(actionEvent() as Parameters<typeof actions.publish>[0]);
 
-		expect(publishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(publishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
 		expect(result).toEqual({ published: true, status: 'published' });
 	});
 
@@ -754,7 +762,7 @@ describe('unpublish action', () => {
 			actionEvent() as Parameters<typeof actions.unpublish>[0]
 		);
 
-		expect(unpublishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID);
+		expect(unpublishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
 		expect(result).toEqual({ published: false, status: 'draft' });
 	});
 });

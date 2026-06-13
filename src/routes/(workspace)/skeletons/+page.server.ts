@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { AppError } from '$lib/server/problem';
 import { deleteSkeleton, instantiateReport, listSkeletons } from '$lib/server/skeletons/skeletons';
 
@@ -16,7 +17,7 @@ export const actions: Actions = {
 		if (typeof id !== 'string') return fail(400, { message: 'Missing skeleton id.' });
 		let reportId: string;
 		try {
-			const report = await instantiateReport(id);
+			const report = await instantiateReport(id, await resolveAuthorScope());
 			reportId = report.id;
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
