@@ -17,6 +17,7 @@
  */
 import type { Binding, DocumentV1 } from '$lib/schema';
 import { isBindable } from '$lib/schema';
+import type { AuthorScope } from '$lib/server/authors';
 import { getReport, updateReportDocument, type Report } from '$lib/server/documents/reports';
 import type { DataSetField } from '$lib/server/db/schema';
 import { AppError } from '$lib/server/problem';
@@ -111,10 +112,14 @@ function rebindDocument(
  * The fresh data set's fields drive both the rebind (matching by name) and the
  * diagnostics (closest-match for the absent ones), so one read serves both.
  */
-export async function rebindReport(reportId: string, dataSetId: string): Promise<RebindResult> {
-	const dataSet = await getDataSet(dataSetId);
-	const table = await readDataSetTable(dataSetId);
-	const report = await getReport(reportId);
+export async function rebindReport(
+	reportId: string,
+	dataSetId: string,
+	scope: AuthorScope
+): Promise<RebindResult> {
+	const dataSet = await getDataSet(dataSetId, scope);
+	const table = await readDataSetTable(dataSetId, scope);
+	const report = await getReport(reportId, scope);
 
 	const available = dataSet.fields.map((field) => field.name);
 	const document = structuredClone(report.document);
@@ -123,7 +128,8 @@ export async function rebindReport(reportId: string, dataSetId: string): Promise
 	// Persist only when something actually re-resolved; a refill that matches
 	// nothing must not churn the draft's updatedAt or risk a 409 on a published
 	// report when there was no work to do.
-	const persisted = rebound.length > 0 ? await updateReportDocument(reportId, document) : report;
+	const persisted =
+		rebound.length > 0 ? await updateReportDocument(reportId, document, scope) : report;
 
 	const diagnostics = diagnoseDocument(persisted.document, available);
 	return { report: persisted, diagnostics, summary: summarize(diagnostics), rebound };
@@ -181,11 +187,12 @@ export async function remapField(
 	blockId: string,
 	dataSetId: string,
 	expectedField: string,
-	availableField: string
+	availableField: string,
+	scope: AuthorScope
 ): Promise<Report> {
-	const dataSet = await getDataSet(dataSetId);
-	const table = await readDataSetTable(dataSetId);
-	const report = await getReport(reportId);
+	const dataSet = await getDataSet(dataSetId, scope);
+	const table = await readDataSetTable(dataSetId, scope);
+	const report = await getReport(reportId, scope);
 
 	const document = structuredClone(report.document);
 	for (const section of document.sections) {
@@ -233,7 +240,7 @@ export async function remapField(
 			if (error instanceof ParseError) throw unparseable(error);
 			throw error;
 		}
-		return updateReportDocument(reportId, document);
+		return updateReportDocument(reportId, document, scope);
 	}
 	throw blockNotFound();
 }

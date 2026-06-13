@@ -14,6 +14,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 	return { ...actual, readFile: vi.fn(actual.readFile) };
 });
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 const readFileMock = vi.mocked(readFile);
 
 const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-queries-'));
@@ -164,10 +171,16 @@ afterAll(async () => {
 
 describe('bindBlock', () => {
 	it('binds a data set onto a block and persists the binding + resolved data in the document', async () => {
-		const report = await bindBlock(REPORT_ID, 'weekly-table', DATA_SET_ID, {
-			week: { role: 'column' },
-			count: { role: 'column' }
-		});
+		const report = await bindBlock(
+			REPORT_ID,
+			'weekly-table',
+			DATA_SET_ID,
+			{
+				week: { role: 'column' },
+				count: { role: 'column' }
+			},
+			TEST_SCOPE
+		);
 
 		const block = report.document.sections[0].blocks[0];
 		if (block.type !== 'table') throw new Error('expected a table block');
@@ -184,7 +197,13 @@ describe('bindBlock', () => {
 
 	it('throws 404 when the block id is not in the report', async () => {
 		try {
-			await bindBlock(REPORT_ID, 'no-such-block', DATA_SET_ID, { week: { role: 'column' } });
+			await bindBlock(
+				REPORT_ID,
+				'no-such-block',
+				DATA_SET_ID,
+				{ week: { role: 'column' } },
+				TEST_SCOPE
+			);
 		} catch (thrown) {
 			expect(thrown).toBeInstanceOf(AppError);
 			expect((thrown as AppError).status).toBe(404);
@@ -197,7 +216,7 @@ describe('bindBlock', () => {
 	it('throws 422 when the slot mapping is incoherent for the block type', async () => {
 		// A table block with no column slot -> resolver throws -> 422.
 		try {
-			await bindBlock(REPORT_ID, 'weekly-table', DATA_SET_ID, { week: { role: 'x' } });
+			await bindBlock(REPORT_ID, 'weekly-table', DATA_SET_ID, { week: { role: 'x' } }, TEST_SCOPE);
 		} catch (thrown) {
 			expect(thrown).toBeInstanceOf(AppError);
 			expect((thrown as AppError).status).toBe(422);
@@ -209,7 +228,7 @@ describe('bindBlock', () => {
 
 describe('listDataSets', () => {
 	it('projects only the summary columns, never storage_path or data_as_of', async () => {
-		await listDataSets();
+		await listDataSets(TEST_SCOPE);
 
 		expect(dbState.listProjections).toHaveLength(1);
 		expect(dbState.listProjections[0]).toEqual([
@@ -225,7 +244,7 @@ describe('listDataSets', () => {
 	});
 
 	it('maps the projected rows to the summary shape', async () => {
-		const summaries = await listDataSets();
+		const summaries = await listDataSets(TEST_SCOPE);
 
 		expect(summaries).toHaveLength(1);
 		expect(summaries[0]).toEqual({
@@ -244,7 +263,7 @@ describe('listDataSets', () => {
 	});
 
 	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
-		await listDataSets();
+		await listDataSets(TEST_SCOPE);
 
 		expect(dbState.listLimits).toEqual([500]);
 	});
@@ -259,7 +278,7 @@ describe('readDataSetTable', () => {
 		await writeFile(storagePath, 'week,count\n"oops');
 
 		try {
-			await readDataSetTable(DATA_SET_ID);
+			await readDataSetTable(DATA_SET_ID, TEST_SCOPE);
 		} catch (thrown) {
 			expect(thrown).toBeInstanceOf(AppError);
 			expect((thrown as AppError).status).toBe(422);
@@ -278,7 +297,7 @@ describe('readDataSetTable', () => {
 		await writeFile(storagePath, lines.join('\n'));
 
 		try {
-			await readDataSetTable(DATA_SET_ID);
+			await readDataSetTable(DATA_SET_ID, TEST_SCOPE);
 		} catch (thrown) {
 			expect(thrown).toBeInstanceOf(AppError);
 			expect((thrown as AppError).status).toBe(422);
@@ -289,8 +308,8 @@ describe('readDataSetTable', () => {
 	});
 
 	it('reads and parses the file once, then serves the second call from cache', async () => {
-		const first = await readDataSetTable(DATA_SET_ID);
-		const second = await readDataSetTable(DATA_SET_ID);
+		const first = await readDataSetTable(DATA_SET_ID, TEST_SCOPE);
+		const second = await readDataSetTable(DATA_SET_ID, TEST_SCOPE);
 
 		// A data set is immutable, so the second call must NOT re-read the file: the
 		// disk read and re-parse happen exactly once across the two calls.
@@ -305,12 +324,12 @@ describe('readDataSetTable', () => {
 		for (let i = 0; i < 10001; i++) lines.push(`2026-06-01,${i}`);
 		await writeFile(storagePath, lines.join('\n'));
 
-		await expect(readDataSetTable(DATA_SET_ID)).rejects.toBeInstanceOf(AppError);
+		await expect(readDataSetTable(DATA_SET_ID, TEST_SCOPE)).rejects.toBeInstanceOf(AppError);
 
 		// Shrink the file back under the cap; a fresh read must succeed (the failed
 		// over-cap read left nothing poisoning the cache).
 		await writeFile(storagePath, 'week,count\n2026-06-01,3');
-		const table = await readDataSetTable(DATA_SET_ID);
+		const table = await readDataSetTable(DATA_SET_ID, TEST_SCOPE);
 		expect(table.rows).toHaveLength(1);
 	});
 });

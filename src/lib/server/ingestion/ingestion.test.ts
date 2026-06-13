@@ -14,6 +14,13 @@ vi.mock('$lib/server/env', () => ({
 	serverEnv: () => ({ UPLOADS_DIR: uploadsDir })
 }));
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 const dbState = vi.hoisted(() => ({
 	dataSets: new Map<string, Record<string, unknown>>()
 }));
@@ -78,7 +85,8 @@ describe('detectFormat', () => {
 describe('ingestFile - CSV/JSON happy path', () => {
 	it('parses, inspects, stores the file, and persists a row (CSV)', async () => {
 		const dataSet = await ingestFile({
-			file: fileFrom('weekly.csv', 'week,count\n2026-06-01,3\n2026-06-08,5')
+			file: fileFrom('weekly.csv', 'week,count\n2026-06-01,3\n2026-06-08,5'),
+			scope: TEST_SCOPE
 		});
 
 		expect(dataSet.sourceFormat).toBe('csv');
@@ -97,7 +105,8 @@ describe('ingestFile - CSV/JSON happy path', () => {
 
 	it('parses an array-of-objects JSON', async () => {
 		const dataSet = await ingestFile({
-			file: fileFrom('rows.json', '[{"item":"a","n":1},{"item":"b","n":2}]')
+			file: fileFrom('rows.json', '[{"item":"a","n":1},{"item":"b","n":2}]'),
+			scope: TEST_SCOPE
 		});
 		expect(dataSet.sourceFormat).toBe('json');
 		expect(dataSet.fields).toEqual([
@@ -111,7 +120,8 @@ describe('ingestFile - CSV/JSON happy path', () => {
 		const dataSet = await ingestFile({
 			file: fileFrom('d.csv', 'a\n1'),
 			reportId: '01970000-0000-7000-8000-000000000001',
-			dataAsOf: asOf
+			dataAsOf: asOf,
+			scope: TEST_SCOPE
 		});
 		expect(dataSet.reportId).toBe('01970000-0000-7000-8000-000000000001');
 		expect(dataSet.dataAsOf).toEqual(asOf);
@@ -128,7 +138,8 @@ describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
 			bytes: bytesOf('week,count\n2026-06-01,3\n2026-06-08,5'),
 			format: 'csv',
 			filename: 'pushed.csv',
-			reportId: '01970000-0000-7000-8000-000000000001'
+			reportId: '01970000-0000-7000-8000-000000000001',
+			scope: TEST_SCOPE
 		});
 
 		expect(dataSet.sourceFormat).toBe('csv');
@@ -148,7 +159,8 @@ describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
 		const dataSet = await ingestBytes({
 			bytes: bytesOf('[{"item":"a","n":1}]'),
 			format: 'json',
-			filename: 'rows.json'
+			filename: 'rows.json',
+			scope: TEST_SCOPE
 		});
 		expect(dataSet.sourceFormat).toBe('json');
 		expect(dataSet.fields).toEqual([
@@ -160,7 +172,7 @@ describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
 	it('rejects an over-cap byte length with 413 before storing', async () => {
 		const oversize = new Uint8Array(MAX_UPLOAD_BYTES + 1);
 		const error = await expectAppError(
-			ingestBytes({ bytes: oversize, format: 'csv', filename: 'big.csv' }),
+			ingestBytes({ bytes: oversize, format: 'csv', filename: 'big.csv', scope: TEST_SCOPE }),
 			413
 		);
 		expect(error.type).toBe('/problems/upload-too-large');
@@ -169,7 +181,12 @@ describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
 
 	it('surfaces the same 422 parse diagnostic as the upload flow', async () => {
 		const error = await expectAppError(
-			ingestBytes({ bytes: bytesOf('a\n"oops'), format: 'csv', filename: 'broken.csv' }),
+			ingestBytes({
+				bytes: bytesOf('a\n"oops'),
+				format: 'csv',
+				filename: 'broken.csv',
+				scope: TEST_SCOPE
+			}),
 			422
 		);
 		expect(error.type).toBe('/problems/unparseable-file');
@@ -179,7 +196,7 @@ describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
 describe('ingestFile - Excel is parked (honest error)', () => {
 	it('returns 415 /problems/excel-not-enabled for an .xlsx upload, never a stub parse', async () => {
 		const error = await expectAppError(
-			ingestFile({ file: fileFrom('book.xlsx', 'PK binary') }),
+			ingestFile({ file: fileFrom('book.xlsx', 'PK binary'), scope: TEST_SCOPE }),
 			415
 		);
 		expect(error.type).toBe('/problems/excel-not-enabled');
@@ -192,7 +209,7 @@ describe('ingestFile - Excel is parked (honest error)', () => {
 describe('ingestFile - size cap (NFR4, before parse)', () => {
 	it('rejects an over-cap file with 413 before reading it', async () => {
 		const oversize = { name: 'big.csv', type: '', size: MAX_UPLOAD_BYTES + 1 } as File;
-		const error = await expectAppError(ingestFile({ file: oversize }), 413);
+		const error = await expectAppError(ingestFile({ file: oversize, scope: TEST_SCOPE }), 413);
 		expect(error.type).toBe('/problems/upload-too-large');
 		expect(dbState.dataSets.size).toBe(0);
 	});
@@ -202,7 +219,10 @@ describe('ingestFile - diagnostics (never silent)', () => {
 	it('returns 422 for invalid UTF-8 (encoding diagnostic)', async () => {
 		// A lone 0xFF byte is not valid UTF-8.
 		const error = await expectAppError(
-			ingestFile({ file: fileFrom('bad.csv', new Uint8Array([0xff, 0xfe, 0x00])) }),
+			ingestFile({
+				file: fileFrom('bad.csv', new Uint8Array([0xff, 0xfe, 0x00])),
+				scope: TEST_SCOPE
+			}),
 			422
 		);
 		expect(error.detail).toContain('UTF-8');
@@ -211,7 +231,7 @@ describe('ingestFile - diagnostics (never silent)', () => {
 
 	it('returns 422 for a malformed CSV (unterminated quote)', async () => {
 		const error = await expectAppError(
-			ingestFile({ file: fileFrom('broken.csv', 'a\n"oops') }),
+			ingestFile({ file: fileFrom('broken.csv', 'a\n"oops'), scope: TEST_SCOPE }),
 			422
 		);
 		expect(error.type).toBe('/problems/unparseable-file');
@@ -219,7 +239,10 @@ describe('ingestFile - diagnostics (never silent)', () => {
 	});
 
 	it('returns 422 for non-tabular JSON', async () => {
-		const error = await expectAppError(ingestFile({ file: fileFrom('obj.json', '{"a":1}') }), 422);
+		const error = await expectAppError(
+			ingestFile({ file: fileFrom('obj.json', '{"a":1}'), scope: TEST_SCOPE }),
+			422
+		);
 		expect(error.type).toBe('/problems/unparseable-file');
 	});
 });

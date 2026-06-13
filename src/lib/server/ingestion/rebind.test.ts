@@ -7,6 +7,13 @@ import { AppError } from '$lib/server/problem';
 import { __clearParsedTableCache } from './queries.ts';
 import { rebindReport, remapField } from './rebind.ts';
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-rebind-'));
 
 const dbState = vi.hoisted(() => ({
@@ -141,7 +148,7 @@ describe('rebindReport (FR14)', () => {
 			{ name: 'count', type: 'number' }
 		]);
 
-		const result = await rebindReport(REPORT_ID, DATA_SET_ID);
+		const result = await rebindReport(REPORT_ID, DATA_SET_ID, TEST_SCOPE);
 
 		expect(result.rebound).toEqual(['severity-table']);
 		expect(result.summary).toEqual({
@@ -167,7 +174,7 @@ describe('rebindReport (FR14)', () => {
 			{ name: 'counts', type: 'number' }
 		]);
 
-		const result = await rebindReport(REPORT_ID, DATA_SET_ID);
+		const result = await rebindReport(REPORT_ID, DATA_SET_ID, TEST_SCOPE);
 
 		expect(result.rebound).toEqual([]);
 		expect(result.summary.drifted).toBe(1);
@@ -186,7 +193,7 @@ describe('rebindReport (FR14)', () => {
 			{ name: 'beta', type: 'number' }
 		]);
 
-		const result = await rebindReport(REPORT_ID, DATA_SET_ID);
+		const result = await rebindReport(REPORT_ID, DATA_SET_ID, TEST_SCOPE);
 
 		expect(result.rebound).toEqual([]);
 		expect(result.summary.unresolved).toBe(1);
@@ -201,7 +208,14 @@ describe('remapField (FR15)', () => {
 			{ name: 'counts', type: 'number' }
 		]);
 
-		const report = await remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'counts');
+		const report = await remapField(
+			REPORT_ID,
+			'severity-table',
+			DATA_SET_ID,
+			'count',
+			'counts',
+			TEST_SCOPE
+		);
 
 		const block = report.document.sections[0].blocks[0];
 		if (block.type !== 'table') throw new Error('expected a table block');
@@ -224,7 +238,7 @@ describe('remapField (FR15)', () => {
 		]);
 
 		await expect(
-			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'nonexistent', 'counts')
+			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'nonexistent', 'counts', TEST_SCOPE)
 		).rejects.toMatchObject({ status: 404, type: '/problems/binding-field-not-found' });
 	});
 
@@ -235,7 +249,7 @@ describe('remapField (FR15)', () => {
 		]);
 
 		await expect(
-			remapField(REPORT_ID, 'no-such-block', DATA_SET_ID, 'count', 'counts')
+			remapField(REPORT_ID, 'no-such-block', DATA_SET_ID, 'count', 'counts', TEST_SCOPE)
 		).rejects.toBeInstanceOf(AppError);
 	});
 
@@ -247,7 +261,7 @@ describe('remapField (FR15)', () => {
 		const before = structuredClone(dbState.reports.get(REPORT_ID)!.document);
 
 		await expect(
-			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'phantom')
+			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'phantom', TEST_SCOPE)
 		).rejects.toMatchObject({ status: 404, type: '/problems/binding-field-not-found' });
 
 		// The binding is unchanged and nothing was written.
@@ -263,7 +277,7 @@ describe('remapField (FR15)', () => {
 
 		// "count" is remapped onto "severity", which already carries a column slot.
 		await expect(
-			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'severity')
+			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'severity', TEST_SCOPE)
 		).rejects.toMatchObject({ status: 409, type: '/problems/field-already-bound' });
 
 		expect(dbState.reports.get(REPORT_ID)!.document).toEqual(before);

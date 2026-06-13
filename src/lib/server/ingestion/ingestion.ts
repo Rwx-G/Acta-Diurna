@@ -12,6 +12,7 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { dataSets, type DataSetField, type DataSetRow } from '$lib/server/db/schema';
@@ -106,6 +107,8 @@ function parseByFormat(format: SourceFormat, text: string): ParsedTable {
 
 export interface IngestInput {
 	file: File;
+	/** The author the new data set belongs to (story 8.2): stamped as `owner_id`. */
+	scope: AuthorScope;
 	reportId?: string | null;
 	/** FR16 groundwork: the "as of" date of the data; rendered in Epic 6. */
 	dataAsOf?: Date | null;
@@ -125,12 +128,14 @@ export interface IngestBytesInput {
 	bytes: Uint8Array;
 	format: SourceFormat;
 	filename: string;
+	/** The author the new data set belongs to (story 8.2): stamped as `owner_id`. */
+	scope: AuthorScope;
 	reportId?: string | null;
 	dataAsOf?: Date | null;
 }
 
 export async function ingestBytes(input: IngestBytesInput): Promise<DataSet> {
-	const { bytes, format, filename, reportId = null, dataAsOf = null } = input;
+	const { bytes, format, filename, scope, reportId = null, dataAsOf = null } = input;
 	if (bytes.byteLength > MAX_UPLOAD_BYTES) {
 		throw tooLarge(MAX_UPLOAD_BYTES);
 	}
@@ -140,7 +145,7 @@ export async function ingestBytes(input: IngestBytesInput): Promise<DataSet> {
 	// under strict lib types. The slice is a one-time copy at the API boundary.
 	const buffer = bytes.slice().buffer;
 	const file = new File([buffer], filename, { type: mimeType });
-	return ingestFile({ file, reportId, dataAsOf });
+	return ingestFile({ file, scope, reportId, dataAsOf });
 }
 
 /**
@@ -150,7 +155,7 @@ export async function ingestBytes(input: IngestBytesInput): Promise<DataSet> {
  * rejected with the honest 415 before any read.
  */
 export async function ingestFile(input: IngestInput): Promise<DataSet> {
-	const { file, reportId = null, dataAsOf = null } = input;
+	const { file, scope, reportId = null, dataAsOf = null } = input;
 
 	if (file.size > MAX_UPLOAD_BYTES) {
 		throw tooLarge(MAX_UPLOAD_BYTES);
@@ -189,7 +194,8 @@ export async function ingestFile(input: IngestInput): Promise<DataSet> {
 		fields,
 		injectedAt: now,
 		dataAsOf,
-		storagePath
+		storagePath,
+		ownerId: ownerForInsert(scope)
 	};
 	await getDb().insert(dataSets).values(row);
 	return toDataSet(row);
