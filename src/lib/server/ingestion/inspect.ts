@@ -67,32 +67,62 @@ function isEmpty(value: unknown): boolean {
 	);
 }
 
+/**
+ * Running aggregation state for one column. `agreed` is the single non-string
+ * type seen so far (undefined until the first non-empty value); `forced` latches
+ * once the column is pinned to `string` (a string value, or two disagreeing
+ * non-string types), after which further values cannot change the outcome.
+ */
+interface ColumnAccumulator {
+	agreed: FieldType | undefined;
+	forced: boolean;
+}
+
+/** Folds one value into a column accumulator, mirroring `inferColumnType`'s precedence. */
+function accumulate(acc: ColumnAccumulator, value: unknown): void {
+	if (acc.forced || isEmpty(value)) return;
+	const type = inferValueType(value);
+	if (type === 'string') {
+		acc.forced = true;
+	} else if (acc.agreed === undefined) {
+		acc.agreed = type;
+	} else if (acc.agreed !== type) {
+		acc.forced = true;
+	}
+}
+
+function accumulatedType(acc: ColumnAccumulator): FieldType {
+	return acc.forced ? 'string' : (acc.agreed ?? 'string');
+}
+
 /** Aggregates a column of values into one inferred type. */
 export function inferColumnType(values: readonly unknown[]): FieldType {
-	let agreed: FieldType | undefined;
-	for (const value of values) {
-		if (isEmpty(value)) continue;
-		const type = inferValueType(value);
-		if (type === 'string') return 'string';
-		if (agreed === undefined) {
-			agreed = type;
-		} else if (agreed !== type) {
-			return 'string';
-		}
-	}
-	return agreed ?? 'string';
+	const acc: ColumnAccumulator = { agreed: undefined, forced: false };
+	for (const value of values) accumulate(acc, value);
+	return accumulatedType(acc);
 }
 
 /**
  * Inspects a list of column names against keyed rows, returning the inferred
- * field type for each column in declared order.
+ * field type for each column in declared order. Walks the rows ONCE, folding each
+ * cell into its column accumulator, instead of materializing a per-column value
+ * array first (the prior `rows.map(row => row[name])` per column was O(cols x
+ * rows) short-lived allocations on large ingests). The inferred types are
+ * identical: each accumulator applies the same per-value precedence and per-column
+ * aggregation as {@link inferColumnType}.
  */
 export function inspectFields(
 	columns: readonly string[],
 	rows: readonly Record<string, unknown>[]
 ): DataSetField[] {
+	const accumulators = new Map<string, ColumnAccumulator>(
+		columns.map((name) => [name, { agreed: undefined, forced: false }])
+	);
+	for (const row of rows) {
+		for (const [name, acc] of accumulators) accumulate(acc, row[name]);
+	}
 	return columns.map((name) => ({
 		name,
-		type: inferColumnType(rows.map((row) => row[name]))
+		type: accumulatedType(accumulators.get(name)!)
 	}));
 }
