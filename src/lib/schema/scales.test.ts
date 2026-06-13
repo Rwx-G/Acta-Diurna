@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { validateDocument } from './errors.ts';
+import type { BlockType } from './blocks/section.ts';
 import {
 	categoricalToken,
 	MAX_SCALE_ENTRIES,
@@ -467,4 +468,78 @@ describe('validateScaleReferences - set-membership cross references', () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].path).toEqual(['sections', 0, 'blocks', 0, 'sourceBlockId']);
 	});
+});
+
+describe('validateScaleReferences - exhaustive over BlockType', () => {
+	// One fixture per block type, classified by whether the type carries a
+	// scale/entry/block reference the cross-reference pass must resolve. A
+	// dangling-ref fixture points at a key/block that does not exist (no scales
+	// declared), so the pass MUST flag it; a no-ref fixture MUST yield nothing.
+	// The `satisfies Record<BlockType, ...>` makes this map exhaustive: a new block
+	// type forces a conscious entry here, mirroring the switch in scales.ts, so a
+	// branch left as a silent no-op when it should resolve a ref is caught by the
+	// failing `expectsIssue: true` assertion. Each fixture is the minimal shape the
+	// per-type helper inspects (the block has passed its own zod shape validation
+	// before this pass runs in production, so a partial shape is faithful here).
+	const fixtures = {
+		'comparison-matrix': {
+			expectsIssue: true,
+			block: { type: 'comparison-matrix', id: 'm', severityScale: 'ghost', findings: [] }
+		},
+		legend: { expectsIssue: true, block: { type: 'legend', id: 'l', scaleRef: 'ghost' } },
+		'set-membership': {
+			expectsIssue: true,
+			block: { type: 'set-membership', id: 'u', sourceBlockId: 'ghost' }
+		},
+		'chip-cluster': {
+			expectsIssue: true,
+			block: { type: 'chip-cluster', id: 'c', scaleRef: 'ghost', entries: ['x'] }
+		},
+		table: {
+			expectsIssue: true,
+			block: {
+				type: 'table',
+				id: 't',
+				columns: [{ key: 'sev', label: 'Sev', scaleRef: 'ghost' }],
+				rows: [{ sev: 'high' }]
+			}
+		},
+		timeline: {
+			expectsIssue: true,
+			block: {
+				type: 'timeline',
+				id: 'tl',
+				milestones: [{ label: 'M', status: { scaleRef: 'ghost', entry: 'e' } }]
+			}
+		},
+		text: { expectsIssue: false, block: { type: 'text', id: 'x', paragraphs: [[{ text: 'x' }]] } },
+		chart: { expectsIssue: false, block: { type: 'chart', id: 'x', kind: 'line', series: [] } },
+		kpi: { expectsIssue: false, block: { type: 'kpi', id: 'x', items: [] } },
+		image: { expectsIssue: false, block: { type: 'image', id: 'x', assetId: 'a', alt: 'a' } },
+		'field-grid': { expectsIssue: false, block: { type: 'field-grid', id: 'x', items: [] } },
+		callout: {
+			expectsIssue: false,
+			block: { type: 'callout', id: 'x', tone: 'info', body: [[{ text: 'x' }]] }
+		},
+		code: { expectsIssue: false, block: { type: 'code', id: 'x', code: '' } },
+		'card-grid': {
+			expectsIssue: false,
+			block: { type: 'card-grid', id: 'x', columns: 2, items: [] }
+		},
+		list: { expectsIssue: false, block: { type: 'list', id: 'x', ordered: true, items: [] } }
+	} satisfies Record<
+		BlockType,
+		{ expectsIssue: boolean; block: { type: string; id: string } & Record<string, unknown> }
+	>;
+
+	for (const [type, { expectsIssue, block }] of Object.entries(fixtures)) {
+		it(`${expectsIssue ? 'flags a dangling ref' : 'yields no issue'} for a ${type} block`, () => {
+			const issues = validateScaleReferences({ sections: [{ blocks: [block] }] });
+			if (expectsIssue) {
+				expect(issues.length).toBeGreaterThan(0);
+			} else {
+				expect(issues).toEqual([]);
+			}
+		});
+	}
 });

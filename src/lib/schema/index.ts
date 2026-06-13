@@ -6,6 +6,8 @@
 import { z } from 'zod';
 import { documentSchemaV1 } from './versions/index.ts';
 
+export { assertNever } from './assert.ts';
+
 export {
 	AUDIENCES,
 	audienceSchema,

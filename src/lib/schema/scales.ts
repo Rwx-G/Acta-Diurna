@@ -9,7 +9,9 @@
  * contrast helpers below.
  */
 import { z } from 'zod';
+import { assertNever } from './assert.ts';
 import { idSchema } from './blocks/shared.ts';
+import type { BlockType } from './blocks/section.ts';
 
 /** DoS cap on the number of scales a document may declare. */
 export const MAX_SCALES = 16;
@@ -200,18 +202,49 @@ export function validateScaleReferences(document: {
 		const blocks = document.sections[s].blocks;
 		for (let b = 0; b < blocks.length; b += 1) {
 			const block = blocks[b];
-			if (block.type === 'comparison-matrix') {
-				validateComparisonMatrixRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
-			} else if (block.type === 'legend') {
-				validateLegendRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
-			} else if (block.type === 'set-membership') {
-				validateSetMembershipRefs(block, matrixBlockIds, ['sections', s, 'blocks', b], issues);
-			} else if (block.type === 'chip-cluster') {
-				validateChipClusterRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
-			} else if (block.type === 'table') {
-				validateTableRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
-			} else if (block.type === 'timeline') {
-				validateTimelineRefs(block, document.scales, ['sections', s, 'blocks', b], issues);
+			const basePath: PropertyKey[] = ['sections', s, 'blocks', b];
+			// Exhaustive over BlockType: a block type that carries a scale/entry/block
+			// reference dispatches to its check; one that carries none is an explicit
+			// no-op case. Adding a block type breaks compilation at `assertNever` until
+			// it is listed here, so a forgotten cross-reference branch is a compile
+			// error, never a silently-skipped validation. The block has passed its own
+			// zod shape validation before this pass runs, so the `as BlockType` narrowing
+			// is sound. The per-type helpers keep their local `*RefView` structural types
+			// so this module imports no block schema value (only the `BlockType` literal
+			// union, type-only and erased).
+			const blockType = block.type as BlockType;
+			switch (blockType) {
+				case 'comparison-matrix':
+					validateComparisonMatrixRefs(block, document.scales, basePath, issues);
+					break;
+				case 'legend':
+					validateLegendRefs(block, document.scales, basePath, issues);
+					break;
+				case 'set-membership':
+					validateSetMembershipRefs(block, matrixBlockIds, basePath, issues);
+					break;
+				case 'chip-cluster':
+					validateChipClusterRefs(block, document.scales, basePath, issues);
+					break;
+				case 'table':
+					validateTableRefs(block, document.scales, basePath, issues);
+					break;
+				case 'timeline':
+					validateTimelineRefs(block, document.scales, basePath, issues);
+					break;
+				case 'text':
+				case 'chart':
+				case 'kpi':
+				case 'image':
+				case 'field-grid':
+				case 'callout':
+				case 'code':
+				case 'card-grid':
+				case 'list':
+					// No scale/entry/block reference to resolve.
+					break;
+				default:
+					assertNever(blockType);
 			}
 		}
 	}
