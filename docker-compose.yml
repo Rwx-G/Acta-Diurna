@@ -94,7 +94,12 @@ services:
       - '443:443'
       - '443:443/udp'
     environment:
-      CADDY_DOMAIN: ${CADDY_DOMAIN:?set CADDY_DOMAIN to your public hostname to use the proxy profile}
+      # Soft default: compose interpolates the WHOLE file (profile-gated services
+      # included) before filtering by profile, so a `:?` required-error here would
+      # break the base `docker compose up` for anyone not using the proxy. Empty is
+      # fine because this service only runs under `--profile proxy`, where the
+      # operator sets CADDY_DOMAIN (Caddy refuses an empty site address at startup).
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
