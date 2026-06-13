@@ -18,7 +18,8 @@ const dbState = vi.hoisted(() => ({
 	rows: [] as Record<string, unknown>[],
 	inserted: [] as Record<string, unknown>[],
 	whereFilters: [] as { column: string; value: unknown }[],
-	updates: [] as Record<string, unknown>[]
+	updates: [] as Record<string, unknown>[],
+	listLimits: [] as number[]
 }));
 
 function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
@@ -57,8 +58,14 @@ vi.mock('$lib/server/db/client', () => ({
 						orderBy: () => Promise.resolve(matched)
 					};
 				},
-				// listApiTokens calls select().from().orderBy() with no where: all rows.
-				orderBy: () => Promise.resolve(dbState.rows)
+				// listApiTokens calls select().from().orderBy().limit() with no where: all
+				// rows up to the cap.
+				orderBy: () => ({
+					limit: (count: number) => {
+						dbState.listLimits.push(count);
+						return Promise.resolve(dbState.rows.slice(0, count));
+					}
+				})
 			})
 		}),
 		update: () => ({
@@ -125,6 +132,7 @@ beforeEach(() => {
 	dbState.inserted = [];
 	dbState.whereFilters = [];
 	dbState.updates = [];
+	dbState.listLimits = [];
 });
 
 describe('createApiToken', () => {
@@ -199,6 +207,12 @@ describe('listApiTokens', () => {
 		seedToken({ revokedAt: new Date() });
 		const [summary] = await listApiTokens();
 		expect(summary.status).toBe('revoked');
+	});
+
+	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
+		seedToken();
+		await listApiTokens();
+		expect(dbState.listLimits).toEqual([100]);
 	});
 });
 

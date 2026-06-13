@@ -35,6 +35,14 @@ const PAT_BYTES = 32;
 /** Length of the non-secret display fragment kept for the list UI (last N chars of the raw token). */
 const DISPLAY_FRAGMENT_LENGTH = 4;
 
+/**
+ * Safety ceiling on the token-management list (1.5 performance audit). A revoke-only
+ * V1 keeps revoked rows for the audit trail, so the table grows over a long-lived
+ * instance; this bounds the query so the settings page load stays flat. Tokens are
+ * minted by hand and sit far below this, so truncation is not reachable in practice.
+ */
+const MAX_TOKENS_LISTED = 100;
+
 /** A token's lifecycle state, derived from `revokedAt`. V1 has no expiry, so a token is active until revoked. */
 export type ApiTokenStatus = 'active' | 'revoked';
 
@@ -102,12 +110,17 @@ export async function createApiToken(name: string): Promise<CreatedApiToken> {
 }
 
 /**
- * Lists the author's tokens, newest first, for the management UI. Returns id,
- * name, display fragment, timestamps, and the derived status - NEVER the raw
- * token (it is gone after creation) and never the hash.
+ * Lists the author's tokens, newest first, for the management UI, capped at
+ * {@link MAX_TOKENS_LISTED}. Returns id, name, display fragment, timestamps, and
+ * the derived status - NEVER the raw token (it is gone after creation) and never
+ * the hash. The cap is a safety ceiling, not pagination.
  */
 export async function listApiTokens(): Promise<ApiTokenSummary[]> {
-	const rows = await getDb().select().from(apiTokens).orderBy(desc(apiTokens.createdAt));
+	const rows = await getDb()
+		.select()
+		.from(apiTokens)
+		.orderBy(desc(apiTokens.createdAt))
+		.limit(MAX_TOKENS_LISTED);
 	return rows.map(toSummary);
 }
 

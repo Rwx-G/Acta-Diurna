@@ -41,6 +41,15 @@ export interface ReportSummary {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * Safety ceiling on the report-list query (1.5 performance audit). The list view
+ * has no pagination yet; this bounds the query so a deployment that accumulates
+ * many reports cannot degrade the dashboard load unboundedly. Real counts sit far
+ * below this, so truncation is not reachable in practice - it is a guard, not a
+ * page size. Replace with real pagination if the catalogue ever approaches it.
+ */
+const MAX_REPORTS_LISTED = 500;
+
 function toReport(row: ReportRow): Report {
 	return {
 		id: row.id,
@@ -227,10 +236,12 @@ export async function getReport(id: string): Promise<Report> {
 }
 
 /**
- * Lists all reports for the workspace, most recently updated first. Projects
- * only the {@link ReportSummary} columns: the two JSONB document columns are
- * large and the list view never reads them, so selecting them on every
- * dashboard load is wasted transfer (1.5 performance audit).
+ * Lists reports for the workspace, most recently updated first, capped at
+ * {@link MAX_REPORTS_LISTED}. Projects only the {@link ReportSummary} columns:
+ * the two JSONB document columns are large and the list view never reads them,
+ * so selecting them on every dashboard load is wasted transfer (1.5 performance
+ * audit). The cap is a safety ceiling, not pagination - real counts sit far
+ * below it.
  */
 export async function listReports(): Promise<ReportSummary[]> {
 	const rows = await getDb()
@@ -241,7 +252,8 @@ export async function listReports(): Promise<ReportSummary[]> {
 			updatedAt: reports.updatedAt
 		})
 		.from(reports)
-		.orderBy(desc(reports.updatedAt));
+		.orderBy(desc(reports.updatedAt))
+		.limit(MAX_REPORTS_LISTED);
 	return rows.map((row) => ({
 		id: row.id,
 		title: row.title,

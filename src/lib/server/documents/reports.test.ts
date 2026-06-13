@@ -31,6 +31,7 @@ const dbState = vi.hoisted(() => ({
 	rowsById: new Map<string, Record<string, unknown>>(),
 	inserted: [] as Record<string, unknown>[],
 	orderBys: [] as { column: string; sql: string }[],
+	listLimits: [] as number[],
 	updates: [] as { column: string; value: unknown; set: Record<string, unknown> }[],
 	deleteFilters: [] as { column: string; value: unknown }[],
 	selectProjections: [] as (string[] | undefined)[]
@@ -99,7 +100,13 @@ vi.mock('$lib/server/db/client', () => ({
 					},
 					orderBy: (order: SQL) => {
 						dbState.orderBys.push(decodeOrderBy(order));
-						return Promise.resolve([...dbState.rowsById.values()]);
+						const ordered = [...dbState.rowsById.values()];
+						return {
+							limit: (count: number) => {
+								dbState.listLimits.push(count);
+								return Promise.resolve(ordered.slice(0, count));
+							}
+						};
 					}
 				};
 			}
@@ -200,6 +207,7 @@ beforeEach(() => {
 	dbState.rowsById.clear();
 	dbState.inserted = [];
 	dbState.orderBys = [];
+	dbState.listLimits = [];
 	dbState.updates = [];
 	dbState.deleteFilters = [];
 	dbState.selectProjections = [];
@@ -376,6 +384,14 @@ describe('listReports', () => {
 		expect(dbState.selectProjections[0]).toEqual(['id', 'title', 'status', 'updated_at']);
 		expect(dbState.selectProjections[0]).not.toContain('document');
 		expect(dbState.selectProjections[0]).not.toContain('published_document');
+	});
+
+	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
+		seedReport();
+
+		await listReports();
+
+		expect(dbState.listLimits).toEqual([500]);
 	});
 });
 
