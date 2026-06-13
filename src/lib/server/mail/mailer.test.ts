@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '$lib/server/problem';
 
-const createTransport = vi.fn(() => ({ sendMail: vi.fn() }));
+const createTransport = vi.fn<(options: Record<string, unknown>) => { sendMail: () => void }>(
+	() => ({ sendMail: vi.fn() })
+);
 vi.mock('nodemailer', () => ({ createTransport }));
 
 const serverEnv = vi.fn();
@@ -78,14 +80,37 @@ describe('getMailer', () => {
 		expect(createTransport).toHaveBeenCalledWith(
 			expect.objectContaining({ port: 465, secure: true })
 		);
+		// tls is implicit from the first byte, no STARTTLS upgrade to require.
+		const options = createTransport.mock.calls[0][0];
+		expect(options).not.toHaveProperty('requireTLS');
 	});
 
-	it('omits auth when no user is set', () => {
+	it('builds a bare anonymous relay (none, no auth, no requireTLS)', () => {
+		serverEnv.mockReturnValue({
+			...baseSmtp,
+			SMTP_PORT: 25,
+			SMTP_USER: undefined,
+			SMTP_PASSWORD: undefined,
+			SMTP_TLS_MODE: 'none'
+		});
+
+		mailer.getMailer();
+
+		const options = createTransport.mock.calls[0][0];
+		expect(options).toEqual({ host: 'smtp.example.com', port: 25, secure: false });
+		// No auth object: an `auth: { user: undefined }` would coerce an unwanted
+		// AUTH on a relay that accepts anonymous submission (story 8.1).
+		expect(options).not.toHaveProperty('auth');
+		// No requireTLS: the relay does not advertise STARTTLS and must not be probed.
+		expect(options).not.toHaveProperty('requireTLS');
+	});
+
+	it('omits the auth object entirely when no user is set', () => {
 		serverEnv.mockReturnValue({ ...baseSmtp, SMTP_USER: undefined, SMTP_PASSWORD: undefined });
 
 		mailer.getMailer();
 
-		expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({ auth: undefined }));
+		expect(createTransport.mock.calls[0][0]).not.toHaveProperty('auth');
 	});
 
 	it('caches the transport across calls', () => {
