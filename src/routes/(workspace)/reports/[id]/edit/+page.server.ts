@@ -25,6 +25,7 @@ import {
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { aiGenerationLimiter } from '$lib/server/auth/rate-limit';
 import { AppError, errorPageShape, rateLimited } from '$lib/server/problem';
+import { runAction } from '$lib/server/action';
 import { parseSlotMapping } from './bind-form';
 import { applyNarrativeFields } from './editor-state';
 
@@ -52,37 +53,32 @@ export const actions: Actions = {
 	save: async ({ params, request }) => {
 		const data = await request.formData();
 		const raw = data.get('document');
-		try {
-			let documentInput: unknown;
-			if (typeof raw === 'string') {
-				if (raw.length > MAX_DOCUMENT_BYTES) {
-					// Reject an oversized payload before JSON.parse spends memory on it.
-					return fail(413, { message: 'Document payload is too large.', errors: [] });
+		return runAction(
+			async () => {
+				let documentInput: unknown;
+				if (typeof raw === 'string') {
+					if (raw.length > MAX_DOCUMENT_BYTES) {
+						// Reject an oversized payload before JSON.parse spends memory on it.
+						return fail(413, { message: 'Document payload is too large.', errors: [] });
+					}
+					try {
+						documentInput = JSON.parse(raw);
+					} catch {
+						// Same shape as the AppError failure below: a single ActionData
+						// failure variant keeps `form.errors` well-typed for the page.
+						return fail(400, { message: 'Malformed document payload.', errors: [] });
+					}
+				} else {
+					// No-JS baseline: apply the posted narrative fields onto the
+					// stored document, then validate like any other write.
+					const current = await getReport(params.id);
+					documentInput = applyNarrativeFields(current.document, data);
 				}
-				try {
-					documentInput = JSON.parse(raw);
-				} catch {
-					// Same shape as the AppError failure below: a single ActionData
-					// failure variant keeps `form.errors` well-typed for the page.
-					return fail(400, { message: 'Malformed document payload.', errors: [] });
-				}
-			} else {
-				// No-JS baseline: apply the posted narrative fields onto the
-				// stored document, then validate like any other write.
-				const current = await getReport(params.id);
-				documentInput = applyNarrativeFields(current.document, data);
-			}
-			const report = await updateReportDocument(params.id, documentInput);
-			return { savedAt: report.updatedAt.toISOString() };
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					message: thrown.detail ?? thrown.title,
-					errors: thrown.errors ?? []
-				});
-			}
-			throw thrown;
-		}
+				const report = await updateReportDocument(params.id, documentInput);
+				return { savedAt: report.updatedAt.toISOString() };
+			},
+			(problem) => ({ message: problem.message, errors: problem.errors })
+		);
 	},
 	bind: async ({ params, request }) => {
 		const data = await request.formData();
@@ -98,18 +94,13 @@ export const actions: Actions = {
 		} catch {
 			return fail(400, { message: 'Malformed slot mapping.', errors: [] });
 		}
-		try {
-			const report = await bindBlock(params.id, blockId, dataSetId, slotMapping);
-			return { boundAt: report.updatedAt.toISOString() };
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					message: thrown.detail ?? thrown.title,
-					errors: thrown.errors ?? []
-				});
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const report = await bindBlock(params.id, blockId, dataSetId, slotMapping);
+				return { boundAt: report.updatedAt.toISOString() };
+			},
+			(problem) => ({ message: problem.message, errors: problem.errors })
+		);
 	},
 	rebind: async ({ params, request }) => {
 		// Auto-rebinding (FR14): inject a fresh data set and re-resolve every bound
@@ -120,23 +111,18 @@ export const actions: Actions = {
 		if (!dataSetId) {
 			return fail(400, { message: 'A data set is required to rebind.', errors: [] });
 		}
-		try {
-			const result = await rebindReport(params.id, dataSetId);
-			return {
-				reboundAt: result.report.updatedAt.toISOString(),
-				diagnostics: result.diagnostics,
-				summary: result.summary,
-				rebound: result.rebound
-			};
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					message: thrown.detail ?? thrown.title,
-					errors: thrown.errors ?? []
-				});
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const result = await rebindReport(params.id, dataSetId);
+				return {
+					reboundAt: result.report.updatedAt.toISOString(),
+					diagnostics: result.diagnostics,
+					summary: result.summary,
+					rebound: result.rebound
+				};
+			},
+			(problem) => ({ message: problem.message, errors: problem.errors })
+		);
 	},
 	remap: async ({ params, request }) => {
 		// Remap-in-place (FR15): point a drifted expected field at an available
@@ -149,18 +135,19 @@ export const actions: Actions = {
 		if (!blockId || !dataSetId || !expectedField || !availableField) {
 			return fail(400, { message: 'A block, data set, and field pair are required.', errors: [] });
 		}
-		try {
-			const report = await remapField(params.id, blockId, dataSetId, expectedField, availableField);
-			return { remappedAt: report.updatedAt.toISOString() };
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					message: thrown.detail ?? thrown.title,
-					errors: thrown.errors ?? []
-				});
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const report = await remapField(
+					params.id,
+					blockId,
+					dataSetId,
+					expectedField,
+					availableField
+				);
+				return { remappedAt: report.updatedAt.toISOString() };
+			},
+			(problem) => ({ message: problem.message, errors: problem.errors })
+		);
 	},
 	// FR32 stage 1: request a bounded outline (sections + key points) for review.
 	// chatComplete gates on configured + opted-in, so a disabled instance returns
@@ -181,28 +168,26 @@ export const actions: Actions = {
 		if (!intent) {
 			return fail(400, { generate: { message: 'Describe what the report should cover.' } });
 		}
-		try {
-			const outline = await generateOutline({
-				intent,
-				skeletonId,
-				dataSetId,
-				requestId: locals.requestId
-			});
-			return {
-				generate: {
-					stage: 'outline' as const,
-					outline,
-					outlineHash: hashOutline(outline),
+		return runAction(
+			async () => {
+				const outline = await generateOutline({
+					intent,
 					skeletonId,
-					dataSetId
-				}
-			};
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, { generate: { message: thrown.detail ?? thrown.title } });
-			}
-			throw thrown;
-		}
+					dataSetId,
+					requestId: locals.requestId
+				});
+				return {
+					generate: {
+						stage: 'outline' as const,
+						outline,
+						outlineHash: hashOutline(outline),
+						skeletonId,
+						dataSetId
+					}
+				};
+			},
+			(problem) => ({ generate: { message: problem.message } })
+		);
 	},
 	// FR32 stage 2: fill the APPROVED outline into the draft. The approved outline
 	// + its approval hash are posted back; fillFromOutline re-checks the hash (a
@@ -235,47 +220,45 @@ export const actions: Actions = {
 		if (!approvedHash) {
 			return fail(400, { generate: { message: 'Approve the outline before generating content.' } });
 		}
-		try {
-			const report = await fillFromOutline(
-				{ intent: '', outline, approvedHash, skeletonId, dataSetId, requestId: locals.requestId },
-				params.id
-			);
-			return { generate: { stage: 'filled' as const, savedAt: report.updatedAt.toISOString() } };
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					generate: { message: thrown.detail ?? thrown.title, errors: thrown.errors ?? [] }
-				});
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const report = await fillFromOutline(
+					{
+						intent: '',
+						outline,
+						approvedHash,
+						skeletonId,
+						dataSetId,
+						requestId: locals.requestId
+					},
+					params.id
+				);
+				return {
+					generate: { stage: 'filled' as const, savedAt: report.updatedAt.toISOString() }
+				};
+			},
+			(problem) => ({ generate: { message: problem.message, errors: problem.errors } })
+		);
 	},
 	publish: async ({ params }) => {
-		try {
-			const report = await publishReport(params.id);
-			return { published: true, status: report.status };
-		} catch (thrown) {
-			// A 422 (invalid draft) carries the actionable errors[]; the editor
-			// renders them at the failing blocks, reusing the save-path rendering.
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					message: thrown.detail ?? thrown.title,
-					errors: thrown.errors ?? []
-				});
-			}
-			throw thrown;
-		}
+		// A 422 (invalid draft) carries the actionable errors[]; the editor renders
+		// them at the failing blocks, reusing the save-path rendering.
+		return runAction(
+			async () => {
+				const report = await publishReport(params.id);
+				return { published: true, status: report.status };
+			},
+			(problem) => ({ message: problem.message, errors: problem.errors })
+		);
 	},
 	unpublish: async ({ params }) => {
-		try {
-			const report = await unpublishToDraft(params.id);
-			return { published: false, status: report.status };
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, { message: thrown.detail ?? thrown.title, errors: [] });
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const report = await unpublishToDraft(params.id);
+				return { published: false, status: report.status };
+			},
+			(problem) => ({ message: problem.message, errors: problem.errors })
+		);
 	},
 	logout: async ({ cookies }) => {
 		await performLogout(cookies);

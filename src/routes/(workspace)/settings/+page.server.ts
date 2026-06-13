@@ -7,7 +7,8 @@ import { sendMail } from '$lib/server/mail/send';
 import { testEmail } from '$lib/server/mail/templates/test-email';
 import { aiConfig, chatComplete, isAiEnabled } from '$lib/server/ai/connector';
 import { testSendLimiter } from '$lib/server/auth/rate-limit';
-import { AppError, rateLimited } from '$lib/server/problem';
+import { rateLimited } from '$lib/server/problem';
+import { runAction } from '$lib/server/action';
 
 // Surfaces whether SMTP is configured so the page can explain the absent case
 // instead of offering a test-send that always 503s. The address itself is not
@@ -55,19 +56,17 @@ export const actions: Actions = {
 			return fail(400, { sent: false, message: 'Enter a valid email address.' });
 		}
 
-		try {
-			const result = await sendMail(testEmail(to.trim()), locals.requestId);
-			return {
-				sent: true,
-				message: `Test email sent to ${to.trim()}.`,
-				messageId: result.messageId
-			};
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, { sent: false, message: thrown.detail ?? thrown.title });
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const result = await sendMail(testEmail(to.trim()), locals.requestId);
+				return {
+					sent: true,
+					message: `Test email sent to ${to.trim()}.`,
+					messageId: result.messageId
+				};
+			},
+			(problem) => ({ sent: false, message: problem.message })
+		);
 	},
 	// FR33 / NFR16: an explicit connectivity probe. A minimal chatComplete ping
 	// reports success or the redacted failure inline. It makes a REAL outbound
@@ -75,21 +74,17 @@ export const actions: Actions = {
 	// gates first - a disabled connector returns the 503 disabled detail rather
 	// than calling out. No key or host ever reaches the result message.
 	'test-ai': async ({ locals }) => {
-		try {
-			const result = await chatComplete(
-				[{ role: 'user', content: 'Reply with the single word: ok.' }],
-				{ temperature: 0, requestId: locals.requestId }
-			);
-			const reply = result.content.trim().slice(0, 80);
-			return { ai: { ok: true as const, message: `Endpoint reachable. Reply: "${reply}".` } };
-		} catch (thrown) {
-			if (thrown instanceof AppError) {
-				return fail(thrown.status, {
-					ai: { ok: false as const, message: thrown.detail ?? thrown.title }
-				});
-			}
-			throw thrown;
-		}
+		return runAction(
+			async () => {
+				const result = await chatComplete(
+					[{ role: 'user', content: 'Reply with the single word: ok.' }],
+					{ temperature: 0, requestId: locals.requestId }
+				);
+				const reply = result.content.trim().slice(0, 80);
+				return { ai: { ok: true as const, message: `Endpoint reachable. Reply: "${reply}".` } };
+			},
+			(problem) => ({ ai: { ok: false as const, message: problem.message } })
+		);
 	},
 	// D10: mint a personal access token. The raw token is returned ONCE on this
 	// action result (shown once in the UI, never re-fetchable, never logged); only
