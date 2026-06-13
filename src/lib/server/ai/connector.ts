@@ -21,6 +21,14 @@ import { AppError } from '$lib/server/problem';
 /** Default request timeout. The LLM call can be slow but must not hang forever. */
 const REQUEST_TIMEOUT_MS = 60_000;
 
+/**
+ * Cap on the upstream error body folded into the (server-logged) error message.
+ * A hostile or misconfigured endpoint could otherwise reflect a large or
+ * secret-bearing body into `err.message`, which pino's key-based redaction does
+ * not scan. The body is diagnostic context only, so a bounded prefix suffices.
+ */
+const MAX_UPSTREAM_BODY_CHARS = 500;
+
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant';
 	content: string;
@@ -149,10 +157,13 @@ export async function chatComplete(
 		});
 
 		if (!response.ok) {
-			// Read the body for the server log only; it never reaches the client.
+			// Read the body for the server log only; it never reaches the client. Cap
+			// it BEFORE it enters the error message so a hostile/misconfigured endpoint
+			// cannot dump a large or secret-bearing body into the logs (NFR18).
 			const raw = await response.text().catch(() => '');
+			const truncated = raw.slice(0, MAX_UPSTREAM_BODY_CHARS);
 			throw generationFailed(
-				new Error(`AI endpoint responded ${response.status}: ${raw}`),
+				new Error(`AI endpoint responded ${response.status}: ${truncated}`),
 				options.requestId
 			);
 		}

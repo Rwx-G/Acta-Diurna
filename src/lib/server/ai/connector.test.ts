@@ -154,6 +154,25 @@ describe('chatComplete failure - 502 with redaction', () => {
 		}
 	});
 
+	it('truncates an oversized upstream body before it enters the (server-logged) error message', async () => {
+		const huge = 'A'.repeat(5_000);
+		fetchMock.mockResolvedValue(new Response(huge, { status: 500 }));
+
+		await expect(
+			connector.chatComplete([{ role: 'user', content: 'hi' }], { requestId: 'req-trunc' })
+		).rejects.toBeInstanceOf(AppError);
+
+		// The raw upstream body reaches `err.message` only as a bounded prefix, so a
+		// hostile endpoint cannot dump a large/secret-bearing body into the logs.
+		expect(warn).toHaveBeenCalledOnce();
+		const [logArg] = warn.mock.calls[0] as [Record<string, unknown>, string];
+		const logged = (logArg.err as Error).message;
+		expect(logged).toContain('AI endpoint responded 500');
+		expect(logged).not.toContain('A'.repeat(600));
+		// 500 body chars + the fixed `AI endpoint responded 500: ` prefix.
+		expect(logged.length).toBeLessThanOrEqual(600);
+	});
+
 	it('maps a network reject to ai-generation-failed 502', async () => {
 		fetchMock.mockRejectedValue(new Error('ECONNREFUSED llm.example.com'));
 
