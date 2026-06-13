@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Column, getTableName, Param, type SQL } from 'drizzle-orm';
 import { AppError } from '$lib/server/problem';
+import { __clearParsedTableCache } from './queries.ts';
 import { rebindReport, remapField } from './rebind.ts';
 
 const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-rebind-'));
@@ -123,6 +124,9 @@ async function seedDataSet(csv: string, fields: { name: string; type: string }[]
 beforeEach(() => {
 	dbState.reports.clear();
 	dbState.data_sets.clear();
+	// Each test reseeds the same data-set id with different CSV under the same
+	// stored path; clear the immutable-table cache so a test reads its own file.
+	__clearParsedTableCache();
 	seedReport();
 });
 

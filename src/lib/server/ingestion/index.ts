@@ -14,6 +14,7 @@ export type {
 export { readStreamToCap } from './stream.ts';
 
 export { bindBlock, getDataSet, listDataSets, readDataSetTable } from './queries.ts';
+export type { DataSetSummary } from './queries.ts';
 
 export { rebindReport, remapField } from './rebind.ts';
 export type { RebindResult } from './rebind.ts';
