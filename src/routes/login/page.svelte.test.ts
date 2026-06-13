@@ -4,7 +4,7 @@ import Page from './+page.svelte';
 
 describe('login page', () => {
 	it('renders the wordmark and the password form in single mode', async () => {
-		const { getByRole, getByLabelText, getByText } = render(Page, {
+		const { getByRole, getByLabelText, getByText, container } = render(Page, {
 			data: { multi: false },
 			form: null
 		});
@@ -15,6 +15,8 @@ describe('login page', () => {
 			.toHaveTextContent('Sign in to your workspace');
 		await expect.element(getByLabelText('Password')).toBeVisible();
 		await expect.element(getByRole('button', { name: 'Sign in' })).toBeVisible();
+		// The magic-link path is absent in single mode: no email field, never both.
+		expect(container.querySelector('input[type="email"]')).toBeNull();
 	});
 
 	it('shows the uniform error message after a failed attempt (single mode)', async () => {
@@ -27,7 +29,7 @@ describe('login page', () => {
 	});
 
 	it('renders the email field and no password field in multi mode', async () => {
-		const { getByLabelText, getByRole, container } = render(Page, {
+		const { getByLabelText, getByRole, getByText, container } = render(Page, {
 			data: { multi: true },
 			form: null
 		});
@@ -36,6 +38,7 @@ describe('login page', () => {
 		// Password login is disabled in multi mode (story 8.3): the field is absent.
 		expect(container.querySelector('input[type="password"]')).toBeNull();
 		await expect.element(getByRole('button', { name: 'Send sign-in link' })).toBeVisible();
+		await expect.element(getByText('No password needed.', { exact: false })).toBeVisible();
 	});
 
 	it('shows the neutral confirmation after a sign-in request (multi mode)', async () => {

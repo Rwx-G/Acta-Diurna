@@ -82,6 +82,26 @@ export function ensureImplicitAuthor(): Promise<string> {
 	return ensureAuthor(implicitAuthorEmail());
 }
 
+/**
+ * The display email for an author id, or null when the id is unknown OR resolves
+ * to the implicit author (story 8.6). The implicit author's email is a reserved
+ * sentinel (`SINGLE_AUTHOR_EMAIL`) or the operator's `INITIAL_OWNER_EMAIL`; in
+ * single mode it is never a real signed-in identity, so it is hidden here. This
+ * is what the workspace surfaces near logout in multi mode (the logged-in
+ * author's email) and what stays null in single mode (the password author is
+ * anonymous - no identity is shown).
+ */
+export async function authorDisplayEmail(id: string): Promise<string | null> {
+	const rows = await getDb()
+		.select({ email: authors.email })
+		.from(authors)
+		.where(eq(authors.id, id))
+		.limit(1);
+	const email = rows[0]?.email;
+	if (email === undefined || email === SINGLE_AUTHOR_EMAIL) return null;
+	return email;
+}
+
 let implicitAuthorIdCache: string | undefined;
 
 /**

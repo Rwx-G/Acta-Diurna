@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	__resetImplicitAuthorCache,
 	SINGLE_AUTHOR_EMAIL,
+	authorDisplayEmail,
 	ensureAuthor,
 	implicitAuthorEmail,
 	implicitAuthorId
@@ -17,15 +18,16 @@ vi.mock('$lib/server/env', () => ({
 
 const dbState = vi.hoisted(() => ({
 	rowsByEmail: new Map<string, { id: string }>(),
+	rowsById: new Map<string, { email: string }>(),
 	inserted: [] as Record<string, unknown>[]
 }));
 
-function decodeEqValue(filter: unknown): unknown {
+function decodeEqColumnValue(filter: unknown): { column: string; value: unknown } {
 	const chunks = (filter as { queryChunks: unknown[] }).queryChunks;
 	const column = chunks.find((chunk): chunk is Column => chunk instanceof Column);
 	const param = chunks.find((chunk): chunk is Param => chunk instanceof Param);
-	if (!column || column.name !== 'email' || !param) throw new Error('expected eq(email, value)');
-	return param.value;
+	if (!column || !param) throw new Error('expected eq(column, value)');
+	return { column: column.name, value: param.value };
 }
 
 vi.mock('$lib/server/db/client', () => ({
@@ -34,8 +36,12 @@ vi.mock('$lib/server/db/client', () => ({
 			from: () => ({
 				where: (filter: unknown) => ({
 					limit: () => {
-						const email = decodeEqValue(filter);
-						const row = dbState.rowsByEmail.get(String(email));
+						const { column, value } = decodeEqColumnValue(filter);
+						if (column === 'id') {
+							const row = dbState.rowsById.get(String(value));
+							return Promise.resolve(row ? [row] : []);
+						}
+						const row = dbState.rowsByEmail.get(String(value));
 						return Promise.resolve(row ? [row] : []);
 					}
 				})
@@ -45,6 +51,7 @@ vi.mock('$lib/server/db/client', () => ({
 			values: (row: Record<string, unknown>) => {
 				dbState.inserted.push(row);
 				dbState.rowsByEmail.set(String(row.email), { id: String(row.id) });
+				dbState.rowsById.set(String(row.id), { email: String(row.email) });
 				return Promise.resolve();
 			}
 		})
@@ -53,6 +60,7 @@ vi.mock('$lib/server/db/client', () => ({
 
 beforeEach(() => {
 	dbState.rowsByEmail.clear();
+	dbState.rowsById.clear();
 	dbState.inserted = [];
 	envState.initialOwnerEmail = undefined;
 	__resetImplicitAuthorCache();
@@ -83,6 +91,22 @@ describe('ensureAuthor', () => {
 		const second = await ensureAuthor('owner@example.com');
 		expect(second).toBe(first);
 		expect(dbState.inserted).toHaveLength(1);
+	});
+});
+
+describe('authorDisplayEmail', () => {
+	it('returns the email for a real (multi-mode) author id', async () => {
+		const id = await ensureAuthor('author@example.com');
+		await expect(authorDisplayEmail(id)).resolves.toBe('author@example.com');
+	});
+
+	it('returns null for the implicit author (the sentinel is never a shown identity)', async () => {
+		const id = await ensureAuthor(SINGLE_AUTHOR_EMAIL);
+		await expect(authorDisplayEmail(id)).resolves.toBeNull();
+	});
+
+	it('returns null for an unknown id', async () => {
+		await expect(authorDisplayEmail('01970000-0000-7000-8000-0000000000ff')).resolves.toBeNull();
 	});
 });
 

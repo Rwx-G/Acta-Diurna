@@ -3,8 +3,9 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Brand from '$lib/ui/Brand.svelte';
+	import type { LayoutData } from './$types';
 
-	let { children }: { children: Snippet } = $props();
+	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	// A nav item is current when the path is it or nested under it, so the editor
 	// (/reports/:id/edit) keeps "Reports" lit and the composer keeps "Skeletons".
@@ -41,10 +42,21 @@
 			aria-current={active('/settings') ? 'page' : undefined}>Settings</a
 		>
 
-		<!-- Relative ?/logout: every workspace page exposes the shared logout action. -->
-		<form method="POST" action="?/logout" class="signout">
-			<button type="submit">Sign out</button>
-		</form>
+		<!-- Account block. In multi mode the logged-in author's email is shown above
+		     sign out; in single mode the password author is anonymous, so only the
+		     button renders (data.authorEmail is null) and the rail is unchanged. -->
+		<div class="account">
+			{#if data.authorEmail}
+				<p class="identity" title={data.authorEmail}>
+					<span class="identity-label">Signed in as</span>
+					<span class="identity-email">{data.authorEmail}</span>
+				</p>
+			{/if}
+			<!-- Relative ?/logout: every workspace page exposes the shared logout action. -->
+			<form method="POST" action="?/logout" class="signout">
+				<button type="submit">Sign out</button>
+			</form>
+		</div>
 	</nav>
 	<main>{@render children()}</main>
 </div>
@@ -93,8 +105,34 @@
 		box-shadow: inset 2px 0 0 var(--color-purple);
 	}
 
-	.signout {
+	.account {
 		margin-top: auto;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+
+	.identity {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin: 0;
+		padding: 0 var(--space-3);
+	}
+
+	.identity-label {
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-ink-50);
+	}
+
+	.identity-email {
+		font-weight: 600;
+		color: var(--color-ink);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.signout button {

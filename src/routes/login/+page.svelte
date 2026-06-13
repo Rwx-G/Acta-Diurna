@@ -22,11 +22,13 @@
 
 			{#if sent}
 				<p class="notice" role="status">
-					If that address can sign in, a single-use link is on its way. Check your email.
+					Check your email. If that address can sign in, a single-use link is on its way. Click it
+					to open your workspace. The link expires shortly and works once.
 				</p>
 			{:else}
 				<label for="email">Email</label>
 				<input id="email" name="email" type="email" required autocomplete="email" />
+				<p class="hint">We email you a single-use sign-in link. No password needed.</p>
 
 				{#if form?.state === 'invalid'}
 					<p class="error" role="alert">Enter a valid email address.</p>
@@ -108,6 +110,12 @@
 
 	.notice {
 		margin: 0;
+		color: var(--color-ink-65);
+	}
+
+	.hint {
+		margin: calc(-1 * var(--space-2)) 0 0;
+		font-size: var(--text-xs);
 		color: var(--color-ink-65);
 	}
 

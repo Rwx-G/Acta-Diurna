@@ -9,6 +9,7 @@ export {
 	ensureAuthor,
 	ensureImplicitAuthor,
 	implicitAuthorId,
+	authorDisplayEmail,
 	__resetImplicitAuthorCache
 } from './identity.ts';
 export { ownerFilter, ownerForInsert } from './scope.ts';
