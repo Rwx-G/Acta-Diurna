@@ -153,4 +153,23 @@ describe('tracked-key bound', () => {
 		expect(limiter.consume('old', T0 + 2000).allowed).toBe(true);
 		expect(limiter.consume('old', T0 + 2000).allowed).toBe(true);
 	});
+
+	it('re-accessing a key spares it from eviction (LRU, not pure insertion order)', () => {
+		const limiter = new TokenBucketLimiter(2, 1 / 30, 2);
+		limiter.consume('first', T0);
+		limiter.consume('second', T0);
+		// Touch 'first' again so it is now the most-recently-used; 'second' becomes
+		// the eviction candidate even though it was inserted later.
+		limiter.consume('first', T0);
+
+		limiter.consume('third', T0);
+		expect(limiter.trackedKeys).toBe(2);
+
+		// Assert via `check` (which never inserts, so it triggers no further
+		// eviction): 'first' survived and kept its drained state (both tokens spent,
+		// so it is denied), while 'second' was evicted (an untracked key checks as a
+		// full bucket, allowed).
+		expect(limiter.check('first', T0).allowed).toBe(false);
+		expect(limiter.check('second', T0).allowed).toBe(true);
+	});
 });

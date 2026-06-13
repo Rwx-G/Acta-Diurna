@@ -69,9 +69,9 @@ export class TokenBucketLimiter {
 		if (!bucket) {
 			if (this.buckets.size >= this.maxTrackedKeys) {
 				this.pruneFullBuckets(now);
-				// Still at capacity: evict the stalest entry (oldest lastRefillMs)
-				// so the bound holds even under live-key churn.
-				if (this.buckets.size >= this.maxTrackedKeys) this.evictStalest();
+				// Still at capacity: evict the least-recently-used entry so the bound
+				// holds even under live-key churn (amortized O(1), no per-insert scan).
+				if (this.buckets.size >= this.maxTrackedKeys) this.evictLeastRecentlyUsed();
 			}
 			bucket = { tokens: this.capacity, lastRefillMs: now };
 			this.buckets.set(key, bucket);
@@ -79,6 +79,10 @@ export class TokenBucketLimiter {
 		}
 
 		this.refill(bucket, now);
+		// Re-insert so this key becomes the most-recently-used (a Map preserves
+		// insertion order, so delete+set moves it to the end of the eviction queue).
+		this.buckets.delete(key);
+		this.buckets.set(key, bucket);
 		return bucket;
 	}
 
@@ -106,17 +110,17 @@ export class TokenBucketLimiter {
 		}
 	}
 
-	/** Evicts the entry touched longest ago. Losing its drain state is the price of the memory bound. */
-	private evictStalest(): void {
-		let stalestKey: string | undefined;
-		let stalestMs = Infinity;
-		for (const [key, bucket] of this.buckets) {
-			if (bucket.lastRefillMs < stalestMs) {
-				stalestMs = bucket.lastRefillMs;
-				stalestKey = key;
-			}
-		}
-		if (stalestKey !== undefined) this.buckets.delete(stalestKey);
+	/**
+	 * Evicts the least-recently-used entry: the first key in insertion order, which
+	 * `consume` keeps as the oldest-touched because every access re-inserts its key
+	 * at the end (see {@link refilledBucket}). Reading the first key is O(1), so this
+	 * holds the memory bound without the per-insertion linear scan a stalest-by-time
+	 * search needs - exactly the path an IP-rotation flood drives. Losing the
+	 * evicted bucket's drain state is the price of the bound.
+	 */
+	private evictLeastRecentlyUsed(): void {
+		const oldest = this.buckets.keys().next().value;
+		if (oldest !== undefined) this.buckets.delete(oldest);
 	}
 }
 
