@@ -96,7 +96,7 @@ describe('SetMembershipBlock render', () => {
 		expect(pill?.getAttribute('style')).toContain('#7a2e3a');
 	});
 
-	it('groups pills per intersection row beside the dot matrix, in row order', () => {
+	it('renders one content-sized row per intersection, each with its own dot strip and pills', () => {
 		const { container } = render(SetMembershipBlock, {
 			block,
 			matrix: matrix([
@@ -108,20 +108,68 @@ describe('SetMembershipBlock render', () => {
 			]),
 			scales
 		});
-		// The matrix SVG and the pill rows share one grid (alignment container).
-		const grid = container.querySelector('.upset-grid');
-		expect(grid?.querySelector('svg.upset-svg')).not.toBeNull();
-		const pillRows = grid?.querySelectorAll('.pill-row') ?? [];
-		// One pill-group per intersection row, in the same order as the SVG rows.
+		const pillRows = [...container.querySelectorAll('.pill-row')];
+		// One row per intersection, in the same order as the geometry rows.
 		expect(pillRows).toHaveLength(2);
+		// Each row owns its own dot strip (one mini-SVG per row), not one spanning SVG.
+		for (const row of pillRows) {
+			expect(row.querySelector('svg.dot-strip')).not.toBeNull();
+		}
 		const textOf = (row: Element) =>
 			[...row.querySelectorAll('.pill')].map((p) => p.textContent?.trim());
 		expect(textOf(pillRows[0])).toEqual(['A', 'B']);
 		expect(textOf(pillRows[1])).toEqual(['C']);
-		// Each pill-group is placed in its matching grid track (row i -> track i+2,
-		// after the top-margin spacer track), so it sits beside that row's dots.
-		expect(pillRows[0].getAttribute('style')).toContain('grid-row: 2');
-		expect(pillRows[1].getAttribute('style')).toContain('grid-row: 3');
+	});
+
+	it('x-aligns the source columns across rows (same dot x per source on every strip)', () => {
+		const { container } = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([
+				finding({ tag: 'A', sources: { siem: { state: 'found' } } }),
+				finding({ tag: 'B', sources: { edr: { state: 'found' } } })
+			]),
+			scales
+		});
+		const pillRows = [...container.querySelectorAll('.pill-row')];
+		expect(pillRows).toHaveLength(2);
+		const guideXs = (row: Element) =>
+			[...row.querySelectorAll('.dot-guide')].map((c) => c.getAttribute('cx'));
+		// Same column x-positions on both rows, so the columns line up vertically.
+		expect(guideXs(pillRows[0])).toEqual(guideXs(pillRows[1]));
+	});
+
+	it('does not height-constrain a dense row: all pills render without a fixed-height clip', () => {
+		const denseFindings = Array.from({ length: 10 }, (_, i) =>
+			finding({ tag: `T${i}`, sources: { siem: { state: 'found' }, edr: { state: 'found' } } })
+		);
+		const { container } = render(SetMembershipBlock, {
+			block,
+			matrix: matrix(denseFindings),
+			scales
+		});
+		const denseRow = container.querySelector('.pill-row');
+		expect(denseRow).not.toBeNull();
+		// All ten pills are present (none clipped away).
+		expect(denseRow?.querySelectorAll('.pill')).toHaveLength(10);
+		// The row is content-sized: no inline fixed height, no overflow clip that
+		// would crop the wrapped pills into a neighbouring row.
+		const inlineStyle = denseRow?.getAttribute('style') ?? '';
+		expect(inlineStyle).not.toMatch(/height\s*:/);
+		expect(inlineStyle).not.toMatch(/overflow\s*:\s*hidden/);
+	});
+
+	it('renders a trailing source-label row x-aligned to the dot column', () => {
+		const { container } = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([finding({ tag: 'A', sources: { siem: { state: 'found' } } })]),
+			scales
+		});
+		const labelRow = container.querySelector('.label-row');
+		expect(labelRow).not.toBeNull();
+		const labels = [...(labelRow?.querySelectorAll('.source-label') ?? [])].map((t) =>
+			t.textContent?.trim()
+		);
+		expect(labels).toEqual(['SIEM', 'EDR']);
 	});
 
 	it('carries a per-row visually-hidden summary beside each pill group', () => {
@@ -150,7 +198,7 @@ describe('SetMembershipBlock render', () => {
 		expect(container.querySelector('.pill')?.textContent?.trim()).toBe('No tag finding');
 	});
 
-	it('carries a words summary of each intersection in the accessible alternative', () => {
+	it('carries a per-row words summary in the document flow for assistive tech', () => {
 		const { container } = render(SetMembershipBlock, {
 			block,
 			matrix: matrix([
@@ -158,9 +206,9 @@ describe('SetMembershipBlock render', () => {
 			]),
 			scales
 		});
-		const desc = container.querySelector('desc');
-		expect(desc?.textContent).toContain('Found by SIEM and EDR');
-		expect(desc?.textContent).toContain('both');
+		const summary = container.querySelector('.pill-row .visually-hidden');
+		expect(summary?.textContent).toContain('Found by SIEM and EDR');
+		expect(summary?.textContent).toContain('both');
 	});
 
 	it('escapes HTML-looking tag text in the pills and summary (XSS rule)', () => {
@@ -192,16 +240,27 @@ describe('SetMembershipBlock render', () => {
 		expect(container.querySelector('.block-placeholder')).not.toBeNull();
 	});
 
-	it('emits an SVG with role img and a labelled title/desc', () => {
+	it('wraps the block in a role img figure with an accessible name', () => {
 		const { container } = render(SetMembershipBlock, {
 			block,
 			matrix: matrix([finding({ sources: { siem: { state: 'found' } } })]),
 			scales
 		});
-		const svg = container.querySelector('svg');
-		expect(svg?.getAttribute('role')).toBe('img');
-		const labelledBy = svg?.getAttribute('aria-labelledby') ?? '';
-		expect(labelledBy).toContain('upset-title');
-		expect(labelledBy).toContain('upset-desc');
+		const figure = container.querySelector('figure.upset-block');
+		expect(figure?.getAttribute('role')).toBe('img');
+		expect(figure?.getAttribute('aria-label')).toBe('Coverage');
+	});
+
+	it('marks the dot strips decorative so colour/dots are never the sole signal', () => {
+		const { container } = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([finding({ tag: 'x', sources: { siem: { state: 'found' } } })]),
+			scales
+		});
+		const row = container.querySelector('.pill-row');
+		expect(row?.querySelector('.dot-cell')?.getAttribute('aria-hidden')).toBe('true');
+		expect(row?.querySelector('.pills')?.getAttribute('aria-hidden')).toBe('true');
+		// The words summary remains exposed (not aria-hidden).
+		expect(row?.querySelector('.visually-hidden')?.getAttribute('aria-hidden')).toBeNull();
 	});
 });

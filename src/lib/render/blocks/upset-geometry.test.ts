@@ -158,9 +158,37 @@ describe('computeUpSetGeometry - dot and line geometry', () => {
 		const dots = geo.rows[0].dots;
 		expect(dots).toHaveLength(3);
 		expect(dots.map((d) => d.filled)).toEqual([true, false, true]);
-		// All dots in a row share a y; x increases with source order.
-		expect(dots[0].cy).toBe(dots[1].cy);
+		// x increases with source order.
 		expect(dots[0].cx).toBeLessThan(dots[2].cx);
+	});
+
+	it('shares identical dot x-positions across every row (columns line up)', () => {
+		const geo = computeUpSetGeometry(
+			[
+				finding({ tag: 'a', sources: { siem: { state: 'found' } } }),
+				finding({ tag: 'b', sources: { edr: { state: 'found' } } }),
+				finding({ tag: 'c', sources: { review: { state: 'found' } } })
+			],
+			SOURCES
+		);
+		expect(geo.rows).toHaveLength(3);
+		const columnX = (rowIndex: number) => geo.rows[rowIndex].dots.map((d) => d.cx);
+		// Same x per source column on every row, so the SVGs align vertically.
+		expect(columnX(0)).toEqual(columnX(1));
+		expect(columnX(1)).toEqual(columnX(2));
+		// And those positions match the shared source columns.
+		expect(columnX(0)).toEqual(geo.sources.map((s) => s.cx));
+	});
+
+	it('exposes a shared strip viewport for the per-row mini-SVGs', () => {
+		const geo = computeUpSetGeometry([finding({ sources: { siem: { state: 'found' } } })], SOURCES);
+		expect(geo.strip.width).toBeGreaterThan(0);
+		expect(geo.strip.height).toBeGreaterThan(0);
+		// Dots stay within the strip width.
+		for (const dot of geo.rows[0].dots) {
+			expect(dot.cx).toBeGreaterThanOrEqual(0);
+			expect(dot.cx).toBeLessThanOrEqual(geo.strip.width);
+		}
 	});
 
 	it('draws a connector through the filled dots when two or more are filled', () => {

@@ -7,12 +7,21 @@
 
 	// SSR-only SVG (zero hydration), the ChartBlock pattern: an UpSet matrix
 	// derived from the referenced comparison-matrix block's findings. The geometry
-	// is pure math (d3-scale/d3-shape) computed once; this component emits a static
-	// <svg> and never hydrates, so no UpSet code or raw dataset reaches the reader
+	// is pure math (d3-scale/d3-shape) computed once; this component emits static
+	// SVGs and never hydrates, so no UpSet code or raw dataset reaches the reader
 	// (NFR3). The block carries NO data of its own - it reads the matrix's findings
 	// + the document scales (sources for the dot/column order, severity for the
-	// pill colours). The SVG carries a visually-hidden words summary per
-	// intersection so colour and the dot pattern are never the sole signal (AAA).
+	// pill colours).
+	//
+	// Layout: each intersection is ONE content-sized layout row. The dot strip is a
+	// small per-row mini-SVG (fixed width/height) drawn in its own coordinate space;
+	// the pills wrap freely in a sibling cell. The row height is `auto`, so a row
+	// with many wrapping pills grows instead of overflowing into its neighbours. The
+	// dot x-positions are shared across every row, so the source columns stay
+	// vertically aligned. A trailing label row under the dot column names the
+	// sources. The mini-SVGs are decorative (aria-hidden); the figure carries a
+	// per-row visually-hidden words summary so colour and the dot pattern are never
+	// the sole signal (AAA / NFR14).
 	let {
 		block,
 		matrix,
@@ -34,12 +43,7 @@
 		matrix && sourceScale ? computeUpSetGeometry(matrix.findings, sourceScale.entries) : undefined
 	);
 
-	const titleId = $derived(`${block.id}-upset-title`);
-	const descId = $derived(`${block.id}-upset-desc`);
-
-	// The full words alternative: every intersection summary joined into one
-	// string for the <desc>. Each summary already ends with a period.
-	const descText = $derived(geometry?.rows.map((row) => row.summary).join(' ') ?? '');
+	const figureTitle = $derived(block.title ?? 'Coverage by source combination');
 
 	function severityColor(scale: Scale | undefined, key: string): string {
 		if (!scale) return 'var(--report-chart-1)';
@@ -65,94 +69,72 @@
 		<p class="empty">No source coverage to chart yet.</p>
 	</figure>
 {:else}
-	{@const rowTracks = geometry.rows.map(() => `${geometry.rowHeight}px`).join(' ')}
-	<figure class="upset-block">
+	{@const dotHalf = geometry.strip.height / 2}
+	<!-- role="img" + aria-label give the whole block one accessible name; the
+	     per-row visually-hidden summaries below carry the data in words, so a
+	     screen reader gets each intersection without the (decorative) dot pattern. -->
+	<figure class="upset-block" role="img" aria-label={figureTitle}>
 		{#if block.title}<figcaption class="upset-title">{block.title}</figcaption>{/if}
-		<!-- The dot matrix (SVG) and the pills share one grid whose row tracks are
-		     fixed at the geometry's rowHeight, with the SVG's top/bottom margins as
-		     spacer tracks. The SVG spans every track (height pinned to the grid), so
-		     its internal rows map 1:1 to the tracks; each pill-group sits in the
-		     matching track. Row i's pills are therefore always beside row i's dots,
-		     and the dot columns stay aligned (the dot x-positions never change). -->
-		<div
-			class="upset-grid"
-			style="grid-template-rows: {geometry.marginTop}px {rowTracks} {geometry.marginBottom}px"
-		>
-			<svg
-				class="upset-svg"
-				viewBox="0 0 {geometry.viewBox.width} {geometry.viewBox.height}"
-				role="img"
-				aria-labelledby="{titleId} {descId}"
-				preserveAspectRatio="xMinYMid meet"
-			>
-				<title id={titleId}>{block.title ?? 'Coverage by source combination'}</title>
-				<!-- The words alternative: every intersection summarised in prose, so a
-			     screen reader gets the data without the dot pattern (AAA, NFR14). -->
-				<desc id={descId}>{descText}</desc>
-
-				<!-- Source labels, one per dot column, in scale order. -->
-				{#each geometry.sources as source (source.key)}
-					<text
-						x={source.cx}
-						y={geometry.viewBox.height - 4}
-						class="source-label"
-						text-anchor="middle">{source.label}</text
-					>
-				{/each}
-
-				{#each geometry.rows as row, rowIndex (rowIndex)}
-					{@const cy = row.dots[0]?.cy ?? 0}
-					<!-- Row background band for readability. -->
-					<rect
-						x="0"
-						y={cy - geometry.rowHeight / 2}
-						width={geometry.viewBox.width}
-						height={geometry.rowHeight}
-						class="row-band"
-						class:even={rowIndex % 2 === 0}
-					/>
-					<!-- The empty-column dot guides (every source, hollow) under the row. -->
-					{#each row.dots as dot, dotIndex (dotIndex)}
-						<circle cx={dot.cx} cy={dot.cy} r={geometry.dotRadius} class="dot-guide" />
-					{/each}
-					<!-- The connector through the filled dots. -->
-					{#if row.linePath}
-						<path d={row.linePath} class="connector" fill="none" />
-					{/if}
-					<!-- The filled dots (sources in this intersection). -->
-					{#each row.dots as dot, dotIndex (dotIndex)}
-						{#if dot.filled}
-							<circle cx={dot.cx} cy={dot.cy} r={geometry.dotRadius} class="dot-filled" />
-						{/if}
-					{/each}
-					<!-- The finding count beside the dots. -->
-					<text x="8" y={cy} class="row-count" dominant-baseline="central">{row.count}</text>
-				{/each}
-			</svg>
-
-			<!-- The pills live in HTML beside the SVG, one group per intersection row,
-			     each in its matching grid track so it sits beside that row's dots.
-			     Severity-coloured via the scale (never authored), carrying the short
-			     tag/label (escaped, no {@html}). The visually-hidden summary repeats
-			     the words alternative in the document flow for assistive tech that
-			     skips <desc>. -->
-			<ol class="rows">
-				{#each geometry.rows as row, rowIndex (rowIndex)}
-					<li class="pill-row" style="grid-row: {rowIndex + 2}">
-						<span class="visually-hidden">{row.summary}</span>
-						<span class="pills" aria-hidden="true">
-							{#each row.findingPills as pill, pillIndex (pillIndex)}
-								<span
-									class="pill"
-									style="--pill-color: {severityColor(severityScale, pill.severity)}"
-									>{pill.text}</span
-								>
+		<ol class="rows">
+			{#each geometry.rows as row, rowIndex (rowIndex)}
+				<!-- An independent, content-sized row: the dot strip and the pills are two
+				     cells centred against each other. `height: auto` means the row grows to
+				     the taller of {dot strip, wrapped pills}, so rows never overlap. -->
+				<li class="pill-row" class:even={rowIndex % 2 === 0}>
+					<span class="visually-hidden">{row.summary}</span>
+					<div class="dot-cell" aria-hidden="true">
+						<span class="row-count">{row.count}</span>
+						<svg
+							class="dot-strip"
+							width={geometry.strip.width}
+							height={geometry.strip.height}
+							viewBox="0 0 {geometry.strip.width} {geometry.strip.height}"
+						>
+							<!-- Hollow column guides (every source), then the connector, then the
+							     filled dots, all on the strip's vertical centre line. -->
+							{#each row.dots as dot, dotIndex (dotIndex)}
+								<circle cx={dot.cx} cy={dotHalf} r={geometry.dotRadius} class="dot-guide" />
 							{/each}
-						</span>
-					</li>
-				{/each}
-			</ol>
-		</div>
+							{#if row.linePath}
+								<path d={row.linePath} class="connector" fill="none" />
+							{/if}
+							{#each row.dots as dot, dotIndex (dotIndex)}
+								{#if dot.filled}
+									<circle cx={dot.cx} cy={dotHalf} r={geometry.dotRadius} class="dot-filled" />
+								{/if}
+							{/each}
+						</svg>
+					</div>
+					<!-- The pills wrap freely (escaped, no {@html}); they are decorative
+					     because the visually-hidden summary already carries the words. -->
+					<span class="pills" aria-hidden="true">
+						{#each row.findingPills as pill, pillIndex (pillIndex)}
+							<span class="pill" style="--pill-color: {severityColor(severityScale, pill.severity)}"
+								>{pill.text}</span
+							>
+						{/each}
+					</span>
+				</li>
+			{/each}
+			<!-- The trailing source labels under the dot column, x-aligned to the dots. -->
+			<li class="label-row" aria-hidden="true">
+				<svg
+					class="dot-strip"
+					width={geometry.strip.width}
+					height={geometry.strip.height}
+					viewBox="0 0 {geometry.strip.width} {geometry.strip.height}"
+				>
+					{#each geometry.sources as source (source.key)}
+						<text
+							x={source.cx}
+							y={geometry.strip.height - 4}
+							class="source-label"
+							text-anchor="middle">{source.label}</text
+						>
+					{/each}
+				</svg>
+			</li>
+		</ol>
 	</figure>
 {/if}
 
@@ -170,23 +152,44 @@
 		color: var(--report-heading);
 	}
 
-	.upset-grid {
-		display: grid;
-		/* The dot matrix gets a flexible share that caps at its intrinsic width; the
-		   pills take the rest. The row tracks are set inline from the geometry. */
-		grid-template-columns: minmax(0, auto) 1fr;
-		column-gap: var(--space-4);
-		align-items: stretch;
+	.rows {
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 
-	.upset-svg {
-		grid-column: 1;
-		grid-row: 1 / -1;
-		/* Height is pinned to the spanned tracks (no vertical scaling), so each
-		   internal row lines up with its grid track and the pill group beside it. */
-		height: 100%;
-		max-width: 100%;
+	.pill-row {
+		display: flex;
+		/* Centre the dot strip against the (possibly multi-line) pill cluster. The
+		   row height is intrinsic - it grows to the taller cell, never clipped. */
+		align-items: center;
+		column-gap: var(--space-4);
+		padding: var(--space-1) 0;
+		min-width: 0;
+	}
+
+	.pill-row.even {
+		background: color-mix(in srgb, var(--report-text) 4%, transparent);
+	}
+
+	.dot-cell {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		/* The dot column never shrinks, so the source columns stay aligned across
+		   rows and beside the trailing label row. */
+		flex: none;
+	}
+
+	.dot-strip {
 		display: block;
+	}
+
+	.label-row {
+		display: flex;
+		/* The trailing labels sit under the dot column only (the count is omitted),
+		   so pad-start by the count column + gap to keep them x-aligned to the dots. */
+		padding-left: calc(1ch + var(--space-2));
 	}
 
 	.empty {
@@ -204,14 +207,6 @@
 		font-family: var(--font-sans);
 		font-size: var(--text-tick);
 		fill: var(--report-text-muted);
-	}
-
-	.row-band {
-		fill: transparent;
-	}
-
-	.row-band.even {
-		fill: color-mix(in srgb, var(--report-text) 4%, transparent);
 	}
 
 	.dot-guide {
@@ -232,29 +227,16 @@
 		font-family: var(--font-sans);
 		font-size: var(--text-tick);
 		font-weight: 600;
-		fill: var(--report-text-muted);
-	}
-
-	.rows {
-		/* The <ol> dissolves into the parent grid so each <li> is placed directly
-		   in its row track (grid-row set inline per row), keeping list semantics. */
-		display: contents;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.pill-row {
-		grid-column: 2;
-		display: flex;
-		align-items: center;
-		min-width: 0;
+		color: var(--report-text-muted);
+		min-width: 1ch;
+		text-align: right;
 	}
 
 	.pills {
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+		min-width: 0;
 	}
 
 	.pill {
@@ -281,31 +263,13 @@
 		border: 0;
 	}
 
-	/* Reader mobile breakpoint: pills-beside-dots gets too narrow, so the matrix
-	   falls back to a single column - the full-width dot matrix on top, then each
-	   intersection's pills stacked under it in row order. Per-row alignment beside
-	   the dots is the desktop default; this is the graceful narrow-screen stack.
-	   The inline grid-row/grid-column on the rows is inert once the grid dissolves. */
+	/* Reader mobile breakpoint: stack the dot strip over its pills so neither is
+	   squeezed on a narrow screen. The row is still content-sized and never clips. */
 	@media (max-width: 768px) {
-		.upset-grid {
-			display: block;
-			grid-template-rows: none !important;
-		}
-
-		.upset-svg {
-			width: 100%;
-			height: auto;
-		}
-
-		.rows {
-			display: flex;
-			flex-direction: column;
-			gap: var(--space-1);
-			margin: var(--space-3) 0 0;
-		}
-
 		.pill-row {
-			min-height: 1.5rem;
+			flex-direction: column;
+			align-items: flex-start;
+			row-gap: var(--space-1);
 		}
 	}
 </style>

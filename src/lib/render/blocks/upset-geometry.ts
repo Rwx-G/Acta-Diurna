@@ -2,8 +2,16 @@
  * Pure UpSet (set-membership) geometry for SetMembershipBlock. The renderer is
  * SSR-only (zero hydration, the architecture D12 fallback chosen by measurement),
  * so the intersection rows are derived here as plain data + pixel coordinates and
- * emitted as a static <svg>. Only d3-scale and d3-shape are used: math, no DOM, no
+ * emitted as static SVGs. Only d3-scale and d3-shape are used: math, no DOM, no
  * component runtime, so nothing UpSet-related ships to the reader (NFR3).
+ *
+ * Layout model: each intersection is ONE content-sized layout row. The dot strip
+ * is a small per-row mini-SVG of fixed width/height (one dot row), drawn in its
+ * OWN small coordinate space, while the pills wrap freely in a sibling cell. The
+ * row height is `auto`, so a row with many wrapping pills grows instead of
+ * overflowing into its neighbours. The dot x-positions are SHARED across every row
+ * (computed once from the source scale), so the source columns stay vertically
+ * aligned - the whole point of an UpSet.
  *
  * The output carries only the membership booleans, the dot/line geometry and the
  * finding pill descriptors (severity + short label) the SVG needs - never the raw
@@ -36,6 +44,12 @@ export interface FindingPill {
 	severity: string;
 }
 
+/** One dot in a row's mini-strip: x in the strip's own coordinate space. */
+export interface RowDot {
+	cx: number;
+	filled: boolean;
+}
+
 /** One present intersection: a distinct set of sources that found its findings. */
 export interface IntersectionRow {
 	/** Membership aligned to the sources-scale entry order: true = source in the set. */
@@ -46,8 +60,12 @@ export interface IntersectionRow {
 	count: number;
 	/** The number of sources in the set (the membership-size tiebreak). */
 	membershipSize: number;
-	/** Dot centres in pixel space, one per source column. */
-	dots: Array<{ cx: number; cy: number; filled: boolean }>;
+	/**
+	 * Dot centres in the row strip's OWN coordinate space, one per source column.
+	 * The `cx` values are identical across every row (shared columns), so the
+	 * source columns line up vertically even though each row is a separate SVG.
+	 */
+	dots: RowDot[];
 	/** The connector path through the filled dots, or undefined when 0 or 1 filled. */
 	linePath?: string;
 	/** A words summary of this intersection for the accessible alternative. */
@@ -55,22 +73,17 @@ export interface IntersectionRow {
 }
 
 export interface UpSetGeometry {
-	viewBox: { width: number; height: number };
 	/** Source labels with their dot column x-position, in scale order. */
 	sources: Array<{ key: string; label: string; cx: number }>;
 	rows: IntersectionRow[];
-	/** Per-row band height, for the pill column row tracks in the component. */
-	rowHeight: number;
-	/** Top inset before row 0, so the pill column aligns its first group to it. */
-	marginTop: number;
-	/** Bottom inset (under the last row) reserved for the source labels. */
-	marginBottom: number;
+	/** The shared mini-strip viewport every row's dot SVG uses. */
+	strip: { width: number; height: number };
 	dotRadius: number;
 }
 
-const VIEW_WIDTH = 720;
-const MARGIN = { top: 16, right: 24, bottom: 16, left: 160 };
-const ROW_HEIGHT = 34;
+const STRIP_WIDTH = 160;
+const STRIP_HEIGHT = 28;
+const STRIP_PADDING = 0.5;
 const DOT_RADIUS = 6;
 
 /** The pill text for a finding: its short `tag`, else its full `label`. */
@@ -139,15 +152,17 @@ export function computeUpSetGeometry(
 		else groups.set(key, [finding]);
 	}
 
+	// The shared column scale: dot x-positions in the strip's own coordinate space,
+	// identical for every row so the source columns line up vertically.
 	const xScale = scalePoint<string>()
 		.domain(sourceOrder)
-		.range([MARGIN.left, Math.max(MARGIN.left, VIEW_WIDTH - MARGIN.right)])
-		.padding(0.5);
+		.range([0, STRIP_WIDTH])
+		.padding(STRIP_PADDING);
 
 	const sources = sourceEntries.map((entry) => ({
 		key: entry.key,
 		label: entry.label,
-		cx: xScale(entry.key) ?? MARGIN.left
+		cx: xScale(entry.key) ?? STRIP_WIDTH / 2
 	}));
 
 	// The empty-set group (findings no source found) is emitted as an explicit
@@ -188,19 +203,23 @@ export function computeUpSetGeometry(
 		return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 	});
 
+	// Every dot sits on the strip's vertical centre; the connector is a horizontal
+	// line between the first and last filled dot in that same centre line.
+	const cy = STRIP_HEIGHT / 2;
 	const lineGen = line<{ cx: number; cy: number }>()
 		.x((d) => d.cx)
 		.y((d) => d.cy);
 
-	const rows: IntersectionRow[] = unordered.map((row, rowIndex) => {
-		const cy = MARGIN.top + rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+	const rows: IntersectionRow[] = unordered.map((row) => {
 		const dots = sources.map((source, columnIndex) => ({
 			cx: source.cx,
-			cy,
 			filled: row.membership[columnIndex]
 		}));
 		const filledDots = dots.filter((dot) => dot.filled);
-		const linePath = filledDots.length >= 2 ? (lineGen(filledDots) ?? undefined) : undefined;
+		const linePath =
+			filledDots.length >= 2
+				? (lineGen(filledDots.map((dot) => ({ cx: dot.cx, cy }))) ?? undefined)
+				: undefined;
 		return {
 			membership: row.membership,
 			findingPills: row.findingPills,
@@ -213,12 +232,9 @@ export function computeUpSetGeometry(
 	});
 
 	return {
-		viewBox: { width: VIEW_WIDTH, height: MARGIN.top + rows.length * ROW_HEIGHT + MARGIN.bottom },
 		sources,
 		rows,
-		rowHeight: ROW_HEIGHT,
-		marginTop: MARGIN.top,
-		marginBottom: MARGIN.bottom,
+		strip: { width: STRIP_WIDTH, height: STRIP_HEIGHT },
 		dotRadius: DOT_RADIUS
 	};
 }
