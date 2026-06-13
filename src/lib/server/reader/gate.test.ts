@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 	sendMail: vi.fn(),
 	magicLinkEmail: vi.fn(),
 	isAuthorizedReader: vi.fn(),
+	isReaderEmailDomainAllowed: vi.fn(),
 	loggerWarn: vi.fn()
 }));
 
@@ -32,7 +33,10 @@ vi.mock('$lib/server/auth/sessions', () => ({
 }));
 vi.mock('$lib/server/mail/send', () => ({ sendMail: mocks.sendMail }));
 vi.mock('$lib/server/mail/templates/magic-link', () => ({ magicLinkEmail: mocks.magicLinkEmail }));
-vi.mock('$lib/server/sharing', () => ({ isAuthorizedReader: mocks.isAuthorizedReader }));
+vi.mock('$lib/server/sharing', () => ({
+	isAuthorizedReader: mocks.isAuthorizedReader,
+	isReaderEmailDomainAllowed: mocks.isReaderEmailDomainAllowed
+}));
 vi.mock('$lib/server/logger', () => ({ logger: { warn: mocks.loggerWarn } }));
 
 import { completeVerification, requestVerification } from './gate';
@@ -49,6 +53,7 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 
 beforeEach(() => {
 	for (const m of Object.values(mocks)) m.mockReset();
+	mocks.isReaderEmailDomainAllowed.mockReturnValue(true);
 	mocks.isAuthorizedReader.mockResolvedValue(true);
 	mocks.hasLiveVerification.mockResolvedValue(false);
 	mocks.issueVerificationToken.mockResolvedValue({ token: 'raw-token', expiresAt: new Date() });
@@ -209,6 +214,67 @@ describe('requestVerification (enumeration-safety)', () => {
 
 		expect(mocks.issueVerificationToken).toHaveBeenCalledWith('share-1', 'reader@example.com');
 		expect(mocks.sendMail).toHaveBeenCalledOnce();
+	});
+
+	it('domain allow-list (story 8.5): an allowed-domain email gets a token and a mail', async () => {
+		mocks.isReaderEmailDomainAllowed.mockReturnValue(true);
+
+		await requestVerification(shareWith({}), 'in@allowed.com', (t) => `https://x/v?t=${t}`);
+		await flush();
+
+		expect(mocks.isReaderEmailDomainAllowed).toHaveBeenCalledWith('in@allowed.com');
+		expect(mocks.issueVerificationToken).toHaveBeenCalledWith('share-1', 'in@allowed.com');
+		expect(mocks.sendMail).toHaveBeenCalledOnce();
+	});
+
+	it('domain allow-list: an off-domain email issues NO token and sends NO mail (no per-share read)', async () => {
+		mocks.isReaderEmailDomainAllowed.mockReturnValue(false);
+
+		await requestVerification(shareWith({}), 'out@blocked.com', (t) => `https://x/v?t=${t}`);
+		await flush();
+
+		expect(mocks.isReaderEmailDomainAllowed).toHaveBeenCalledWith('out@blocked.com');
+		// The domain gate is first and short-circuits, so the per-share check, the
+		// dedup read, the token insert and the mail are all skipped.
+		expect(mocks.isAuthorizedReader).not.toHaveBeenCalled();
+		expect(mocks.issueVerificationToken).not.toHaveBeenCalled();
+		expect(mocks.hasLiveVerification).not.toHaveBeenCalled();
+		expect(mocks.sendMail).not.toHaveBeenCalled();
+	});
+
+	it('domain allow-list: off-domain and on-domain return the IDENTICAL void result (enumeration-safe)', async () => {
+		mocks.isReaderEmailDomainAllowed.mockReturnValue(false);
+		const offDomain = await requestVerification(
+			shareWith({}),
+			'out@blocked.com',
+			(t) => `https://x/v?t=${t}`
+		);
+
+		mocks.isReaderEmailDomainAllowed.mockReturnValue(true);
+		const onDomain = await requestVerification(
+			shareWith({}),
+			'in@allowed.com',
+			(t) => `https://x/v?t=${t}`
+		);
+
+		expect(offDomain).toBe(onDomain);
+		expect(offDomain).toBeUndefined();
+	});
+
+	it('domain allow-list layers with the per-share list: both must pass to issue a token', async () => {
+		// Domain allowed but off the per-share recipient list: still refused, no token.
+		mocks.isReaderEmailDomainAllowed.mockReturnValue(true);
+		mocks.isAuthorizedReader.mockResolvedValue(false);
+
+		await requestVerification(
+			RESTRICTED_SHARE as never,
+			'in@allowed.com',
+			(t) => `https://x/v?t=${t}`
+		);
+		await flush();
+
+		expect(mocks.issueVerificationToken).not.toHaveBeenCalled();
+		expect(mocks.sendMail).not.toHaveBeenCalled();
 	});
 });
 

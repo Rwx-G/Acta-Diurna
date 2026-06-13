@@ -31,3 +31,5 @@ export {
 	listRecipientsForShares,
 	isAuthorizedReader
 } from './recipients.ts';
+
+export { isReaderEmailDomainAllowed } from './reader-domain.ts';

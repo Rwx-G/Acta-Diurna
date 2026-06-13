@@ -19,7 +19,7 @@ import {
 import { findOrCreateIdentity, recordAccess } from './identities';
 import { magicLinkEmail } from '$lib/server/mail/templates/magic-link';
 import { sendMail } from '$lib/server/mail/send';
-import { isAuthorizedReader } from '$lib/server/sharing';
+import { isAuthorizedReader, isReaderEmailDomainAllowed } from '$lib/server/sharing';
 import type { ResolvedShare } from '$lib/server/sharing';
 import { logger } from '$lib/server/logger';
 import { createReaderSession, type CreatedReaderSession } from '$lib/server/auth/sessions';
@@ -30,13 +30,21 @@ import { createReaderSession, type CreatedReaderSession } from '$lib/server/auth
  * landing URL from the raw token (the route owns ORIGIN + the `/r/[token]/verify`
  * shape).
  *
- * Restricted-mode allow-list check (FR19, story 3.4), BEHIND the neutral return:
- * `isAuthorizedReader(share, email)` is the FIRST step. In `open` mode it is true
- * for any email (no DB read); in `restricted` mode it is true only for an email
- * on the share's recipient list. An UNAUTHORIZED (off-list) email issues NO
- * token and sends NO mail, but returns the SAME void result as the authorized
- * path - the caller's neutral `{state:'sent'}` is byte-identical either way, so
- * the refusal never reveals whether the email was known (NFR9).
+ * Two allow-list checks, BOTH BEHIND the neutral return, layered:
+ *
+ *   - Reader destination domain (story 8.5): when `READER_EMAIL_DOMAINS` is set,
+ *     `isReaderEmailDomainAllowed(email)` must pass - an email whose domain is not
+ *     in the configured patterns issues NO token and sends NO mail. Unset, it is a
+ *     pure-`true` no-op (no env-driven behavior change). This is the FIRST step
+ *     (a pure env read, no DB).
+ *   - Per-share recipient list (FR19, story 3.4): `isAuthorizedReader(share,
+ *     email)` is true for any email in `open` mode (no DB read), and only for a
+ *     listed email in `restricted` mode.
+ *
+ * Both must pass to issue a token. An UNAUTHORIZED email (off-domain or off-list)
+ * issues NO token and sends NO mail, but returns the SAME void result as the
+ * authorized path - the caller's neutral `{state:'sent'}` is byte-identical either
+ * way, so the refusal never reveals whether the email was allowed (NFR9).
  *
  * Dedup-before-issue (mail-amplification guard): if a LIVE (unconsumed,
  * unexpired) verification already exists for this (share, email), no new token
@@ -66,6 +74,7 @@ export async function requestVerification(
 	verifyUrlFor: (rawToken: string) => string,
 	requestId?: string
 ): Promise<void> {
+	if (!isReaderEmailDomainAllowed(normalizedEmail)) return;
 	if (!(await isAuthorizedReader(share, normalizedEmail))) return;
 	if (await hasLiveVerification(share.id, normalizedEmail)) return;
 
