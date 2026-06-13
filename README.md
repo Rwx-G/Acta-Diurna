@@ -9,12 +9,12 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.10.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.11.0-brightgreen.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-v1%20in%20development-yellow.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
   <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/tests-1348%2B-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1475%2B-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/deploy-docker%20compose-2496ED.svg" alt="Docker">
 </p>
 
@@ -24,7 +24,7 @@ Acta Diurna replaces the slide deck for recurring reporting. A report is one dec
 
 The tool carries the skeleton - structure, templates, rendering, sharing, access control. Connected AI assistants build the content and data into it: an agent authors natively over MCP, or an author generates a draft outline-first, both through the same validated document model. *Acta Diurna* were the daily public gazettes of ancient Rome: the original recurring report.
 
-> **Status: v1 in development.** Most of the v1 surface below is implemented and hardened toward release - the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, and magic-link sharing with link hardening. The remaining planned epic is multi-audience reading and governance (audience levels, presenter view, access audit and retention, theme selection); see the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
+> **Status: v1 in development.** Most of the v1 surface below is implemented and hardened toward release - the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing with link hardening, and the SMTP-gated single / multi-author model with per-author tenancy. The remaining planned epic is multi-audience reading and governance (audience levels, presenter view, access audit and retention, theme selection); see the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
 
 ## Key Features
 
@@ -66,15 +66,17 @@ The tool carries the skeleton - structure, templates, rendering, sharing, access
 
 ### :envelope: Distribution & access
 
-- No reader accounts: passwordless **magic links** delivered over your own SMTP relay
+- **SMTP-gated single / multi-author** - leave SMTP unconfigured and the instance runs **single-author** (one password author, unverified consultation-token shares); configure SMTP and it runs **multi-author** (email magic-link authors self-serving within `AUTHOR_EMAIL_DOMAIN`, password login disabled, verified reader sharing). The mode is resolved from the environment at boot, not a web-UI toggle
+- No reader accounts: passwordless **magic links** delivered over your own SMTP relay (an optional `READER_EMAIL_DOMAINS` allow-list restricts which destination domains may verify)
 - **Share hardening** - high-entropy links (hashed at rest), optional expiry, restricted (per-recipient allow-list) or open mode, one-click revocation that cuts off live sessions immediately
 - **Leak-free posture** - revoked, expired, and unknown links serve one byte-for-byte identical neutral page; `noindex` and `no-store` on every reader route; no link-preview metadata; strict CSP with zero third-party assets
 - **Access audit** - each verified access is recorded (one global reader identity per email, many access records)
 
 ### :lock: Security & privacy
 
-- **Three strictly separated auth realms** - author cookie, reader cookie, and API/MCP PAT bearer; a credential for one never authorizes another
-- argon2id author password, SHA-256 hashing at rest for sessions, share, and API tokens; secrets only in environment, never logged (pino redaction)
+- **Three strictly separated auth realms** - author cookie, reader cookie, and API/MCP PAT bearer; a credential for one never authorizes another. In multi-author mode the author realm authenticates by email magic link in its own separate verification store
+- **Per-author tenancy** - one report = one author (owner). In multi-author mode every report, data set, share, and API token read and write is scoped to the authenticated author, so authors share an instance without seeing or touching each other's resources (closing the multi-author IDOR); single mode has one implicit owner and the predicate is a no-op
+- argon2id author password (single mode), SHA-256 hashing at rest for sessions, share, verification, and API tokens; secrets only in environment, never logged (pino redaction)
 - **Rate limiting** - per-IP token buckets with IP-independent global brakes on login, reader verification (with a per-share sub-brake), and API auth; per-session limits on AI generation and test-send
 - **Enumeration-safety** - neutral, timing-equivalent responses on the reader surface (NFR9); untrusted LLM output validated-on-write and never reaching a sink
 - Production env validation forces a https `ORIGIN` so session cookies are always `Secure`; a background sweep purges spent verification tokens and orphaned uploads
