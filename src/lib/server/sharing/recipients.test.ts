@@ -10,6 +10,23 @@ import {
 } from './recipients';
 import type { ResolvedShare } from './shares';
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+// `ownsShare` resolves the share's report and runs the SCOPED getReport. Mock it
+// to resolve for any id so the ownership gate passes in single mode (it only
+// needs getReport to NOT throw); ownership itself is gated by whether the share
+// id is in the shares store, which the db mock models.
+vi.mock('$lib/server/documents/reports', () => ({
+	getReport: (id: string) => Promise.resolve({ id })
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
+const REPORT_ID = '0197b300-0000-7000-8000-000000000aaa';
+
 // In-memory share_recipients store. The mock decodes drizzle eq()/and() chunks
 // to the (share_id, email) it filters on, mirroring the shares.test.ts decoding,
 // and models transaction() as a pass-through so setShareRecipients'
@@ -68,10 +85,12 @@ function decodeFilter(filter: unknown): {
 	return result;
 }
 
-// The shares-table existence read: select id from shares where id = ? limit 1.
+// The shares-table read `ownsShare` runs: select reportId from shares where id =
+// ? limit 1. Returns the share's report id so the scoped getReport resolves; an
+// id not in the set returns no row, so `ownsShare` returns false (the 404 path).
 function matchesShares(filter: unknown) {
 	const f = decodeFilter(filter);
-	if (f.id !== undefined && dbState.shareIds.has(f.id)) return [{ id: f.id }];
+	if (f.id !== undefined && dbState.shareIds.has(f.id)) return [{ id: f.id, reportId: REPORT_ID }];
 	return [];
 }
 
@@ -147,7 +166,7 @@ beforeEach(() => {
 
 describe('setShareRecipients', () => {
 	it('normalizes and stores the submitted emails', async () => {
-		await setShareRecipients(SHARE_ID, ['  Foo@X.com ', 'bar@example.org']);
+		await setShareRecipients(SHARE_ID, ['  Foo@X.com ', 'bar@example.org'], TEST_SCOPE);
 
 		const stored = dbState.inserted.map((row) => row.email).sort();
 		expect(stored).toEqual(['bar@example.org', 'foo@x.com']);
@@ -160,41 +179,41 @@ describe('setShareRecipients', () => {
 	});
 
 	it('dedups emails that normalize to the same canonical form', async () => {
-		await setShareRecipients(SHARE_ID, [
-			'Reader@Example.com',
-			'reader@example.com',
-			' READER@example.COM '
-		]);
+		await setShareRecipients(
+			SHARE_ID,
+			['Reader@Example.com', 'reader@example.com', ' READER@example.COM '],
+			TEST_SCOPE
+		);
 
 		expect(dbState.inserted).toHaveLength(1);
 		expect(dbState.inserted[0].email).toBe('reader@example.com');
 	});
 
 	it('drops malformed email shapes (storage guard)', async () => {
-		await setShareRecipients(SHARE_ID, ['ok@example.com', 'not-an-email', '', '   ']);
+		await setShareRecipients(SHARE_ID, ['ok@example.com', 'not-an-email', '', '   '], TEST_SCOPE);
 
 		expect(dbState.inserted.map((row) => row.email)).toEqual(['ok@example.com']);
 	});
 
 	it('replaces the list: a second call removes emails no longer present', async () => {
-		await setShareRecipients(SHARE_ID, ['a@example.com', 'b@example.com']);
+		await setShareRecipients(SHARE_ID, ['a@example.com', 'b@example.com'], TEST_SCOPE);
 		dbState.inserted = [];
-		await setShareRecipients(SHARE_ID, ['b@example.com', 'c@example.com']);
+		await setShareRecipients(SHARE_ID, ['b@example.com', 'c@example.com'], TEST_SCOPE);
 
 		const remaining = (await listShareRecipients(SHARE_ID)).sort();
 		expect(remaining).toEqual(['b@example.com', 'c@example.com']);
 	});
 
 	it('an empty list clears all recipients', async () => {
-		await setShareRecipients(SHARE_ID, ['a@example.com']);
-		await setShareRecipients(SHARE_ID, []);
+		await setShareRecipients(SHARE_ID, ['a@example.com'], TEST_SCOPE);
+		await setShareRecipients(SHARE_ID, [], TEST_SCOPE);
 
 		expect(await listShareRecipients(SHARE_ID)).toEqual([]);
 	});
 
 	it('does not touch another share list', async () => {
-		await setShareRecipients(OTHER_SHARE_ID, ['keep@example.com']);
-		await setShareRecipients(SHARE_ID, ['new@example.com']);
+		await setShareRecipients(OTHER_SHARE_ID, ['keep@example.com'], TEST_SCOPE);
+		await setShareRecipients(SHARE_ID, ['new@example.com'], TEST_SCOPE);
 
 		expect(await listShareRecipients(OTHER_SHARE_ID)).toEqual(['keep@example.com']);
 		expect(await listShareRecipients(SHARE_ID)).toEqual(['new@example.com']);
@@ -205,7 +224,7 @@ describe('setShareRecipients', () => {
 			{ length: MAX_SHARE_RECIPIENTS },
 			(_, i) => `recipient-${i}@example.com`
 		);
-		await setShareRecipients(SHARE_ID, atCap);
+		await setShareRecipients(SHARE_ID, atCap, TEST_SCOPE);
 		expect(dbState.inserted).toHaveLength(MAX_SHARE_RECIPIENTS);
 	});
 
@@ -214,7 +233,7 @@ describe('setShareRecipients', () => {
 			{ length: MAX_SHARE_RECIPIENTS + 1 },
 			(_, i) => `recipient-${i}@example.com`
 		);
-		await expect(setShareRecipients(SHARE_ID, overCap)).rejects.toMatchObject({
+		await expect(setShareRecipients(SHARE_ID, overCap, TEST_SCOPE)).rejects.toMatchObject({
 			status: 422
 		});
 		expect(dbState.inserted).toHaveLength(0);
@@ -229,29 +248,29 @@ describe('setShareRecipients', () => {
 			(_, i) => `recipient-${i}@example.com`
 		);
 		raw.push('Recipient-0@Example.com');
-		await setShareRecipients(SHARE_ID, raw);
+		await setShareRecipients(SHARE_ID, raw, TEST_SCOPE);
 		expect(dbState.inserted).toHaveLength(MAX_SHARE_RECIPIENTS);
 	});
 
 	it('404s (AppError) on an unknown share id and writes nothing', async () => {
 		const unknown = '0197b300-0000-7000-8000-000000000999';
-		await expect(setShareRecipients(unknown, ['a@example.com'])).rejects.toMatchObject({
+		await expect(setShareRecipients(unknown, ['a@example.com'], TEST_SCOPE)).rejects.toMatchObject({
 			status: 404
 		});
 		expect(dbState.inserted).toHaveLength(0);
 	});
 
 	it('404s on a malformed (non-UUID) share id without a DB cast error', async () => {
-		await expect(setShareRecipients('not-a-uuid', ['a@example.com'])).rejects.toBeInstanceOf(
-			AppError
-		);
+		await expect(
+			setShareRecipients('not-a-uuid', ['a@example.com'], TEST_SCOPE)
+		).rejects.toBeInstanceOf(AppError);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 });
 
 describe('listShareRecipients', () => {
 	it('returns the normalized emails for a share, ascending', async () => {
-		await setShareRecipients(SHARE_ID, ['zed@example.com', 'amy@example.com']);
+		await setShareRecipients(SHARE_ID, ['zed@example.com', 'amy@example.com'], TEST_SCOPE);
 		expect(await listShareRecipients(SHARE_ID)).toEqual(['amy@example.com', 'zed@example.com']);
 	});
 
@@ -262,8 +281,8 @@ describe('listShareRecipients', () => {
 
 describe('listRecipientsForShares', () => {
 	it('groups recipients by share id in one query', async () => {
-		await setShareRecipients(SHARE_ID, ['zed@example.com', 'amy@example.com']);
-		await setShareRecipients(OTHER_SHARE_ID, ['solo@example.com']);
+		await setShareRecipients(SHARE_ID, ['zed@example.com', 'amy@example.com'], TEST_SCOPE);
+		await setShareRecipients(OTHER_SHARE_ID, ['solo@example.com'], TEST_SCOPE);
 
 		const grouped = await listRecipientsForShares([SHARE_ID, OTHER_SHARE_ID]);
 
@@ -272,7 +291,7 @@ describe('listRecipientsForShares', () => {
 	});
 
 	it('maps a share with no recipients to an empty array', async () => {
-		await setShareRecipients(SHARE_ID, ['only@example.com']);
+		await setShareRecipients(SHARE_ID, ['only@example.com'], TEST_SCOPE);
 
 		const grouped = await listRecipientsForShares([SHARE_ID, OTHER_SHARE_ID]);
 
@@ -293,19 +312,19 @@ describe('isAuthorizedReader', () => {
 	});
 
 	it('restricted mode authorizes a listed email', async () => {
-		await setShareRecipients(SHARE_ID, ['listed@example.com']);
+		await setShareRecipients(SHARE_ID, ['listed@example.com'], TEST_SCOPE);
 		expect(await isAuthorizedReader(restricted, 'listed@example.com')).toBe(true);
 	});
 
 	it('restricted mode refuses an unlisted email', async () => {
-		await setShareRecipients(SHARE_ID, ['listed@example.com']);
+		await setShareRecipients(SHARE_ID, ['listed@example.com'], TEST_SCOPE);
 		expect(await isAuthorizedReader(restricted, 'unlisted@example.com')).toBe(false);
 	});
 
 	it('restricted mode matches on the canonical email (Foo@X.com == foo@x.com)', async () => {
 		// The list stores the normalized form; the gate normalizes the request email
 		// the same way, so a differently-cased request still matches.
-		await setShareRecipients(SHARE_ID, ['Foo@X.com']);
+		await setShareRecipients(SHARE_ID, ['Foo@X.com'], TEST_SCOPE);
 		expect(await isAuthorizedReader(restricted, 'foo@x.com')).toBe(true);
 	});
 

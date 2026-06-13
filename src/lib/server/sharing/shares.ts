@@ -13,6 +13,7 @@
  * story does NOT yet enforce that status at the route.
  */
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import type { AuthorScope } from '$lib/server/authors';
 import { destroyReaderSessionsForShare } from '$lib/server/auth/sessions';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
@@ -107,9 +108,13 @@ function expiryInPast(): AppError {
  */
 export async function createShare(
 	reportId: string,
+	scope: AuthorScope,
 	input: CreateShareInput = {}
 ): Promise<CreatedShare> {
-	const report = await getReport(reportId);
+	// The scoped read is the tenancy gate: a report the author does not own is a
+	// 404 here (no existence oracle), so a share is only ever minted on an owned
+	// report, and the share inherits that report's ownership transitively.
+	const report = await getReport(reportId, scope);
 	assertShareable(report);
 
 	const expiresAt = input.expiresAt ?? null;
@@ -136,7 +141,12 @@ export async function createShare(
  * mode, expiry, creation, revocation, and the derived status - never the raw
  * token (it does not exist after creation).
  */
-export async function listShares(reportId: string): Promise<ShareSummary[]> {
+export async function listShares(reportId: string, scope: AuthorScope): Promise<ShareSummary[]> {
+	// Shares scope through their report (a share has a non-null report_id, so it
+	// inherits the report's owner). The scoped read raises the same 404 when the
+	// report is unknown or owned by another author, so this never lists a foreign
+	// report's shares; single mode is a no-op so the list is unchanged.
+	await getReport(reportId, scope);
 	const rows = await getDb()
 		.select()
 		.from(shares)
@@ -171,14 +181,49 @@ export async function getShareByToken(rawToken: string): Promise<ResolvedShare |
 	};
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Whether `scope` owns the share - i.e. owns the report the share belongs to
+ * (shares scope through their report, story 8.2). Resolves the share's report id
+ * and runs the SCOPED `getReport`: an owned report resolves, a foreign or
+ * unknown one is the 404 the scoped read raises. Returns false (the caller's
+ * silent no-op / 404) for a malformed or unknown share id, so a share-management
+ * action on another author's share is indistinguishable from one on a missing
+ * share - no existence oracle. In single mode the scoped read is a no-op, so this
+ * is true for any existing share, preserving today's behavior.
+ */
+export async function ownsShare(shareId: string, scope: AuthorScope): Promise<boolean> {
+	if (!UUID_PATTERN.test(shareId)) return false;
+	const rows = await getDb()
+		.select({ reportId: shares.reportId })
+		.from(shares)
+		.where(eq(shares.id, shareId))
+		.limit(1);
+	const row = rows[0];
+	if (!row) return false;
+	try {
+		await getReport(row.reportId, scope);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Switches a share between restricted and open mode (FR19, story 3.4). The
  * recipient allow-list is left untouched - switching to open simply ignores it,
  * switching back to restricted re-applies the same list - so the author can
  * toggle without losing the list. Returns the number of rows updated (0 when the
- * share id is unknown), the caller maps a miss to a 404.
+ * share id is unknown OR owned by another author - the caller maps a miss to a
+ * 404, the same neutral result either way).
  */
-export async function setShareMode(shareId: string, mode: ShareMode): Promise<number> {
+export async function setShareMode(
+	shareId: string,
+	mode: ShareMode,
+	scope: AuthorScope
+): Promise<number> {
+	if (!(await ownsShare(shareId, scope))) return 0;
 	const updated = await getDb()
 		.update(shares)
 		.set({ mode })
@@ -203,8 +248,14 @@ export async function setShareMode(shareId: string, mode: ShareMode): Promise<nu
  * (it is itself idempotent - a no-op when no sessions remain). A genuinely
  * unknown share id matches nothing and returns silently (the caller has already
  * resolved the share from its own report's list, author-realm under the guard).
+ *
+ * Tenancy (story 8.2): a share the author does not own (foreign report) is a
+ * silent no-op too - `ownsShare` gates the revoke and the session sweep, so an
+ * author can never revoke or disrupt another author's share. Single mode: any
+ * existing share is owned by the one implicit author, so behavior is unchanged.
  */
-export async function revokeShare(shareId: string): Promise<void> {
+export async function revokeShare(shareId: string, scope: AuthorScope): Promise<void> {
+	if (!(await ownsShare(shareId, scope))) return;
 	await getDb()
 		.update(shares)
 		.set({ revokedAt: new Date() })

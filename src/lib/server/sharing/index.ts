@@ -8,6 +8,7 @@ export {
 	getShareByToken,
 	setShareMode,
 	revokeShare,
+	ownsShare,
 	shareStatus,
 	isExpired,
 	shareUrl

@@ -11,17 +11,16 @@
  * form: `Foo@X.com` written to the list authorizes `foo@x.com` at verification.
  */
 import { and, eq, inArray } from 'drizzle-orm';
+import type { AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
-import { shareRecipients, shares } from '$lib/server/db/schema';
+import { shareRecipients } from '$lib/server/db/schema';
 import { AppError } from '$lib/server/problem';
 import { isPlausibleEmail, normalizeEmail } from '$lib/server/reader/email';
-import type { ShareMode } from './shares';
+import { ownsShare, type ShareMode } from './shares';
 
 /** A share's mode + id, the minimum `isAuthorizedReader` needs. */
 type AuthorizableShare = { id: string; mode: ShareMode };
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * Upper bound on the effective (normalized + deduped) size of a share's
@@ -43,17 +42,6 @@ function shareNotFound(): AppError {
 	});
 }
 
-/** Whether a share row exists for `shareId` (a malformed id can never match). */
-async function shareExists(shareId: string): Promise<boolean> {
-	if (!UUID_PATTERN.test(shareId)) return false;
-	const rows = await getDb()
-		.select({ id: shares.id })
-		.from(shares)
-		.where(eq(shares.id, shareId))
-		.limit(1);
-	return rows.length > 0;
-}
-
 /**
  * Replaces a share's recipient allow-list with `emails`. Each email is
  * normalized (the shared boundary helper) and de-duplicated; a malformed shape
@@ -72,7 +60,11 @@ async function shareExists(shareId: string): Promise<boolean> {
  * hold regardless of caller. The cap is counted AFTER normalization+dedup, on
  * the actual row count that would be inserted.
  */
-export async function setShareRecipients(shareId: string, emails: string[]): Promise<void> {
+export async function setShareRecipients(
+	shareId: string,
+	emails: string[],
+	scope: AuthorScope
+): Promise<void> {
 	const normalized = Array.from(
 		new Set(emails.map(normalizeEmail).filter((email) => isPlausibleEmail(email)))
 	);
@@ -86,7 +78,10 @@ export async function setShareRecipients(shareId: string, emails: string[]): Pro
 		});
 	}
 
-	if (!(await shareExists(shareId))) throw shareNotFound();
+	// Ownership-through-report (story 8.2): a share the author does not own is the
+	// SAME 404 as a missing one (no existence oracle). Replaces the bare existence
+	// check; single mode is a no-op so any existing share resolves as owned.
+	if (!(await ownsShare(shareId, scope))) throw shareNotFound();
 
 	const db = getDb();
 	await db.transaction(async (tx) => {

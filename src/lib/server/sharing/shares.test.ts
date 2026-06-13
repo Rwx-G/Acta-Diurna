@@ -29,6 +29,13 @@ function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	return { column: column.name, value: param.value };
 }
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
 		insert: () => ({
@@ -108,7 +115,7 @@ beforeEach(() => {
 
 describe('createShare', () => {
 	it('on a published report returns a raw token and persists only its hash', async () => {
-		const { token, share } = await createShare(REPORT_ID);
+		const { token, share } = await createShare(REPORT_ID, TEST_SCOPE);
 
 		// >= 128 bits of entropy: 32 raw bytes base64url-encode to 43 chars.
 		expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -124,31 +131,31 @@ describe('createShare', () => {
 	});
 
 	it('defaults to restricted mode (the safe default for 3.4)', async () => {
-		const { share } = await createShare(REPORT_ID);
+		const { share } = await createShare(REPORT_ID, TEST_SCOPE);
 		expect(share.mode).toBe('restricted');
 		expect(dbState.inserted[0].mode).toBe('restricted');
 	});
 
 	it('accepts an explicit open mode', async () => {
-		const { share } = await createShare(REPORT_ID, { mode: 'open' });
+		const { share } = await createShare(REPORT_ID, TEST_SCOPE, { mode: 'open' });
 		expect(share.mode).toBe('open');
 	});
 
 	it('persists and round-trips an optional expiry (FR21)', async () => {
 		const expiresAt = new Date(Date.now() + 86_400_000);
-		const { share } = await createShare(REPORT_ID, { expiresAt });
+		const { share } = await createShare(REPORT_ID, TEST_SCOPE, { expiresAt });
 		expect(share.expiresAt).toEqual(expiresAt);
 		expect(dbState.inserted[0].expiresAt).toEqual(expiresAt);
 		expect(share.status).toBe('active');
 	});
 
 	it('a null expiry means no time bound', async () => {
-		const { share } = await createShare(REPORT_ID, { expiresAt: null });
+		const { share } = await createShare(REPORT_ID, TEST_SCOPE, { expiresAt: null });
 		expect(share.expiresAt).toBeNull();
 	});
 
 	it('assigns a UUIDv7 id', async () => {
-		await createShare(REPORT_ID);
+		await createShare(REPORT_ID, TEST_SCOPE);
 		expect(dbState.inserted[0].id).toMatch(
 			/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 		);
@@ -156,7 +163,7 @@ describe('createShare', () => {
 
 	it('refuses a past expiry with a 422', async () => {
 		const past = new Date(Date.now() - 1000);
-		await expect(createShare(REPORT_ID, { expiresAt: past })).rejects.toMatchObject({
+		await expect(createShare(REPORT_ID, TEST_SCOPE, { expiresAt: past })).rejects.toMatchObject({
 			status: 422,
 			type: '/problems/share-expiry-past'
 		});
@@ -165,7 +172,7 @@ describe('createShare', () => {
 
 	it('refuses a draft report via assertShareable and mints NO token', async () => {
 		reportsState.status = 'draft';
-		await expect(createShare(REPORT_ID)).rejects.toMatchObject({
+		await expect(createShare(REPORT_ID, TEST_SCOPE)).rejects.toMatchObject({
 			status: 409,
 			type: '/problems/report-not-published'
 		});
@@ -185,7 +192,7 @@ describe('getShareByToken', () => {
 	});
 
 	it('round-trips a freshly created share', async () => {
-		const { token, share } = await createShare(REPORT_ID);
+		const { token, share } = await createShare(REPORT_ID, TEST_SCOPE);
 		const resolved = await getShareByToken(token);
 		expect(resolved?.id).toBe(share.id);
 		expect(resolved?.status).toBe('active');
@@ -236,10 +243,10 @@ describe('getShareByToken', () => {
 
 describe('listShares', () => {
 	it('projects each share by report id, never exposing a raw token', async () => {
-		const { token } = await createShare(REPORT_ID);
+		const { token } = await createShare(REPORT_ID, TEST_SCOPE);
 		seedShare({ tokenHash: sha256('second'), reportId: REPORT_ID });
 
-		const summaries = await listShares(REPORT_ID);
+		const summaries = await listShares(REPORT_ID, TEST_SCOPE);
 
 		expect(summaries.length).toBe(2);
 		const serialized = JSON.stringify(summaries);
@@ -255,7 +262,7 @@ describe('listShares', () => {
 	});
 
 	it('returns an empty list for a report with no shares', async () => {
-		await expect(listShares(REPORT_ID)).resolves.toEqual([]);
+		await expect(listShares(REPORT_ID, TEST_SCOPE)).resolves.toEqual([]);
 	});
 });
 

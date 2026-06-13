@@ -35,8 +35,28 @@ function decodeUpdateFilter(filter: unknown): string {
 	return idParam.value as string;
 }
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
+const REPORT_ID = '0197b300-0000-7000-8000-000000000aaa';
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
+		// `ownsShare` (story 8.2) resolves the share's report id, then runs the
+		// SCOPED getReport. In single mode the scoped read is a no-op, so any existing
+		// share resolves as owned; the lookup returns a reportId for any share id so
+		// the ownership gate passes and the revoke/sweep behavior is unchanged.
+		select: () => ({
+			from: () => ({
+				where: () => ({
+					limit: () => Promise.resolve([{ reportId: REPORT_ID }])
+				})
+			})
+		}),
 		update: () => ({
 			set: (patch: { revokedAt: Date }) => ({
 				where: (filter: SQL) => {
@@ -75,7 +95,7 @@ describe('revokeShare', () => {
 	it('sets revoked_at and sweeps the reader sessions for the share', async () => {
 		dbState.rows.push({ id: SHARE_ID, revokedAt: null });
 
-		await revokeShare(SHARE_ID);
+		await revokeShare(SHARE_ID, TEST_SCOPE);
 
 		expect(dbState.rows[0].revokedAt).toBeInstanceOf(Date);
 		expect(dbState.updateCalls[0].matched).toBe(1);
@@ -85,10 +105,10 @@ describe('revokeShare', () => {
 	it('is idempotent: a second revoke is a no-op that preserves the original instant', async () => {
 		dbState.rows.push({ id: SHARE_ID, revokedAt: null });
 
-		await revokeShare(SHARE_ID);
+		await revokeShare(SHARE_ID, TEST_SCOPE);
 		const firstInstant = dbState.rows[0].revokedAt;
 		await new Promise((r) => setTimeout(r, 2));
-		await revokeShare(SHARE_ID);
+		await revokeShare(SHARE_ID, TEST_SCOPE);
 
 		// The isNull guard meant the second update matched zero rows.
 		expect(dbState.updateCalls[1].matched).toBe(0);
@@ -99,7 +119,9 @@ describe('revokeShare', () => {
 	});
 
 	it('sweeps sessions even for an unknown share id (silent, no throw)', async () => {
-		await expect(revokeShare('00000000-0000-7000-8000-00000000ffff')).resolves.toBeUndefined();
+		await expect(
+			revokeShare('00000000-0000-7000-8000-00000000ffff', TEST_SCOPE)
+		).resolves.toBeUndefined();
 		expect(dbState.updateCalls[0].matched).toBe(0);
 		expect(sweep).toHaveBeenCalledOnce();
 	});
