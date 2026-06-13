@@ -54,6 +54,13 @@ function uniqueViolation(): Error & { code: string } {
 	});
 }
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
 		insert: (table: unknown) => ({
@@ -254,7 +261,7 @@ describe('instantiateReport', () => {
 	it('creates a draft report whose document mirrors the skeleton structure exactly (FR11)', async () => {
 		const saved = await saveSkeleton(draftFrom('Recurring', 'cover', 'dataTable', 'kpiRow'));
 
-		const report = await instantiateReport(saved.id);
+		const report = await instantiateReport(saved.id, TEST_SCOPE);
 
 		expect(report.id).toMatch(UUIDV7_PATTERN);
 		expect(report.id).not.toBe(saved.id);
@@ -269,8 +276,8 @@ describe('instantiateReport', () => {
 			draftFrom('Quarterly', 'cover', 'summary', 'dataTable', 'chartSection', 'annex')
 		);
 
-		const first = await instantiateReport(saved.id);
-		const second = await instantiateReport(saved.id);
+		const first = await instantiateReport(saved.id, TEST_SCOPE);
+		const second = await instantiateReport(saved.id, TEST_SCOPE);
 
 		expect(first.id).not.toBe(second.id);
 		expect(structurallyEqual(first.document, second.document)).toBe(true);
@@ -278,7 +285,10 @@ describe('instantiateReport', () => {
 	});
 
 	it('throws 404 for an unknown skeleton id and creates no report', async () => {
-		await expectAppError(instantiateReport('01970000-0000-7000-8000-00000000dead'), 404);
+		await expectAppError(
+			instantiateReport('01970000-0000-7000-8000-00000000dead', TEST_SCOPE),
+			404
+		);
 		expect(dbState.reports.size).toBe(0);
 	});
 });

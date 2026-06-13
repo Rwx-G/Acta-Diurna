@@ -7,6 +7,7 @@ import {
 	type DocumentV1,
 	type ValidationErrorDetail
 } from '$lib/schema';
+import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { reports, type ReportRow } from '$lib/server/db/schema';
@@ -111,8 +112,27 @@ function validationFailed(errors: ValidationErrorDetail[]): AppError {
 	});
 }
 
-async function getRow(id: string): Promise<ReportRow> {
+async function getRow(id: string, scope: AuthorScope): Promise<ReportRow> {
 	// Boundary check: a malformed id is a 404, not a postgres cast error.
+	if (!UUID_PATTERN.test(id)) throw notFound();
+	// Tenancy filter (story 8.2): in multi mode the owner predicate ANDs into the
+	// lookup so a cross-author id misses and raises the SAME 404 - no existence
+	// oracle. In single mode `ownerFilter` is undefined and the WHERE is the bare
+	// id match, byte-identical to the pre-8.2 query.
+	const owner = ownerFilter(scope, reports.ownerId);
+	const where = owner ? and(eq(reports.id, id), owner) : eq(reports.id, id);
+	const rows = await getDb().select().from(reports).where(where).limit(1);
+	if (rows.length === 0) throw notFound();
+	return rows[0];
+}
+
+/**
+ * Loads a report row by id with NO owner scoping - the reader path
+ * ({@link getPublishedDocument}) only. A reader is gated by the share, not by
+ * authorship, so it must reach the owning author's report. Author surfaces never
+ * use this; they go through {@link getRow} with a scope.
+ */
+async function getRowUnscoped(id: string): Promise<ReportRow> {
 	if (!UUID_PATTERN.test(id)) throw notFound();
 	const rows = await getDb().select().from(reports).where(eq(reports.id, id)).limit(1);
 	if (rows.length === 0) throw notFound();
@@ -131,7 +151,7 @@ function validateOrThrow(input: unknown): DocumentV1 {
  * lorem). The starter document goes through `validateDocument` like any other
  * write, so an invalid title surfaces as the same 422.
  */
-export async function createReport(title: string): Promise<Report> {
+export async function createReport(title: string, scope: AuthorScope): Promise<Report> {
 	const document = validateOrThrow({
 		version: 1,
 		title,
@@ -165,6 +185,7 @@ export async function createReport(title: string): Promise<Report> {
 		document,
 		publishedDocument: null,
 		publishedAt: null,
+		ownerId: ownerForInsert(scope),
 		createdAt: now,
 		updatedAt: now
 	};
@@ -179,7 +200,10 @@ export async function createReport(title: string): Promise<Report> {
  * same write contract as a blank report - the document, not the seed, is the
  * only difference. The row gets a fresh UUIDv7; the document's own ids are kept.
  */
-export async function createReportWithDocument(documentInput: unknown): Promise<Report> {
+export async function createReportWithDocument(
+	documentInput: unknown,
+	scope: AuthorScope
+): Promise<Report> {
 	const document = validateOrThrow(documentInput);
 	const now = new Date();
 	const row: ReportRow = {
@@ -190,6 +214,7 @@ export async function createReportWithDocument(documentInput: unknown): Promise<
 		document,
 		publishedDocument: null,
 		publishedAt: null,
+		ownerId: ownerForInsert(scope),
 		createdAt: now,
 		updatedAt: now
 	};
@@ -211,8 +236,8 @@ export async function createReportWithDocument(documentInput: unknown): Promise<
  * This stays correct when Epic 3 lands a shares table - duplicate keys only the
  * new report id, so it must never copy share rows from the source.
  */
-export async function duplicateReport(id: string): Promise<Report> {
-	const source = await getRow(id);
+export async function duplicateReport(id: string, scope: AuthorScope): Promise<Report> {
+	const source = await getRow(id, scope);
 	const document = structuredClone(source.document);
 	const now = new Date();
 	const row: ReportRow = {
@@ -223,6 +248,10 @@ export async function duplicateReport(id: string): Promise<Report> {
 		document,
 		publishedDocument: null,
 		publishedAt: null,
+		// The copy belongs to the duplicating author, never the source's owner (in
+		// single mode they are the same implicit author; in multi mode a duplicate
+		// only ever happens on a report the author already owns, via the scoped read).
+		ownerId: ownerForInsert(scope),
 		createdAt: now,
 		updatedAt: now
 	};
@@ -230,9 +259,40 @@ export async function duplicateReport(id: string): Promise<Report> {
 	return toReport(row);
 }
 
-/** Loads one report; 404 when the id is unknown or malformed. */
-export async function getReport(id: string): Promise<Report> {
-	return toReport(await getRow(id));
+/** Loads one report; 404 when the id is unknown, malformed, or owned by another author. */
+export async function getReport(id: string, scope: AuthorScope): Promise<Report> {
+	return toReport(await getRow(id, scope));
+}
+
+/**
+ * Runs the report-summary list query, optionally filtered by an owner predicate.
+ * The owner branch keeps single mode (no predicate) on the EXACT pre-8.2 chain
+ * (`from().orderBy().limit()`, no WHERE) so its SQL is byte-identical; the multi
+ * branch ANDs the owner WHERE before the order. Same projection, cap, and order
+ * either way.
+ */
+function selectReportSummaries(
+	owner: ReturnType<typeof ownerFilter>
+): Promise<{ id: string; title: string; status: string; updatedAt: Date }[]> {
+	const projection = {
+		id: reports.id,
+		title: reports.title,
+		status: reports.status,
+		updatedAt: reports.updatedAt
+	};
+	if (!owner) {
+		return getDb()
+			.select(projection)
+			.from(reports)
+			.orderBy(desc(reports.updatedAt))
+			.limit(MAX_REPORTS_LISTED);
+	}
+	return getDb()
+		.select(projection)
+		.from(reports)
+		.where(owner)
+		.orderBy(desc(reports.updatedAt))
+		.limit(MAX_REPORTS_LISTED);
 }
 
 /**
@@ -243,17 +303,8 @@ export async function getReport(id: string): Promise<Report> {
  * audit). The cap is a safety ceiling, not pagination - real counts sit far
  * below it.
  */
-export async function listReports(): Promise<ReportSummary[]> {
-	const rows = await getDb()
-		.select({
-			id: reports.id,
-			title: reports.title,
-			status: reports.status,
-			updatedAt: reports.updatedAt
-		})
-		.from(reports)
-		.orderBy(desc(reports.updatedAt))
-		.limit(MAX_REPORTS_LISTED);
+export async function listReports(scope: AuthorScope): Promise<ReportSummary[]> {
+	const rows = await selectReportSummaries(ownerFilter(scope, reports.ownerId));
 	return rows.map((row) => ({
 		id: row.id,
 		title: row.title,
@@ -317,9 +368,10 @@ async function writeDocument(
 export async function updateReportDocument(
 	id: string,
 	documentInput: unknown,
+	scope: AuthorScope,
 	expectedUpdatedAt?: Date
 ): Promise<Report> {
-	return writeDocument(await getRow(id), documentInput, expectedUpdatedAt);
+	return writeDocument(await getRow(id, scope), documentInput, expectedUpdatedAt);
 }
 
 /**
@@ -327,14 +379,18 @@ export async function updateReportDocument(
  * truth), so this rewrites `document.title` and re-validates like any other
  * document write - reading the row once and writing through the shared helper.
  */
-export async function updateReportTitle(id: string, title: string): Promise<Report> {
-	const row = await getRow(id);
+export async function updateReportTitle(
+	id: string,
+	title: string,
+	scope: AuthorScope
+): Promise<Report> {
+	const row = await getRow(id, scope);
 	return writeDocument(row, { ...row.document, title });
 }
 
 /** Deletes a draft; published reports refuse with 409 (no cascade exists yet). */
-export async function deleteDraft(id: string): Promise<void> {
-	const row = await getRow(id);
+export async function deleteDraft(id: string, scope: AuthorScope): Promise<void> {
+	const row = await getRow(id, scope);
 	if (row.status === 'published') {
 		throw publishedConflict('Published reports cannot be deleted.');
 	}
@@ -371,8 +427,12 @@ export function assertShareable(report: Pick<Report, 'status'>): void {
  * version that was published, not the latest draft). Pass `expectedUpdatedAt`
  * to opt into optimistic concurrency (a concurrent draft edit then 409s).
  */
-export async function publishReport(id: string, expectedUpdatedAt?: Date): Promise<Report> {
-	const row = await getRow(id);
+export async function publishReport(
+	id: string,
+	scope: AuthorScope,
+	expectedUpdatedAt?: Date
+): Promise<Report> {
+	const row = await getRow(id, scope);
 	if (row.status === 'published') return toReport(row);
 
 	const document = validateOrThrow(row.document);
@@ -407,8 +467,8 @@ export async function publishReport(id: string, expectedUpdatedAt?: Date): Promi
  * snapshot is cleared - an unpublished report is not shareable, so no reader
  * should be served a stale frozen copy. Idempotent: a draft is returned as-is.
  */
-export async function unpublishToDraft(id: string): Promise<Report> {
-	const row = await getRow(id);
+export async function unpublishToDraft(id: string, scope: AuthorScope): Promise<Report> {
+	const row = await getRow(id, scope);
 	if (row.status === 'draft') return toReport(row);
 
 	const now = new Date();
@@ -441,7 +501,12 @@ export async function getPublishedDocument(
 	id: string,
 	migrations?: readonly DocumentMigration[]
 ): Promise<DocumentV1> {
-	const row = await getRow(id);
+	// The READER path (`/r/[token]`), NOT an author surface: a verified reader
+	// resolved a share to this report id and is served its published snapshot. The
+	// reader does not act as an author, so this read is NOT owner-scoped - the
+	// share is the access gate, and a published report is the same content for every
+	// authorized reader regardless of which author owns it.
+	const row = await getRowUnscoped(id);
 	if (row.status !== 'published' || row.publishedDocument === null) throw notShareable();
 	// The snapshot was validated at publish time, yet it is migrated-then-validated
 	// again here on every read. This is the FR7 version-tolerance path, not dead

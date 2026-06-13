@@ -18,6 +18,7 @@
  * not validation or persistence - `updateReportDocument`/`updateReportTitle`
  * still own validate-on-write, the published-read-only rule, and the 409 guard.
  */
+import type { AuthorScope } from '$lib/server/authors';
 import {
 	updateReportDocument,
 	updateReportTitle,
@@ -51,7 +52,7 @@ function emptyUpdate(): AppError {
  * `updateReportDocument`; title-only -> `updateReportTitle` (its signature has
  * no concurrency token, reverting to draft is not a lost-update hazard).
  */
-export function composeReportUpdate(update: ReportUpdate): Promise<Report> {
+export function composeReportUpdate(update: ReportUpdate, scope: AuthorScope): Promise<Report> {
 	const { id, title, document, expectedUpdatedAt } = update;
 	const hasDocument = document !== undefined;
 	const hasTitle = title !== undefined;
@@ -60,10 +61,10 @@ export function composeReportUpdate(update: ReportUpdate): Promise<Report> {
 
 	if (hasDocument && hasTitle) {
 		const merged = { ...(document as Record<string, unknown>), title };
-		return updateReportDocument(id, merged, expectedUpdatedAt);
+		return updateReportDocument(id, merged, scope, expectedUpdatedAt);
 	}
 	if (hasDocument) {
-		return updateReportDocument(id, document, expectedUpdatedAt);
+		return updateReportDocument(id, document, scope, expectedUpdatedAt);
 	}
-	return updateReportTitle(id, title as string);
+	return updateReportTitle(id, title as string, scope);
 }

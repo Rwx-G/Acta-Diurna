@@ -12,6 +12,7 @@
  */
 import { desc, eq } from 'drizzle-orm';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
+import type { AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { skeletons, type SkeletonRow } from '$lib/server/db/schema';
@@ -148,7 +149,7 @@ export async function deleteSkeleton(id: string): Promise<void> {
  * identical (the skeleton's own ids and structure are copied verbatim). 404 when
  * the skeleton id is unknown.
  */
-export async function instantiateReport(skeletonId: string): Promise<Report> {
+export async function instantiateReport(skeletonId: string, scope: AuthorScope): Promise<Report> {
 	const skeleton = await getSkeleton(skeletonId);
-	return createReportWithDocument(skeleton.document);
+	return createReportWithDocument(skeleton.document, scope);
 }

@@ -42,6 +42,7 @@
  */
 import { createHash } from 'node:crypto';
 import { type DocumentV1Input } from '$lib/schema';
+import type { AuthorScope } from '$lib/server/authors';
 import {
 	createReportWithDocument,
 	updateReportDocument,
@@ -187,7 +188,7 @@ interface GenerationContext {
 
 /** Reads the optional skeleton + data set into bounded prompt fragments. The
  *  skeleton/data set are read here; generation never re-ingests. */
-async function loadContext(input: GenerationInput): Promise<GenerationContext> {
+async function loadContext(input: GenerationInput, scope: AuthorScope): Promise<GenerationContext> {
 	let skeletonStructure: string | null = null;
 	if (input.skeletonId) {
 		const skeleton = await getSkeleton(input.skeletonId);
@@ -202,9 +203,9 @@ async function loadContext(input: GenerationInput): Promise<GenerationContext> {
 	let fieldsDescription: string | null = null;
 	let sampleRows: string | null = null;
 	if (input.dataSetId) {
-		const dataSet = await getDataSet(input.dataSetId);
+		const dataSet = await getDataSet(input.dataSetId, scope);
 		fieldsDescription = describeFields(dataSet.fields);
-		const table = await readDataSetTable(input.dataSetId);
+		const table = await readDataSetTable(input.dataSetId, scope);
 		sampleRows = describeSample(table.rows);
 	}
 
@@ -281,8 +282,11 @@ function parseOutline(raw: string, fallbackTitle: string): Outline | null {
  * `/problems/ai-generation-failed` 502 on unparseable/empty output - nothing is
  * written. The returned outline is the artifact the author reviews/approves.
  */
-export async function generateOutline(input: GenerationInput): Promise<Outline> {
-	const context = await loadContext(input);
+export async function generateOutline(
+	input: GenerationInput,
+	scope: AuthorScope
+): Promise<Outline> {
+	const context = await loadContext(input, scope);
 	const messages: ChatMessage[] = [
 		{ role: 'system', content: OUTLINE_SYSTEM_PROMPT },
 		{ role: 'user', content: buildOutlineUserPrompt(input, context) }
@@ -525,6 +529,7 @@ export interface FillInput extends GenerationInput {
  */
 export async function fillFromOutline(
 	input: FillInput,
+	scope: AuthorScope,
 	reportId?: string,
 	expectedUpdatedAt?: Date
 ): Promise<Report> {
@@ -532,7 +537,7 @@ export async function fillFromOutline(
 		throw staleApproval();
 	}
 
-	const context = await loadContext(input);
+	const context = await loadContext(input, scope);
 	const messages: ChatMessage[] = [
 		{ role: 'system', content: FILL_SYSTEM_PROMPT },
 		{ role: 'user', content: buildFillUserPrompt(input.outline, context) }
@@ -550,7 +555,7 @@ export async function fillFromOutline(
 	// document is rejected here with the FR2 errors[]; the draft stays untouched
 	// because the write only happens on a valid document.
 	if (reportId) {
-		return updateReportDocument(reportId, documentInput, expectedUpdatedAt);
+		return updateReportDocument(reportId, documentInput, scope, expectedUpdatedAt);
 	}
-	return createReportWithDocument(documentInput);
+	return createReportWithDocument(documentInput, scope);
 }

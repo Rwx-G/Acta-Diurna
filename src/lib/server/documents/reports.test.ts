@@ -75,6 +75,11 @@ function decodeOrderBy(order: unknown): { column: string; sql: string } {
 	return { column: column.name, sql };
 }
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
 		insert: () => ({
@@ -151,6 +156,8 @@ vi.mock('$lib/server/db/client', () => ({
 
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 function validDocument(title = 'Quarterly Review'): DocumentV1Input {
 	return {
 		version: 1,
@@ -183,6 +190,7 @@ function seedReport(overrides: Partial<ReportRow> = {}): ReportRow {
 		document: document.document,
 		publishedDocument: null,
 		publishedAt: null,
+		ownerId: null,
 		createdAt: new Date('2026-06-12T08:00:00Z'),
 		updatedAt: new Date('2026-06-12T08:00:00Z'),
 		...overrides
@@ -215,7 +223,7 @@ beforeEach(() => {
 
 describe('createReport', () => {
 	it('stores a draft with a schema-valid starter document', async () => {
-		const report = await createReport('Weekly Ops Report');
+		const report = await createReport('Weekly Ops Report', TEST_SCOPE);
 
 		expect(report.id).toMatch(UUIDV7_PATTERN);
 		expect(report.status).toBe('draft');
@@ -235,7 +243,7 @@ describe('createReport', () => {
 	});
 
 	it('rejects an invalid title with a 422 before touching the database', async () => {
-		const error = await expectAppError(createReport(''), 422);
+		const error = await expectAppError(createReport('', TEST_SCOPE), 422);
 
 		expect(error.errors?.[0].path).toBe('title');
 		expect(dbState.inserted).toHaveLength(0);
@@ -244,7 +252,7 @@ describe('createReport', () => {
 
 describe('createReportWithDocument', () => {
 	it('stores a draft seeded with the given document (skeleton instantiation path)', async () => {
-		const report = await createReportWithDocument(validDocument('From Skeleton'));
+		const report = await createReportWithDocument(validDocument('From Skeleton'), TEST_SCOPE);
 
 		expect(report.id).toMatch(UUIDV7_PATTERN);
 		expect(report.status).toBe('draft');
@@ -258,8 +266,8 @@ describe('createReportWithDocument', () => {
 	it('mints a fresh row id per call so two reports from one document are distinct', async () => {
 		const document = validDocument('Recurring');
 
-		const first = await createReportWithDocument(document);
-		const second = await createReportWithDocument(document);
+		const first = await createReportWithDocument(document, TEST_SCOPE);
+		const second = await createReportWithDocument(document, TEST_SCOPE);
 
 		expect(first.id).not.toBe(second.id);
 		expect(first.document).toEqual(second.document);
@@ -267,7 +275,10 @@ describe('createReportWithDocument', () => {
 	});
 
 	it('rejects an invalid document with a 422 before touching the database', async () => {
-		await expectAppError(createReportWithDocument({ version: 1, title: '', sections: [] }), 422);
+		await expectAppError(
+			createReportWithDocument({ version: 1, title: '', sections: [] }, TEST_SCOPE),
+			422
+		);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 });
@@ -276,7 +287,7 @@ describe('duplicateReport', () => {
 	it('duplicates a draft into a fresh draft with a distinct id', async () => {
 		const source = seedReport();
 
-		const copy = await duplicateReport(source.id);
+		const copy = await duplicateReport(source.id, TEST_SCOPE);
 
 		expect(copy.id).toMatch(UUIDV7_PATTERN);
 		expect(copy.id).not.toBe(source.id);
@@ -293,7 +304,7 @@ describe('duplicateReport', () => {
 			publishedAt: new Date('2026-06-12T09:00:00Z')
 		});
 
-		const copy = await duplicateReport(source.id);
+		const copy = await duplicateReport(source.id, TEST_SCOPE);
 
 		expect(copy.status).toBe('draft');
 		expect(copy.publishedDocument).toBeNull();
@@ -305,7 +316,7 @@ describe('duplicateReport', () => {
 	it('copies the source structure, bindings, and content', async () => {
 		const source = seedReport();
 
-		const copy = await duplicateReport(source.id);
+		const copy = await duplicateReport(source.id, TEST_SCOPE);
 
 		expect(copy.document).toEqual(source.document);
 		expect(structurallyEqual(copy.document, source.document)).toBe(true);
@@ -314,7 +325,7 @@ describe('duplicateReport', () => {
 	it('deep-copies the document so mutating the copy never touches the source', async () => {
 		const source = seedReport();
 
-		const copy = await duplicateReport(source.id);
+		const copy = await duplicateReport(source.id, TEST_SCOPE);
 		copy.document.sections[0].title = 'Mutated In The Copy';
 
 		const storedSource = dbState.rowsById.get(source.id) as ReportRow;
@@ -322,12 +333,12 @@ describe('duplicateReport', () => {
 	});
 
 	it('throws 404 for an unknown id', async () => {
-		await expectAppError(duplicateReport('01970000-0000-7000-8000-00000000dead'), 404);
+		await expectAppError(duplicateReport('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 
 	it('throws 404 for a malformed id without querying', async () => {
-		await expectAppError(duplicateReport('not-a-uuid'), 404);
+		await expectAppError(duplicateReport('not-a-uuid', TEST_SCOPE), 404);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 });
@@ -336,18 +347,18 @@ describe('getReport', () => {
 	it('returns the stored report by id', async () => {
 		const row = seedReport();
 
-		const report = await getReport(row.id);
+		const report = await getReport(row.id, TEST_SCOPE);
 
 		expect(report.id).toBe(row.id);
 		expect(report.document).toEqual(row.document);
 	});
 
 	it('throws 404 for an unknown id', async () => {
-		await expectAppError(getReport('01970000-0000-7000-8000-00000000dead'), 404);
+		await expectAppError(getReport('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
 	});
 
 	it('throws 404 for a malformed id without querying', async () => {
-		await expectAppError(getReport('not-a-uuid'), 404);
+		await expectAppError(getReport('not-a-uuid', TEST_SCOPE), 404);
 	});
 });
 
@@ -360,7 +371,7 @@ describe('listReports', () => {
 			status: 'published'
 		});
 
-		const list = await listReports();
+		const list = await listReports(TEST_SCOPE);
 
 		expect(list).toHaveLength(2);
 		expect(list[0]).toEqual({
@@ -378,7 +389,7 @@ describe('listReports', () => {
 	it('projects only the summary columns, never the heavy JSONB document columns', async () => {
 		seedReport();
 
-		await listReports();
+		await listReports(TEST_SCOPE);
 
 		expect(dbState.selectProjections).toHaveLength(1);
 		expect(dbState.selectProjections[0]).toEqual(['id', 'title', 'status', 'updated_at']);
@@ -389,7 +400,7 @@ describe('listReports', () => {
 	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
 		seedReport();
 
-		await listReports();
+		await listReports(TEST_SCOPE);
 
 		expect(dbState.listLimits).toEqual([500]);
 	});
@@ -400,7 +411,11 @@ describe('updateReportDocument', () => {
 		const row = seedReport();
 
 		const before = Date.now();
-		const report = await updateReportDocument(row.id, validDocument('Renamed Through Document'));
+		const report = await updateReportDocument(
+			row.id,
+			validDocument('Renamed Through Document'),
+			TEST_SCOPE
+		);
 		const after = Date.now();
 
 		expect(report.title).toBe('Renamed Through Document');
@@ -423,7 +438,7 @@ describe('updateReportDocument', () => {
 			alt: ''
 		});
 
-		const error = await expectAppError(updateReportDocument(row.id, invalid), 422);
+		const error = await expectAppError(updateReportDocument(row.id, invalid, TEST_SCOPE), 422);
 
 		expect(error.type).toBe('/problems/document-validation');
 		const paths = error.errors?.map((entry) => entry.path);
@@ -436,7 +451,7 @@ describe('updateReportDocument', () => {
 	it('throws 409 for a published report', async () => {
 		const row = seedReport({ status: 'published' });
 
-		await expectAppError(updateReportDocument(row.id, validDocument()), 409);
+		await expectAppError(updateReportDocument(row.id, validDocument(), TEST_SCOPE), 409);
 		expect(dbState.updates).toHaveLength(0);
 	});
 
@@ -457,7 +472,7 @@ describe('updateReportDocument', () => {
 			}
 		];
 
-		const error = await expectAppError(updateReportDocument(row.id, huge), 413);
+		const error = await expectAppError(updateReportDocument(row.id, huge, TEST_SCOPE), 413);
 		expect(error.type).toBe('/problems/document-too-large');
 		expect(dbState.updates).toHaveLength(0);
 		// The stored row is untouched.
@@ -466,7 +481,7 @@ describe('updateReportDocument', () => {
 
 	it('throws 404 for an unknown id', async () => {
 		await expectAppError(
-			updateReportDocument('01970000-0000-7000-8000-00000000dead', validDocument()),
+			updateReportDocument('01970000-0000-7000-8000-00000000dead', validDocument(), TEST_SCOPE),
 			404
 		);
 	});
@@ -477,6 +492,7 @@ describe('updateReportDocument', () => {
 		const report = await updateReportDocument(
 			row.id,
 			validDocument('Concurrency Match'),
+			TEST_SCOPE,
 			row.updatedAt
 		);
 
@@ -489,7 +505,7 @@ describe('updateReportDocument', () => {
 		const stale = new Date(row.updatedAt.getTime() - 1000);
 
 		const error = await expectAppError(
-			updateReportDocument(row.id, validDocument('Loses The Race'), stale),
+			updateReportDocument(row.id, validDocument('Loses The Race'), TEST_SCOPE, stale),
 			409
 		);
 
@@ -503,7 +519,7 @@ describe('updateReportTitle', () => {
 	it('rewrites the document title and re-validates', async () => {
 		const row = seedReport();
 
-		const report = await updateReportTitle(row.id, 'Fresh Title');
+		const report = await updateReportTitle(row.id, 'Fresh Title', TEST_SCOPE);
 
 		expect(report.title).toBe('Fresh Title');
 		expect(report.document.title).toBe('Fresh Title');
@@ -514,7 +530,7 @@ describe('updateReportTitle', () => {
 	it('throws 422 on an empty title', async () => {
 		const row = seedReport();
 
-		const error = await expectAppError(updateReportTitle(row.id, ''), 422);
+		const error = await expectAppError(updateReportTitle(row.id, '', TEST_SCOPE), 422);
 
 		expect(error.errors?.[0].path).toBe('title');
 	});
@@ -522,7 +538,7 @@ describe('updateReportTitle', () => {
 	it('throws 409 for a published report', async () => {
 		const row = seedReport({ status: 'published' });
 
-		await expectAppError(updateReportTitle(row.id, 'New Title'), 409);
+		await expectAppError(updateReportTitle(row.id, 'New Title', TEST_SCOPE), 409);
 	});
 });
 
@@ -530,7 +546,7 @@ describe('deleteDraft', () => {
 	it('deletes a draft by id', async () => {
 		const row = seedReport();
 
-		await deleteDraft(row.id);
+		await deleteDraft(row.id, TEST_SCOPE);
 
 		expect(dbState.deleteFilters).toEqual([{ column: 'id', value: row.id }]);
 		expect(dbState.rowsById.size).toBe(0);
@@ -539,7 +555,7 @@ describe('deleteDraft', () => {
 	it('refuses to delete a published report with 409', async () => {
 		const row = seedReport({ status: 'published' });
 
-		const error = await expectAppError(deleteDraft(row.id), 409);
+		const error = await expectAppError(deleteDraft(row.id, TEST_SCOPE), 409);
 
 		expect(error.type).toBe('/problems/report-published');
 		expect(dbState.deleteFilters).toHaveLength(0);
@@ -551,7 +567,7 @@ describe('publishReport', () => {
 	it('publishes a valid draft and freezes the snapshot with a publish timestamp', async () => {
 		const row = seedReport();
 
-		const report = await publishReport(row.id);
+		const report = await publishReport(row.id, TEST_SCOPE);
 
 		expect(report.status).toBe('published');
 		expect(report.publishedDocument).toEqual(row.document);
@@ -565,7 +581,7 @@ describe('publishReport', () => {
 		const publishedAt = new Date('2026-06-12T09:00:00Z');
 		const row = seedReport({ status: 'published', publishedDocument: seedDocument(), publishedAt });
 
-		const report = await publishReport(row.id);
+		const report = await publishReport(row.id, TEST_SCOPE);
 
 		expect(report.status).toBe('published');
 		// No re-snapshot: the publish timestamp is the one already on the row.
@@ -577,7 +593,7 @@ describe('publishReport', () => {
 		const invalid = { version: 1, title: '', sections: [] } as unknown as DocumentV1;
 		const row = seedReport({ document: invalid });
 
-		const error = await expectAppError(publishReport(row.id), 422);
+		const error = await expectAppError(publishReport(row.id, TEST_SCOPE), 422);
 
 		expect(error.type).toBe('/problems/document-validation');
 		const paths = error.errors?.map((entry) => entry.path);
@@ -591,14 +607,14 @@ describe('publishReport', () => {
 		const row = seedReport();
 		const stale = new Date(row.updatedAt.getTime() - 1000);
 
-		const error = await expectAppError(publishReport(row.id, stale), 409);
+		const error = await expectAppError(publishReport(row.id, TEST_SCOPE, stale), 409);
 
 		expect(error.type).toBe('/problems/report-conflict');
 		expect(dbState.rowsById.get(row.id)?.status).toBe('draft');
 	});
 
 	it('throws 404 for an unknown id', async () => {
-		await expectAppError(publishReport('01970000-0000-7000-8000-00000000dead'), 404);
+		await expectAppError(publishReport('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
 	});
 });
 
@@ -610,7 +626,7 @@ describe('unpublishToDraft', () => {
 			publishedAt: new Date('2026-06-12T09:00:00Z')
 		});
 
-		const report = await unpublishToDraft(row.id);
+		const report = await unpublishToDraft(row.id, TEST_SCOPE);
 
 		expect(report.status).toBe('draft');
 		expect(report.publishedDocument).toBeNull();
@@ -623,7 +639,7 @@ describe('unpublishToDraft', () => {
 	it('is idempotent: a draft is returned unchanged', async () => {
 		const row = seedReport();
 
-		const report = await unpublishToDraft(row.id);
+		const report = await unpublishToDraft(row.id, TEST_SCOPE);
 
 		expect(report.status).toBe('draft');
 		expect(dbState.updates).toHaveLength(0);
@@ -631,7 +647,7 @@ describe('unpublishToDraft', () => {
 
 	it('throws 404 for an unknown id', async () => {
 		const error = await expectAppError(
-			unpublishToDraft('01970000-0000-7000-8000-00000000dead'),
+			unpublishToDraft('01970000-0000-7000-8000-00000000dead', TEST_SCOPE),
 			404
 		);
 
@@ -641,8 +657,8 @@ describe('unpublishToDraft', () => {
 	it('round-trips: publish then unpublish leaves the draft document authoritative', async () => {
 		const row = seedReport();
 
-		await publishReport(row.id);
-		const reverted = await unpublishToDraft(row.id);
+		await publishReport(row.id, TEST_SCOPE);
+		const reverted = await unpublishToDraft(row.id, TEST_SCOPE);
 
 		expect(reverted.status).toBe('draft');
 		expect(reverted.document).toEqual(row.document);
@@ -653,7 +669,7 @@ describe('unpublishToDraft', () => {
 describe('publish snapshot isolation', () => {
 	it('serves the same published document throughout the published window, across re-reads', async () => {
 		const row = seedReport();
-		await publishReport(row.id);
+		await publishReport(row.id, TEST_SCOPE);
 
 		// Assert via the reader-served path (a re-read), not a captured local
 		// reference: while the report stays published, getPublishedDocument must
@@ -666,12 +682,12 @@ describe('publish snapshot isolation', () => {
 		// Editing requires unpublish first (1.5 guard), so flip to draft, edit, and
 		// re-publish a new edition. The previously served document never changed
 		// under the draft edit; only the next publish advances the snapshot.
-		await unpublishToDraft(row.id);
-		await updateReportDocument(row.id, validDocument('Draft Moved On'));
-		const draft = await getReport(row.id);
+		await unpublishToDraft(row.id, TEST_SCOPE);
+		await updateReportDocument(row.id, validDocument('Draft Moved On'), TEST_SCOPE);
+		const draft = await getReport(row.id, TEST_SCOPE);
 		expect(draft.document.title).toBe('Draft Moved On');
 
-		await publishReport(row.id);
+		await publishReport(row.id, TEST_SCOPE);
 		const servedAfterRepublish = await getPublishedDocument(row.id);
 		expect(servedAfterRepublish.title).toBe('Draft Moved On');
 		// The immutability guarantee: the document served during the first published
@@ -681,11 +697,11 @@ describe('publish snapshot isolation', () => {
 
 	it('re-publishing freezes the latest draft into a new snapshot', async () => {
 		const row = seedReport();
-		await publishReport(row.id);
-		await unpublishToDraft(row.id);
-		await updateReportDocument(row.id, validDocument('Second Edition'));
+		await publishReport(row.id, TEST_SCOPE);
+		await unpublishToDraft(row.id, TEST_SCOPE);
+		await updateReportDocument(row.id, validDocument('Second Edition'), TEST_SCOPE);
 
-		const republished = await publishReport(row.id);
+		const republished = await publishReport(row.id, TEST_SCOPE);
 
 		expect(republished.publishedDocument?.title).toBe('Second Edition');
 	});
@@ -694,7 +710,7 @@ describe('publish snapshot isolation', () => {
 describe('getPublishedDocument', () => {
 	it('returns the migrated, validated snapshot of a published report', async () => {
 		const row = seedReport();
-		await publishReport(row.id);
+		await publishReport(row.id, TEST_SCOPE);
 
 		const document = await getPublishedDocument(row.id);
 

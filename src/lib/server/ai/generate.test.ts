@@ -19,6 +19,13 @@ vi.mock('$lib/server/documents/reports', () => ({
 	createReportWithDocument: (...args: unknown[]) => createReportWithDocument(...args)
 }));
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 const getSkeleton = vi.fn();
 vi.mock('$lib/server/skeletons/skeletons', () => ({
 	getSkeleton: (...args: unknown[]) => getSkeleton(...args)
@@ -64,7 +71,7 @@ describe('generateOutline (stage 1)', () => {
 	it('parses a well-formed model outline into the bounded artifact', async () => {
 		chatComplete.mockResolvedValue({ content: WELL_FORMED_OUTLINE });
 
-		const outline = await generateOutline({ intent: 'A weekly ops review' });
+		const outline = await generateOutline({ intent: 'A weekly ops review' }, TEST_SCOPE);
 
 		expect(outline.title).toBe('Weekly Ops');
 		expect(outline.sections).toHaveLength(2);
@@ -76,7 +83,7 @@ describe('generateOutline (stage 1)', () => {
 		chatComplete.mockResolvedValue({ content: WELL_FORMED_OUTLINE });
 		const hugeIntent = 'x'.repeat(50_000);
 
-		await generateOutline({ intent: hugeIntent });
+		await generateOutline({ intent: hugeIntent }, TEST_SCOPE);
 
 		const messages = chatComplete.mock.calls[0][0] as { role: string; content: string }[];
 		const userMessage = messages.find((m) => m.role === 'user');
@@ -95,7 +102,7 @@ describe('generateOutline (stage 1)', () => {
 		};
 		chatComplete.mockResolvedValue({ content: JSON.stringify(runaway) });
 
-		const outline = await generateOutline({ intent: 'many sections' });
+		const outline = await generateOutline({ intent: 'many sections' }, TEST_SCOPE);
 
 		expect(outline.sections.length).toBeLessThanOrEqual(100);
 	});
@@ -105,7 +112,7 @@ describe('generateOutline (stage 1)', () => {
 			content: `Sure! Here is your outline:\n\n${WELL_FORMED_OUTLINE}\n\nHope that helps.`
 		});
 
-		const outline = await generateOutline({ intent: 'wrapped' });
+		const outline = await generateOutline({ intent: 'wrapped' }, TEST_SCOPE);
 
 		expect(outline.sections).toHaveLength(2);
 	});
@@ -114,7 +121,7 @@ describe('generateOutline (stage 1)', () => {
 		chatComplete.mockResolvedValue({ content: 'this is not json at all' });
 
 		try {
-			await generateOutline({ intent: 'garbage' });
+			await generateOutline({ intent: 'garbage' }, TEST_SCOPE);
 			expect.unreachable('must throw on unparseable output');
 		} catch (thrown) {
 			expect(thrown).toBeInstanceOf(AppError);
@@ -137,7 +144,7 @@ describe('generateOutline (stage 1)', () => {
 			})
 		);
 
-		await expect(generateOutline({ intent: 'x' })).rejects.toMatchObject({
+		await expect(generateOutline({ intent: 'x' }, TEST_SCOPE)).rejects.toMatchObject({
 			type: '/problems/ai-generation-disabled',
 			status: 503
 		});
@@ -151,10 +158,10 @@ describe('generateOutline (stage 1)', () => {
 		readDataSetTable.mockResolvedValue({ rows: [{ count: 3 }] });
 		chatComplete.mockResolvedValue({ content: WELL_FORMED_OUTLINE });
 
-		await generateOutline({ intent: 'x', skeletonId: 'sk-1', dataSetId: 'ds-1' });
+		await generateOutline({ intent: 'x', skeletonId: 'sk-1', dataSetId: 'ds-1' }, TEST_SCOPE);
 
 		expect(getSkeleton).toHaveBeenCalledWith('sk-1');
-		expect(getDataSet).toHaveBeenCalledWith('ds-1');
+		expect(getDataSet).toHaveBeenCalledWith('ds-1', TEST_SCOPE);
 		const messages = chatComplete.mock.calls[0][0] as { content: string }[];
 		expect(messages[1].content).toContain('count (number)');
 	});
@@ -198,6 +205,7 @@ describe('fillFromOutline (stage 2)', () => {
 		await expect(
 			fillFromOutline(
 				{ intent: '', outline: edited, approvedHash: hashOutline(outline) },
+				TEST_SCOPE,
 				'report-1'
 			)
 		).rejects.toMatchObject({ type: '/problems/ai-outline-stale', status: 409 });
@@ -210,7 +218,11 @@ describe('fillFromOutline (stage 2)', () => {
 		chatComplete.mockResolvedValue({ content: goodFill });
 		updateReportDocument.mockResolvedValue(reportRow());
 
-		await fillFromOutline({ intent: '', outline, approvedHash: hashOutline(outline) }, 'report-1');
+		await fillFromOutline(
+			{ intent: '', outline, approvedHash: hashOutline(outline) },
+			TEST_SCOPE,
+			'report-1'
+		);
 
 		expect(updateReportDocument).toHaveBeenCalledOnce();
 		const [id, documentInput] = updateReportDocument.mock.calls[0];
@@ -228,7 +240,7 @@ describe('fillFromOutline (stage 2)', () => {
 		chatComplete.mockResolvedValue({ content: goodFill });
 		createReportWithDocument.mockResolvedValue(reportRow());
 
-		await fillFromOutline({ intent: '', outline, approvedHash: hashOutline(outline) });
+		await fillFromOutline({ intent: '', outline, approvedHash: hashOutline(outline) }, TEST_SCOPE);
 
 		expect(createReportWithDocument).toHaveBeenCalledOnce();
 		expect(updateReportDocument).not.toHaveBeenCalled();
@@ -240,6 +252,7 @@ describe('fillFromOutline (stage 2)', () => {
 		try {
 			await fillFromOutline(
 				{ intent: '', outline, approvedHash: hashOutline(outline) },
+				TEST_SCOPE,
 				'report-1'
 			);
 			expect.unreachable('must throw on unparseable fill');
@@ -274,6 +287,7 @@ describe('fillFromOutline (stage 2)', () => {
 		await expect(
 			fillFromOutline(
 				{ intent: '', outline: invalidOutline, approvedHash: hashOutline(invalidOutline) },
+				TEST_SCOPE,
 				'report-1'
 			)
 		).rejects.toMatchObject({ status: 422, type: '/problems/document-validation' });
@@ -286,7 +300,11 @@ describe('fillFromOutline (stage 2)', () => {
 		chatComplete.mockResolvedValue({ content: '{"unexpected": true}' });
 		updateReportDocument.mockResolvedValue(reportRow());
 
-		await fillFromOutline({ intent: '', outline, approvedHash: hashOutline(outline) }, 'report-1');
+		await fillFromOutline(
+			{ intent: '', outline, approvedHash: hashOutline(outline) },
+			TEST_SCOPE,
+			'report-1'
+		);
 
 		const documentInput = updateReportDocument.mock.calls[0][1];
 		expect(validateDocument(documentInput).ok).toBe(true);
@@ -298,7 +316,11 @@ describe('fillFromOutline (stage 2)', () => {
 		chatComplete.mockResolvedValue({ content: 'x'.repeat(300_000) });
 
 		await expect(
-			fillFromOutline({ intent: '', outline, approvedHash: hashOutline(outline) }, 'report-1')
+			fillFromOutline(
+				{ intent: '', outline, approvedHash: hashOutline(outline) },
+				TEST_SCOPE,
+				'report-1'
+			)
 		).rejects.toMatchObject({ status: 502, type: '/problems/ai-generation-failed' });
 		expect(updateReportDocument).not.toHaveBeenCalled();
 	});
