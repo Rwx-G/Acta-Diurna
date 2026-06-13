@@ -194,8 +194,11 @@ export function isPublicApiPath(pathname: string): boolean {
 function readBearerToken(request: Request): string | null {
 	const header = request.headers.get('authorization');
 	if (!header) return null;
-	const match = /^Bearer (.+)$/.exec(header);
-	return match ? match[1] : null;
+	// RFC 7235 BWS: tolerate a tab or repeated spaces between the scheme and the
+	// token (a well-formed `Bearer\t<token>` must not fail to a 401), and trim the
+	// captured token. Still strictly the `Bearer` scheme, still a single token.
+	const match = /^Bearer[ \t]+(.+)$/.exec(header);
+	return match ? match[1].trim() : null;
 }
 
 const unauthorizedApi = (): AppError =>

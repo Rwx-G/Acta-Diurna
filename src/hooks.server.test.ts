@@ -233,6 +233,18 @@ describe('apiAuth (PAT bearer realm)', () => {
 		expect(response.status).toBe(200);
 	});
 
+	it('accepts a tab or multiple spaces between scheme and token (RFC 7235 BWS), trimming it', async () => {
+		authenticateApiToken.mockResolvedValue({ tokenId: 'tok-bws' });
+		const { event, resolve, response } = await runApiAuth('/api/v1/whoami', {
+			address: '203.0.113.15',
+			headers: { authorization: 'Bearer\t  acta_pat_good  ' }
+		});
+		expect(authenticateApiToken).toHaveBeenCalledWith('acta_pat_good');
+		expect(event.locals.apiIdentity).toEqual({ tokenId: 'tok-bws' });
+		expect(resolve).toHaveBeenCalledOnce();
+		expect(response.status).toBe(200);
+	});
+
 	it('rate-limits repeated FAILED bearer attempts with a 429 problem+json', async () => {
 		authenticateApiToken.mockResolvedValue(null);
 		const address = '203.0.113.250';
