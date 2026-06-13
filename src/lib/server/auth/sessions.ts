@@ -49,6 +49,14 @@ const TOKEN_BYTES = 32;
 
 export interface AuthorSession {
 	id: string;
+	/**
+	 * The authenticated author (story 8.3). Populated only by a multi-mode
+	 * magic-link sign-in; null on a single-mode password session (one implicit
+	 * author owns everything, so the column stays null and `resolveAuthorScope`
+	 * falls back to the implicit author). This is what carries the logged-in
+	 * author into the tenancy scope, making 8.2's owner filtering real.
+	 */
+	authorId: string | null;
 	createdAt: Date;
 	expiresAt: Date;
 }
@@ -84,8 +92,13 @@ export interface CreatedReaderSession {
 /**
  * Creates an author-realm session: a 256-bit random token goes to the caller
  * (cookie), only its SHA-256 hash is stored.
+ *
+ * `authorId` binds the session to the author it authenticated (story 8.3): a
+ * multi-mode magic-link sign-in passes the minted author id so the workspace
+ * resolves the REAL logged-in author (tenancy, 8.2); a single-mode password
+ * sign-in omits it (null - one implicit author owns everything).
  */
-export async function createAuthorSession(): Promise<CreatedSession> {
+export async function createAuthorSession(authorId: string | null = null): Promise<CreatedSession> {
 	const token = randomBytes(TOKEN_BYTES).toString('base64url');
 	const expiresAt = new Date(Date.now() + AUTHOR_SESSION_TTL_MS);
 
@@ -95,6 +108,7 @@ export async function createAuthorSession(): Promise<CreatedSession> {
 			id: uuidv7(),
 			realm: 'author',
 			tokenHash: hashToken(token),
+			authorId,
 			expiresAt
 		});
 
@@ -120,7 +134,12 @@ export async function validateAuthorSession(token: string): Promise<AuthorSessio
 		return null;
 	}
 
-	return { id: row.id, createdAt: row.createdAt, expiresAt: row.expiresAt };
+	return {
+		id: row.id,
+		authorId: row.authorId,
+		createdAt: row.createdAt,
+		expiresAt: row.expiresAt
+	};
 }
 
 /** Destroys the author session matching the raw token (logout). Unknown tokens are a no-op. */

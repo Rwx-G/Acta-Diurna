@@ -100,6 +100,7 @@ function seedSession(token: string, overrides: Partial<SessionRow> = {}): Sessio
 		id: '01970000-0000-7000-8000-000000000000',
 		realm: 'author',
 		tokenHash: sha256(token),
+		authorId: null,
 		createdAt: new Date(Date.now() - 1000),
 		expiresAt: new Date(Date.now() + 60_000),
 		metadata: null,
@@ -169,6 +170,16 @@ describe('createAuthorSession', () => {
 			);
 		}
 	});
+
+	it('stores a null author_id by default (single-mode password session)', async () => {
+		await createAuthorSession();
+		expect(dbState.inserted[0].authorId).toBeNull();
+	});
+
+	it('binds the author id when one is passed (multi-mode magic-link session)', async () => {
+		await createAuthorSession('author-id-1');
+		expect(dbState.inserted[0].authorId).toBe('author-id-1');
+	});
 });
 
 describe('validateAuthorSession', () => {
@@ -177,7 +188,12 @@ describe('validateAuthorSession', () => {
 
 		const session = await validateAuthorSession('some-token');
 
-		expect(session).toEqual({ id: row.id, createdAt: row.createdAt, expiresAt: row.expiresAt });
+		expect(session).toEqual({
+			id: row.id,
+			authorId: row.authorId,
+			createdAt: row.createdAt,
+			expiresAt: row.expiresAt
+		});
 		expect(dbState.whereFilters).toEqual([{ column: 'token_hash', value: sha256('some-token') }]);
 	});
 
