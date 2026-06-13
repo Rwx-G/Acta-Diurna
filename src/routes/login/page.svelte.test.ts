@@ -17,6 +17,9 @@ describe('login page', () => {
 		await expect.element(getByRole('button', { name: 'Sign in' })).toBeVisible();
 		// The magic-link path is absent in single mode: no email field, never both.
 		expect(container.querySelector('input[type="email"]')).toBeNull();
+		// Both login actions are named, so the password form must target `?/password`
+		// (a bare default action cannot coexist with the named magic-link action).
+		expect(container.querySelector('form')?.getAttribute('action')).toBe('?/password');
 	});
 
 	it('shows the uniform error message after a failed attempt (single mode)', async () => {

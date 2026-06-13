@@ -19,9 +19,9 @@ import { isPlausibleEmail, normalizeEmail } from '$lib/server/reader';
  * - decides the path:
  *
  *  - SINGLE mode: the password action is byte-identical to today (no email path,
- *    no magic link). The default action verifies the password.
+ *    no magic link). The `password` action verifies the password.
  *  - MULTI mode: the password login is DISABLED (the password field is absent and
- *    the default action refuses), and the magic-link path is the only author
+ *    the `password` action refuses), and the magic-link path is the only author
  *    entry: the `request-sign-in` action mails a single-use link to an in-domain
  *    email and ALWAYS returns the same neutral confirmation (enumeration-safe).
  *
@@ -34,6 +34,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return { multi: isMultiAuthor() };
 };
 
+// Both actions are NAMED (`password`, `request-sign-in`): SvelteKit forbids a
+// `default` action coexisting with named ones, so the single-mode password path
+// posts to `?/password` and the multi-mode magic-link path to `?/request-sign-in`.
 export const actions: Actions = {
 	/**
 	 * Password sign-in (single mode only). In multi mode it REFUSES: the password
@@ -42,7 +45,7 @@ export const actions: Actions = {
 	 * (no argon2 work, no oracle), because there is structurally no password author
 	 * in multi mode.
 	 */
-	default: async ({ request, cookies }) => {
+	password: async ({ request, cookies }) => {
 		if (isMultiAuthor()) {
 			// Password login is disabled in multi mode (story 8.3 AC). Refuse without
 			// touching the password hash - there is no password author here.

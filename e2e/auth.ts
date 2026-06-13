@@ -20,7 +20,7 @@ import { E2E_AUTHOR_PASSWORD, E2E_BASE_URL } from './fixtures.ts';
  * remains only because of the APIRequestContext behavior above.
  */
 export async function signIn(page: Page): Promise<void> {
-	const response = await page.request.post(`${E2E_BASE_URL}/login`, {
+	const response = await page.request.post(`${E2E_BASE_URL}/login?/password`, {
 		headers: { origin: E2E_BASE_URL, 'content-type': 'application/x-www-form-urlencoded' },
 		form: { password: E2E_AUTHOR_PASSWORD },
 		maxRedirects: 0,

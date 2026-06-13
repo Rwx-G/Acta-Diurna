@@ -40,7 +40,7 @@
 			{/if}
 		</form>
 	{:else}
-		<form method="POST" class="card">
+		<form method="POST" action="?/password" class="card">
 			<Brand layout="stacked" markSize={52} wordmarkSize={20} />
 			<h1>Sign in to your workspace</h1>
 

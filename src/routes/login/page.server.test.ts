@@ -40,10 +40,10 @@ function loginRequest(fields: Record<string, string>): Request {
 }
 
 async function callAction(fields: Record<string, string>) {
-	return await actions.default({
+	return await actions.password({
 		request: loginRequest(fields),
 		cookies: {}
-	} as Parameters<typeof actions.default>[0]);
+	} as Parameters<typeof actions.password>[0]);
 }
 
 function requestSignInEvent(fields: Record<string, string>) {
