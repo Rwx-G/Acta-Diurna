@@ -17,6 +17,13 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 import {
 	createReport,
 	createReportWithDocument,
@@ -120,7 +127,7 @@ describe('list_reports tool', () => {
 		];
 		listReportsMock.mockResolvedValue(summaries);
 
-		const result = await listReportsTool();
+		const result = await listReportsTool(TEST_SCOPE);
 
 		expect(listReportsMock).toHaveBeenCalledOnce();
 		const body = payload(result) as { items: unknown[] };
@@ -137,9 +144,9 @@ describe('get_report tool', () => {
 		>;
 		getReportMock.mockResolvedValue(report);
 
-		const result = await getReportTool(REPORT_ID);
+		const result = await getReportTool(REPORT_ID, TEST_SCOPE);
 
-		expect(getReportMock).toHaveBeenCalledWith(REPORT_ID);
+		expect(getReportMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE);
 		const body = payload(result) as { id: string };
 		expect(body.id).toBe(REPORT_ID);
 		expect(result.isError).toBeUndefined();
@@ -150,7 +157,7 @@ describe('get_report tool', () => {
 			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
 		);
 
-		const result = await getReportTool('unknown');
+		const result = await getReportTool('unknown', TEST_SCOPE);
 
 		expect(result.isError).toBe(true);
 		const problem = payload(result) as { type: string; title: string; status: number };
@@ -169,7 +176,7 @@ describe('get_report tool', () => {
 			})
 		);
 
-		const result = await getReportTool(REPORT_ID);
+		const result = await getReportTool(REPORT_ID, TEST_SCOPE);
 
 		expect(result.isError).toBe(true);
 		const problem = payload(result) as { errors: { path: string }[] };
@@ -178,7 +185,7 @@ describe('get_report tool', () => {
 
 	it('re-throws a non-AppError so the SDK renders an internal error, not a tool result', async () => {
 		getReportMock.mockRejectedValue(new Error('postgres://secret connection lost'));
-		await expect(getReportTool(REPORT_ID)).rejects.toThrow('postgres://secret');
+		await expect(getReportTool(REPORT_ID, TEST_SCOPE)).rejects.toThrow('postgres://secret');
 	});
 });
 
@@ -188,9 +195,9 @@ describe('create_report tool', () => {
 	it('seeds a blank starter via createReport(title) when no document is given', async () => {
 		createReportMock.mockResolvedValue(REPORT);
 
-		const result = await createReportTool({ title: 'New' });
+		const result = await createReportTool({ title: 'New' }, TEST_SCOPE);
 
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('New');
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('New', TEST_SCOPE);
 		expect(createReportWithDocumentMock).not.toHaveBeenCalled();
 		expect((payload(result) as { id: string }).id).toBe(REPORT.id);
 		expect(result.isError).toBeUndefined();
@@ -199,18 +206,18 @@ describe('create_report tool', () => {
 	it('falls back to the default title when none is supplied', async () => {
 		createReportMock.mockResolvedValue(REPORT);
 
-		await createReportTool({});
+		await createReportTool({}, TEST_SCOPE);
 
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE);
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE, TEST_SCOPE);
 	});
 
 	it('instantiates the given document via createReportWithDocument', async () => {
 		createReportWithDocumentMock.mockResolvedValue(REPORT);
 		const document = { version: 1, title: 'Doc', sections: [] };
 
-		await createReportTool({ document });
+		await createReportTool({ document }, TEST_SCOPE);
 
-		expect(createReportWithDocumentMock).toHaveBeenCalledExactlyOnceWith(document);
+		expect(createReportWithDocumentMock).toHaveBeenCalledExactlyOnceWith(document, TEST_SCOPE);
 		expect(createReportMock).not.toHaveBeenCalled();
 	});
 
@@ -224,7 +231,7 @@ describe('create_report tool', () => {
 			})
 		);
 
-		const result = await createReportTool({ document: { version: 1 } });
+		const result = await createReportTool({ document: { version: 1 } }, TEST_SCOPE);
 
 		expect(result.isError).toBe(true);
 		const problem = payload(result) as {
@@ -245,33 +252,42 @@ describe('update_report tool', () => {
 		updateReportDocumentMock.mockResolvedValue(REPORT);
 		const document = { version: 1, title: 'X', sections: [] };
 
-		await updateReportTool({ id: ID, document });
+		await updateReportTool({ id: ID, document }, TEST_SCOPE);
 
-		expect(updateReportDocumentMock).toHaveBeenCalledExactlyOnceWith(ID, document, undefined);
+		expect(updateReportDocumentMock).toHaveBeenCalledExactlyOnceWith(
+			ID,
+			document,
+			TEST_SCOPE,
+			undefined
+		);
 		expect(updateReportTitleMock).not.toHaveBeenCalled();
 	});
 
 	it('routes a title-only update to updateReportTitle', async () => {
 		updateReportTitleMock.mockResolvedValue(REPORT);
 
-		await updateReportTool({ id: ID, title: 'Renamed' });
+		await updateReportTool({ id: ID, title: 'Renamed' }, TEST_SCOPE);
 
-		expect(updateReportTitleMock).toHaveBeenCalledExactlyOnceWith(ID, 'Renamed');
+		expect(updateReportTitleMock).toHaveBeenCalledExactlyOnceWith(ID, 'Renamed', TEST_SCOPE);
 		expect(updateReportDocumentMock).not.toHaveBeenCalled();
 	});
 
 	it('does ONE guarded write merging the title into the document when both are present', async () => {
 		updateReportDocumentMock.mockResolvedValue(REPORT);
 
-		await updateReportTool({
-			id: ID,
-			document: { version: 1, title: 'From doc', sections: [] },
-			title: 'Final'
-		});
+		await updateReportTool(
+			{
+				id: ID,
+				document: { version: 1, title: 'From doc', sections: [] },
+				title: 'Final'
+			},
+			TEST_SCOPE
+		);
 
 		expect(updateReportDocumentMock).toHaveBeenCalledExactlyOnceWith(
 			ID,
 			{ version: 1, title: 'Final', sections: [] },
+			TEST_SCOPE,
 			undefined
 		);
 		expect(updateReportTitleMock).not.toHaveBeenCalled();
@@ -281,11 +297,14 @@ describe('update_report tool', () => {
 		updateReportDocumentMock.mockResolvedValue(REPORT);
 		const iso = '2026-06-12T10:00:00.000Z';
 
-		await updateReportTool({ id: ID, document: { version: 1 }, expectedUpdatedAt: iso });
+		await updateReportTool(
+			{ id: ID, document: { version: 1 }, expectedUpdatedAt: iso },
+			TEST_SCOPE
+		);
 
 		const call = updateReportDocumentMock.mock.calls[0];
-		expect(call[2]).toBeInstanceOf(Date);
-		expect((call[2] as Date).toISOString()).toBe(iso);
+		expect(call[3]).toBeInstanceOf(Date);
+		expect((call[3] as Date).toISOString()).toBe(iso);
 	});
 
 	it('surfaces the service 409 on a stale token and writes nothing else (atomic)', async () => {
@@ -297,12 +316,15 @@ describe('update_report tool', () => {
 			})
 		);
 
-		const result = await updateReportTool({
-			id: ID,
-			document: { version: 1, title: 'D', sections: [] },
-			title: 'Final',
-			expectedUpdatedAt: '2026-06-12T10:00:00.000Z'
-		});
+		const result = await updateReportTool(
+			{
+				id: ID,
+				document: { version: 1, title: 'D', sections: [] },
+				title: 'Final',
+				expectedUpdatedAt: '2026-06-12T10:00:00.000Z'
+			},
+			TEST_SCOPE
+		);
 
 		expect(result.isError).toBe(true);
 		expect((payload(result) as { type: string }).type).toBe('/problems/report-conflict');
@@ -311,7 +333,7 @@ describe('update_report tool', () => {
 	});
 
 	it('rejects an empty update (no title, no document) as a 400, writing nothing', async () => {
-		const result = await updateReportTool({ id: ID });
+		const result = await updateReportTool({ id: ID }, TEST_SCOPE);
 
 		expect(result.isError).toBe(true);
 		expect((payload(result) as { status: number }).status).toBe(400);
@@ -324,9 +346,9 @@ describe('publish_report tool', () => {
 	it('delegates to publishReport(id) with no token when none is given', async () => {
 		publishReportMock.mockResolvedValue({ ...REPORT, status: 'published' });
 
-		const result = await publishReportTool({ id: ID });
+		const result = await publishReportTool({ id: ID }, TEST_SCOPE);
 
-		expect(publishReportMock).toHaveBeenCalledExactlyOnceWith(ID, undefined);
+		expect(publishReportMock).toHaveBeenCalledExactlyOnceWith(ID, TEST_SCOPE, undefined);
 		expect((payload(result) as { status: string }).status).toBe('published');
 	});
 
@@ -334,10 +356,10 @@ describe('publish_report tool', () => {
 		publishReportMock.mockResolvedValue(REPORT);
 		const iso = '2026-06-12T10:00:00.000Z';
 
-		await publishReportTool({ id: ID, expectedUpdatedAt: iso });
+		await publishReportTool({ id: ID, expectedUpdatedAt: iso }, TEST_SCOPE);
 
 		const call = publishReportMock.mock.calls[0];
-		expect((call[1] as Date).toISOString()).toBe(iso);
+		expect((call[2] as Date).toISOString()).toBe(iso);
 	});
 });
 
@@ -345,9 +367,9 @@ describe('unpublish_report tool', () => {
 	it('delegates to unpublishToDraft(id)', async () => {
 		unpublishToDraftMock.mockResolvedValue(REPORT);
 
-		const result = await unpublishReportTool(ID);
+		const result = await unpublishReportTool(ID, TEST_SCOPE);
 
-		expect(unpublishToDraftMock).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(unpublishToDraftMock).toHaveBeenCalledExactlyOnceWith(ID, TEST_SCOPE);
 		expect((payload(result) as { status: string }).status).toBe('draft');
 	});
 });
@@ -356,9 +378,9 @@ describe('delete_report tool', () => {
 	it('deletes a draft via deleteDraft(id) and returns a deleted acknowledgement', async () => {
 		deleteDraftMock.mockResolvedValue();
 
-		const result = await deleteReportTool(ID);
+		const result = await deleteReportTool(ID, TEST_SCOPE);
 
-		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith(ID, TEST_SCOPE);
 		expect(result.isError).toBeUndefined();
 		expect(payload(result)).toEqual({ id: ID, deleted: true });
 	});
@@ -372,7 +394,7 @@ describe('delete_report tool', () => {
 			})
 		);
 
-		const result = await deleteReportTool(ID);
+		const result = await deleteReportTool(ID, TEST_SCOPE);
 
 		expect(result.isError).toBe(true);
 		const problem = payload(result) as { status: number; type: string };

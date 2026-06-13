@@ -11,6 +11,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import type { AuthorScope } from '$lib/server/authors';
 import {
 	createReportTool,
 	deleteReportTool,
@@ -51,7 +52,7 @@ export const MCP_SERVER_VERSION = '0.6.0';
  * no cross-request server state to share, so construction is cheap and isolation
  * is free.
  */
-export function buildMcpServer(): McpServer {
+export function buildMcpServer(scope: AuthorScope): McpServer {
 	const server = new McpServer(
 		{ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
 		{
@@ -94,7 +95,7 @@ export function buildMcpServer(): McpServer {
 				'Lists every report (id, title, status, updatedAt), most recently updated first.',
 			annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
 		},
-		() => listReportsTool()
+		() => listReportsTool(scope)
 	);
 
 	server.registerTool(
@@ -111,7 +112,7 @@ export function buildMcpServer(): McpServer {
 			inputSchema: { id: z.string().uuid().describe('The report id (UUID).') },
 			annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
 		},
-		({ id }) => getReportTool(id)
+		({ id }) => getReportTool(id, scope)
 	);
 
 	// Write tools (story 5.2): readOnlyHint:false; delete carries destructiveHint.
@@ -136,7 +137,7 @@ export function buildMcpServer(): McpServer {
 			// Not idempotent: each call mints a new report (a fresh id).
 			annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }
 		},
-		(input) => createReportTool(input)
+		(input) => createReportTool(input, scope)
 	);
 
 	server.registerTool(
@@ -161,7 +162,7 @@ export function buildMcpServer(): McpServer {
 			// a stale re-apply a conflict rather than a silent overwrite.
 			annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false }
 		},
-		(input) => updateReportTool(input)
+		(input) => updateReportTool(input, scope)
 	);
 
 	server.registerTool(
@@ -175,7 +176,7 @@ export function buildMcpServer(): McpServer {
 			inputSchema: { id: reportIdArg, expectedUpdatedAt: expectedUpdatedAtArg.optional() },
 			annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false }
 		},
-		(input) => publishReportTool(input)
+		(input) => publishReportTool(input, scope)
 	);
 
 	server.registerTool(
@@ -188,7 +189,7 @@ export function buildMcpServer(): McpServer {
 			inputSchema: { id: reportIdArg },
 			annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false }
 		},
-		({ id }) => unpublishReportTool(id)
+		({ id }) => unpublishReportTool(id, scope)
 	);
 
 	server.registerTool(
@@ -206,7 +207,7 @@ export function buildMcpServer(): McpServer {
 				openWorldHint: false
 			}
 		},
-		({ id }) => deleteReportTool(id)
+		({ id }) => deleteReportTool(id, scope)
 	);
 
 	return server;

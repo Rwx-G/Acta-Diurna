@@ -13,7 +13,10 @@ function mcpRequest(body: unknown): Parameters<typeof POST>[0] {
 		},
 		body: JSON.stringify(body)
 	});
-	return { request } as unknown as Parameters<typeof POST>[0];
+	return {
+		request,
+		locals: { apiIdentity: { tokenId: 'tok', ownerId: '01970000-0000-7000-8000-0000000000aa' } }
+	} as unknown as Parameters<typeof POST>[0];
 }
 
 /** Reads a single JSON-RPC response whether the transport answered JSON or SSE. */

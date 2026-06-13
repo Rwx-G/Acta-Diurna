@@ -17,6 +17,7 @@
  * never leaked as a tool result. Auth failure is NOT a tool result: it is the
  * transport-level 401 the `apiAuth` hook returns before the route runs.
  */
+import type { AuthorScope } from '$lib/server/authors';
 import {
 	createReport,
 	createReportWithDocument,
@@ -85,14 +86,14 @@ export function listSkeletonsTool(): Promise<McpToolResult> {
 	return withProblemMapping(async () => jsonResult({ items: await listSkeletons() }));
 }
 
-/** `list_reports` -> the report summaries (`listReports`, id/title/status/updatedAt). */
-export function listReportsTool(): Promise<McpToolResult> {
-	return withProblemMapping(async () => jsonResult({ items: await listReports() }));
+/** `list_reports` -> the OWNER-scoped report summaries (`listReports`, id/title/status/updatedAt). */
+export function listReportsTool(scope: AuthorScope): Promise<McpToolResult> {
+	return withProblemMapping(async () => jsonResult({ items: await listReports(scope) }));
 }
 
-/** `get_report` -> one full report (`getReport`); an unknown id is the service 404 as a tool error. */
-export function getReportTool(id: string): Promise<McpToolResult> {
-	return withProblemMapping(async () => jsonResult(await getReport(id)));
+/** `get_report` -> one full report (`getReport`); an unknown or cross-author id is the service 404 as a tool error. */
+export function getReportTool(id: string, scope: AuthorScope): Promise<McpToolResult> {
+	return withProblemMapping(async () => jsonResult(await getReport(id, scope)));
 }
 
 /*
@@ -118,15 +119,18 @@ function toExpectedDate(expectedUpdatedAt: string | undefined): Date | undefined
  * given (the skeleton/instantiation path), else `createReport(title)` with the
  * blank starter (mirroring `POST /api/v1/reports`). Returns the created report.
  */
-export function createReportTool(input: {
-	title?: string;
-	document?: unknown;
-}): Promise<McpToolResult> {
+export function createReportTool(
+	input: {
+		title?: string;
+		document?: unknown;
+	},
+	scope: AuthorScope
+): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
 		if (input.document !== undefined) {
-			return jsonResult(await createReportWithDocument(input.document));
+			return jsonResult(await createReportWithDocument(input.document, scope));
 		}
-		return jsonResult(await createReport(input.title ?? DEFAULT_REPORT_TITLE));
+		return jsonResult(await createReport(input.title ?? DEFAULT_REPORT_TITLE, scope));
 	});
 }
 
@@ -136,12 +140,15 @@ export function createReportTool(input: {
  * write with `document.title = title`; document-only / title-only route to the
  * matching service. A stale `expectedUpdatedAt` is the service 409.
  */
-export function updateReportTool(input: {
-	id: string;
-	title?: string;
-	document?: unknown;
-	expectedUpdatedAt?: string;
-}): Promise<McpToolResult> {
+export function updateReportTool(
+	input: {
+		id: string;
+		title?: string;
+		document?: unknown;
+		expectedUpdatedAt?: string;
+	},
+	scope: AuthorScope
+): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
 		const update: ReportUpdate = {
 			id: input.id,
@@ -149,29 +156,32 @@ export function updateReportTool(input: {
 			document: input.document,
 			expectedUpdatedAt: toExpectedDate(input.expectedUpdatedAt)
 		};
-		return jsonResult(await composeReportUpdate(update));
+		return jsonResult(await composeReportUpdate(update, scope));
 	});
 }
 
-/** `publish_report` -> `publishReport(id, expectedUpdatedAt?)`; idempotent on a published report. */
-export function publishReportTool(input: {
-	id: string;
-	expectedUpdatedAt?: string;
-}): Promise<McpToolResult> {
+/** `publish_report` -> `publishReport(id, scope, expectedUpdatedAt?)`; idempotent on a published report. */
+export function publishReportTool(
+	input: {
+		id: string;
+		expectedUpdatedAt?: string;
+	},
+	scope: AuthorScope
+): Promise<McpToolResult> {
 	return withProblemMapping(async () =>
-		jsonResult(await publishReport(input.id, toExpectedDate(input.expectedUpdatedAt)))
+		jsonResult(await publishReport(input.id, scope, toExpectedDate(input.expectedUpdatedAt)))
 	);
 }
 
-/** `unpublish_report` -> `unpublishToDraft(id)`; idempotent on a draft, no concurrency token. */
-export function unpublishReportTool(id: string): Promise<McpToolResult> {
-	return withProblemMapping(async () => jsonResult(await unpublishToDraft(id)));
+/** `unpublish_report` -> `unpublishToDraft(id, scope)`; idempotent on a draft, no concurrency token. */
+export function unpublishReportTool(id: string, scope: AuthorScope): Promise<McpToolResult> {
+	return withProblemMapping(async () => jsonResult(await unpublishToDraft(id, scope)));
 }
 
-/** `delete_report` -> `deleteDraft(id)`; a published report is the service 409 (not deletable). */
-export function deleteReportTool(id: string): Promise<McpToolResult> {
+/** `delete_report` -> `deleteDraft(id, scope)`; a published report is the service 409 (not deletable). */
+export function deleteReportTool(id: string, scope: AuthorScope): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
-		await deleteDraft(id);
+		await deleteDraft(id, scope);
 		return jsonResult({ id, deleted: true });
 	});
 }

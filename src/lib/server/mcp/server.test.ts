@@ -18,6 +18,13 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 import {
 	createReport,
 	createReportWithDocument,
@@ -67,7 +74,7 @@ beforeEach(async () => {
 	listSkeletonsMock.mockResolvedValue([]);
 
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-	const server = buildMcpServer();
+	const server = buildMcpServer(TEST_SCOPE);
 	client = new Client({ name: 'test-client', version: '0.0.0' });
 	await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 });
@@ -135,7 +142,7 @@ describe('buildMcpServer', () => {
 			ReturnType<typeof getReport>
 		>);
 		await client.callTool({ name: 'get_report', arguments: { id: VALID_REPORT_ID } });
-		expect(getReportMock).toHaveBeenCalledWith(VALID_REPORT_ID);
+		expect(getReportMock).toHaveBeenCalledWith(VALID_REPORT_ID, TEST_SCOPE);
 	});
 
 	it('rejects a malformed get_report id at the SDK tool boundary (no service call)', async () => {
@@ -154,7 +161,7 @@ describe('buildMcpServer', () => {
 			name: 'get_report',
 			arguments: { id: VALID_REPORT_ID }
 		});
-		expect(getReportMock).toHaveBeenCalledWith(VALID_REPORT_ID);
+		expect(getReportMock).toHaveBeenCalledWith(VALID_REPORT_ID, TEST_SCOPE);
 		expect(result.isError).toBe(true);
 		const content = result.content as { type: string; text: string }[];
 		const problem = JSON.parse(content[0].text) as { status: number; type: string };
@@ -165,7 +172,7 @@ describe('buildMcpServer', () => {
 	it('create_report delegates through the SDK to createReport(title)', async () => {
 		createReportMock.mockResolvedValue(REPORT);
 		const result = await client.callTool({ name: 'create_report', arguments: { title: 'New' } });
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('New');
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('New', TEST_SCOPE);
 		expect(result.isError).toBeFalsy();
 	});
 
@@ -182,6 +189,7 @@ describe('buildMcpServer', () => {
 		expect(updateReportDocumentMock).toHaveBeenCalledExactlyOnceWith(
 			VALID_REPORT_ID,
 			{ version: 1, title: 'Final', sections: [] },
+			TEST_SCOPE,
 			undefined
 		);
 		expect(updateReportTitleMock).not.toHaveBeenCalled();
@@ -194,14 +202,18 @@ describe('buildMcpServer', () => {
 		await client.callTool({ name: 'publish_report', arguments: { id: VALID_REPORT_ID } });
 		await client.callTool({ name: 'unpublish_report', arguments: { id: VALID_REPORT_ID } });
 
-		expect(publishReportMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID, undefined);
-		expect(unpublishToDraftMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID);
+		expect(publishReportMock).toHaveBeenCalledExactlyOnceWith(
+			VALID_REPORT_ID,
+			TEST_SCOPE,
+			undefined
+		);
+		expect(unpublishToDraftMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID, TEST_SCOPE);
 	});
 
 	it('delete_report deletes a draft and 409s on a published report (no silent skip)', async () => {
 		deleteDraftMock.mockResolvedValue();
 		const ok = await client.callTool({ name: 'delete_report', arguments: { id: VALID_REPORT_ID } });
-		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID);
+		expect(deleteDraftMock).toHaveBeenCalledExactlyOnceWith(VALID_REPORT_ID, TEST_SCOPE);
 		expect(ok.isError).toBeFalsy();
 
 		deleteDraftMock.mockRejectedValue(

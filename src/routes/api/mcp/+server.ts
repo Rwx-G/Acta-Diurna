@@ -1,5 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { RequestHandler } from './$types';
+import { resolveApiAuthorScope } from '$lib/server/authors';
 import { buildMcpServer } from '$lib/server/mcp/server';
 
 /**
@@ -30,8 +31,14 @@ import { buildMcpServer } from '$lib/server/mcp/server';
  * response rather than holding an SSE stream open (the read tools are
  * request/response, no server-initiated streaming).
  */
-export const POST: RequestHandler = async ({ request }) => {
-	const server = buildMcpServer();
+export const POST: RequestHandler = async ({ request, locals }) => {
+	// The PAT is per-author (story 8.2): resolve the authenticated identity into an
+	// AuthorScope so every tool delegates to the SAME owner-scoped services the REST
+	// surface uses. `apiIdentity` is non-null here (apiAuth gated this non-public
+	// path), so a tool only ever reaches its owner's resources. Single mode resolves
+	// to the implicit author (a no-op), preserving today's behavior.
+	const scope = await resolveApiAuthorScope(locals.apiIdentity!);
+	const server = buildMcpServer(scope);
 	const transport = new WebStandardStreamableHTTPServerTransport({
 		sessionIdGenerator: undefined,
 		enableJsonResponse: true
