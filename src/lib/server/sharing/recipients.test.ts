@@ -10,9 +10,14 @@ import {
 } from './recipients';
 import type { ResolvedShare } from './shares';
 
+// Recipient allow-lists exist only in MULTI mode (story 8.4): single mode has no
+// email and refuses the operation. The suite runs under multi mode (the mode in
+// which these paths are reachable); a dedicated test below flips to single to
+// assert the refusal.
+const modeState = vi.hoisted(() => ({ multi: true }));
 vi.mock('$lib/server/mode', () => ({
-	operatingMode: () => 'single',
-	isMultiAuthor: () => false
+	operatingMode: () => (modeState.multi ? 'multi' : 'single'),
+	isMultiAuthor: () => modeState.multi
 }));
 
 // `ownsShare` resolves the share's report and runs the SCOPED getReport. Mock it
@@ -162,6 +167,7 @@ beforeEach(() => {
 	dbState.rows = [];
 	dbState.inserted = [];
 	dbState.shareIds = new Set([SHARE_ID, OTHER_SHARE_ID]);
+	modeState.multi = true;
 });
 
 describe('setShareRecipients', () => {
@@ -264,6 +270,17 @@ describe('setShareRecipients', () => {
 		await expect(
 			setShareRecipients('not-a-uuid', ['a@example.com'], TEST_SCOPE)
 		).rejects.toBeInstanceOf(AppError);
+		expect(dbState.inserted).toHaveLength(0);
+	});
+
+	it('single mode refuses the operation (409) and writes nothing (story 8.4)', async () => {
+		// No SMTP, no email to verify recipients against: a recipient list cannot
+		// gate anyone, so the operation is refused cleanly rather than silently
+		// writing a list that would never be enforced.
+		modeState.multi = false;
+		await expect(setShareRecipients(SHARE_ID, ['a@example.com'], TEST_SCOPE)).rejects.toMatchObject(
+			{ status: 409, type: '/problems/restricted-sharing-unavailable' }
+		);
 		expect(dbState.inserted).toHaveLength(0);
 	});
 });

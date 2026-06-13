@@ -19,10 +19,24 @@ import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { shares, type ShareRow } from '$lib/server/db/schema';
 import { assertShareable, getReport } from '$lib/server/documents/reports';
+import { isMultiAuthor } from '$lib/server/mode';
 import { AppError } from '$lib/server/problem';
 import { generateShareToken, hashShareToken } from './tokens';
 
-/** Share-link modes (FR20): restricted = recipient list (3.4), open = anyone with the link. */
+/**
+ * Share-link modes (FR20): restricted = recipient list (3.4), open = anyone with
+ * the link.
+ *
+ * The mode is meaningful only in MULTI mode, where the reader verifies by email
+ * (3.3) and the restricted list gates which emails may. In SINGLE mode there is
+ * no email and no verification, so a share is a bare consultation token: it is
+ * always stored as `open` (the only mode single mode mints, see `createShare`),
+ * and the reader gate serves an `open` share directly. A `restricted` share is
+ * therefore only ever a MULTI-era artifact; if such a share is reached while the
+ * instance runs SINGLE mode (SMTP was removed), the gate treats it as CLOSED
+ * rather than silently opening it to anyone with the link - the transition never
+ * escalates access (story 8.4 transition rule, see `servesConsultation`).
+ */
 export type ShareMode = 'restricted' | 'open';
 
 /** A share's lifecycle state, derived from `revokedAt`/`expiresAt` against now. */
@@ -80,6 +94,43 @@ export function isExpired(share: Pick<ShareRow, 'expiresAt'>, now: Date = new Da
 	return share.expiresAt !== null && share.expiresAt.getTime() <= now.getTime();
 }
 
+/**
+ * Whether a LIVE share should be served as a consultation token (story 8.4):
+ * read access granted DIRECTLY by holding the link, with no email verification.
+ * This is the SINGLE-mode reader path, and the caller must already have confirmed
+ * the share is `active` (the consultation grant never resurrects a revoked or
+ * expired share - that is still the neutral 404).
+ *
+ * The rule honors the CURRENT operating mode, never the mode the share was minted
+ * in, so a stale share can never escalate access across a mode change:
+ *
+ *   - MULTI mode: always false. The verified magic-link flow (Epic 3) runs for
+ *     every share, including a SINGLE-era consultation share - which is `open`,
+ *     so it becomes open-with-verification (a STRICTER gate, never an escalation).
+ *   - SINGLE mode + `open` share: true. The consultation tokens single mode mints
+ *     are `open`, and so are MULTI-era open shares; both serve directly.
+ *   - SINGLE mode + `restricted` share: FALSE. A restricted share is a MULTI-era
+ *     artifact whose recipient list cannot be enforced without email. Serving it
+ *     directly would broaden a recipient-gated link to anyone holding it, so it is
+ *     treated as CLOSED (the gate serves the neutral 404) until the instance runs
+ *     multi mode again. Closed-not-opened is the safe transition.
+ */
+export function servesConsultation(share: Pick<ResolvedShare, 'mode'>): boolean {
+	if (isMultiAuthor()) return false;
+	return share.mode === 'open';
+}
+
+/** 409 refusing a restricted-mode / recipient operation while the instance runs single mode. */
+function restrictedModeUnavailable(): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Restricted sharing is unavailable',
+		type: '/problems/restricted-sharing-unavailable',
+		detail:
+			'This instance has no SMTP configured, so it cannot verify recipients. Shares are consultation links anyone with the link can open. Configure SMTP to enable restricted, per-recipient sharing.'
+	});
+}
+
 function toSummary(row: ShareRow): ShareSummary {
 	return {
 		id: row.id,
@@ -105,6 +156,12 @@ function expiryInPast(): AppError {
  * (409 `/problems/report-not-published`) BEFORE minting a token, so no token is
  * ever generated for a non-shareable report. Mints a 256-bit token, stores only
  * its hash plus the metadata, and returns the raw token once (URL only).
+ *
+ * Mode by operating mode (story 8.4): in MULTI mode the author chooses
+ * restricted/open (default `restricted`). In SINGLE mode there is no email and no
+ * recipient verification, so the share is always a consultation token, stored as
+ * `open`; an explicit `restricted` request is REFUSED (409) rather than silently
+ * downgraded, so the caller is never misled into thinking a recipient list took.
  */
 export async function createShare(
 	reportId: string,
@@ -120,13 +177,19 @@ export async function createShare(
 	const expiresAt = input.expiresAt ?? null;
 	if (expiresAt !== null && expiresAt.getTime() <= Date.now()) throw expiryInPast();
 
+	// Single mode mints consultation tokens only: force `open` and refuse an
+	// explicit restricted request (no email, so no recipient list to enforce).
+	const multi = isMultiAuthor();
+	if (!multi && input.mode === 'restricted') throw restrictedModeUnavailable();
+	const mode: ShareMode = multi ? (input.mode ?? 'restricted') : 'open';
+
 	const token = generateShareToken();
 	const now = new Date();
 	const row: ShareRow = {
 		id: uuidv7(),
 		reportId: report.id,
 		tokenHash: hashShareToken(token),
-		mode: input.mode ?? 'restricted',
+		mode,
 		expiresAt,
 		createdAt: now,
 		revokedAt: null
@@ -217,12 +280,18 @@ export async function ownsShare(shareId: string, scope: AuthorScope): Promise<bo
  * toggle without losing the list. Returns the number of rows updated (0 when the
  * share id is unknown OR owned by another author - the caller maps a miss to a
  * 404, the same neutral result either way).
+ *
+ * Single mode (story 8.4): switching a share to `restricted` is REFUSED (409) -
+ * there is no email to verify recipients against, so the restricted concept does
+ * not exist. Switching to `open` is a no-op there (single-mode shares are already
+ * open consultation tokens) but is allowed so the UI never needs a special case.
  */
 export async function setShareMode(
 	shareId: string,
 	mode: ShareMode,
 	scope: AuthorScope
 ): Promise<number> {
+	if (!isMultiAuthor() && mode === 'restricted') throw restrictedModeUnavailable();
 	if (!(await ownsShare(shareId, scope))) return 0;
 	const updated = await getDb()
 		.update(shares)

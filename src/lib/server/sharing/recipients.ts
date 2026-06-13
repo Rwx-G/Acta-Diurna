@@ -15,6 +15,7 @@ import type { AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { shareRecipients } from '$lib/server/db/schema';
+import { isMultiAuthor } from '$lib/server/mode';
 import { AppError } from '$lib/server/problem';
 import { isPlausibleEmail, normalizeEmail } from '$lib/server/reader/email';
 import { ownsShare, type ShareMode } from './shares';
@@ -65,6 +66,19 @@ export async function setShareRecipients(
 	emails: string[],
 	scope: AuthorScope
 ): Promise<void> {
+	// Single mode (story 8.4): there is no email and no verification, so a
+	// recipient allow-list cannot be enforced. Refuse the operation cleanly (409)
+	// rather than write a list that would never gate anyone.
+	if (!isMultiAuthor()) {
+		throw new AppError({
+			status: 409,
+			title: 'Restricted sharing is unavailable',
+			type: '/problems/restricted-sharing-unavailable',
+			detail:
+				'This instance has no SMTP configured, so it cannot verify recipients. Shares are consultation links anyone with the link can open. Configure SMTP to enable restricted, per-recipient sharing.'
+		});
+	}
+
 	const normalized = Array.from(
 		new Set(emails.map(normalizeEmail).filter((email) => isPlausibleEmail(email)))
 	);

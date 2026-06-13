@@ -11,6 +11,7 @@ export {
 	ownsShare,
 	shareStatus,
 	isExpired,
+	servesConsultation,
 	shareUrl
 } from './shares.ts';
 export type {

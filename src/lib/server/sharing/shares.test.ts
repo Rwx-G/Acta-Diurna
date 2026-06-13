@@ -8,6 +8,7 @@ import {
 	getShareByToken,
 	isExpired,
 	listShares,
+	servesConsultation,
 	shareStatus,
 	shareUrl
 } from './shares';
@@ -29,9 +30,13 @@ function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	return { column: column.name, value: param.value };
 }
 
+// Mode is controllable per test (story 8.4): single mode mints consultation
+// (open) tokens and refuses restricted; multi mode keeps the 3.4 restricted/open
+// choice. Default single, mirroring the no-SMTP baseline.
+const modeState = vi.hoisted(() => ({ multi: false }));
 vi.mock('$lib/server/mode', () => ({
-	operatingMode: () => 'single',
-	isMultiAuthor: () => false
+	operatingMode: () => (modeState.multi ? 'multi' : 'single'),
+	isMultiAuthor: () => modeState.multi
 }));
 
 const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
@@ -111,6 +116,7 @@ beforeEach(() => {
 	dbState.inserted = [];
 	dbState.whereFilters = [];
 	reportsState.status = 'published';
+	modeState.multi = false;
 });
 
 describe('createShare', () => {
@@ -130,13 +136,31 @@ describe('createShare', () => {
 		expect(JSON.stringify(share)).not.toContain(token);
 	});
 
-	it('defaults to restricted mode (the safe default for 3.4)', async () => {
+	it('single mode mints a consultation (open) token regardless of input (story 8.4)', async () => {
+		// No SMTP: a share has no recipient concept, so it is always an open
+		// consultation token anyone with the link can open.
+		const { share } = await createShare(REPORT_ID, TEST_SCOPE);
+		expect(share.mode).toBe('open');
+		expect(dbState.inserted[0].mode).toBe('open');
+	});
+
+	it('single mode refuses an explicit restricted request (no email to verify recipients)', async () => {
+		await expect(createShare(REPORT_ID, TEST_SCOPE, { mode: 'restricted' })).rejects.toMatchObject({
+			status: 409,
+			type: '/problems/restricted-sharing-unavailable'
+		});
+		expect(dbState.inserted).toHaveLength(0);
+	});
+
+	it('multi mode defaults to restricted mode (the 3.4 safe default, unchanged)', async () => {
+		modeState.multi = true;
 		const { share } = await createShare(REPORT_ID, TEST_SCOPE);
 		expect(share.mode).toBe('restricted');
 		expect(dbState.inserted[0].mode).toBe('restricted');
 	});
 
-	it('accepts an explicit open mode', async () => {
+	it('multi mode accepts an explicit open mode', async () => {
+		modeState.multi = true;
 		const { share } = await createShare(REPORT_ID, TEST_SCOPE, { mode: 'open' });
 		expect(share.mode).toBe('open');
 	});
@@ -289,6 +313,31 @@ describe('shareStatus / isExpired', () => {
 	it('is revoked when revokedAt is set, regardless of expiry', () => {
 		const future = new Date('2026-06-12T13:00:00Z');
 		expect(shareStatus({ expiresAt: future, revokedAt: now }, now)).toBe('revoked');
+	});
+});
+
+describe('servesConsultation (story 8.4 transition rule)', () => {
+	it('single mode + open share: serves as a consultation token (direct read)', () => {
+		modeState.multi = false;
+		expect(servesConsultation({ mode: 'open' })).toBe(true);
+	});
+
+	it('single mode + restricted share: NOT consultation (a stale multi-era share stays closed)', () => {
+		// Removing SMTP must never silently open a recipient-gated link to anyone
+		// holding it. A restricted share is not consultation-eligible in single mode,
+		// so the gate serves the neutral 404 instead. Closed-not-opened is the safe
+		// transition.
+		modeState.multi = false;
+		expect(servesConsultation({ mode: 'restricted' })).toBe(false);
+	});
+
+	it('multi mode: never a direct consultation, even for an open share (verification applies)', () => {
+		// A single-era consultation share (open) viewed under newly-enabled SMTP now
+		// requires verification - the gate runs the Epic 3 flow. A stricter gate, never
+		// an escalation.
+		modeState.multi = true;
+		expect(servesConsultation({ mode: 'open' })).toBe(false);
+		expect(servesConsultation({ mode: 'restricted' })).toBe(false);
 	});
 });
 
