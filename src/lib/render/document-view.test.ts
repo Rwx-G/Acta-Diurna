@@ -37,10 +37,26 @@ describe('toReportView', () => {
 });
 
 describe('toPreviewView (transiently-invalid tolerance)', () => {
-	it('takes the fast path for a fully valid snapshot', () => {
+	it('renders a fully valid snapshot with every section present and none flagged', () => {
 		const view = toPreviewView(fullDocument);
 		expect(view.sections).toHaveLength(3);
 		expect(view.sections.every((s) => !s.invalid)).toBe(true);
+		// A valid snapshot renders the same shape the reader path produces, so a
+		// preview of a clean document carries every block and a matching TOC.
+		expect(view.sections.every((s) => s.blocks.every((b) => b.block !== null))).toBe(true);
+		expect(view.toc.map((t) => t.id)).toEqual([
+			'executive-summary',
+			'incident-analysis',
+			'methodology'
+		]);
+	});
+
+	it('renders a fully valid snapshot identically to the reader path', () => {
+		// Behavior parity: dropping the whole-document fast path must not change what
+		// a valid snapshot produces - it equals the reader's toReportView output.
+		const result = validateDocument(fullDocument);
+		if (!result.ok) throw new Error('fixture should be valid');
+		expect(toPreviewView(fullDocument)).toEqual(toReportView(result.document));
 	});
 
 	it('renders valid blocks and flags only the invalid one', () => {

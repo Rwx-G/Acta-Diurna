@@ -16,7 +16,6 @@ import {
 	blockSchema,
 	scalesSchema,
 	sectionSchema,
-	validateDocument,
 	type Block,
 	type ComparisonMatrixBlock,
 	type DocumentV1,
@@ -142,12 +141,17 @@ function previewSectionTitle(raw: RawSection, index: number): string {
  * Workspace preview path: validate each block in isolation so a single
  * in-progress block does not blank the whole preview. A block that fails its
  * own schema renders as a placeholder carrying the first actionable message.
+ *
+ * Goes straight to per-section/per-block parsing - it does NOT try a
+ * whole-document `validateDocument` first. During active editing the snapshot is
+ * almost always transiently invalid, so a whole-document parse would virtually
+ * always fail and the per-block parse would run anyway: two parse rounds for one
+ * preview. The per-section path already renders a fully valid snapshot identically
+ * (every section parses, every block present, none flagged invalid), so a single
+ * round suffices. The whole-document fast path stays on the READER path
+ * ({@link toReportView}), which only ever sees a validated document.
  */
 export function toPreviewView(snapshot: unknown): ReportView {
-	// Fast path: a fully valid snapshot renders exactly like the reader sees it.
-	const whole = validateDocument(snapshot);
-	if (whole.ok) return toReportView(whole.document);
-
 	const record = (snapshot ?? {}) as {
 		title?: unknown;
 		theme?: unknown;
