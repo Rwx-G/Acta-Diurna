@@ -31,6 +31,22 @@
 	// load-bearing render rule and the precondition 7.4 relies on.
 	const sourceColumns = $derived(sourceScale?.entries ?? []);
 
+	// Fixed column layout so every source column is the SAME width (a coverage
+	// matrix reads as a grid, not content-sized lanes), and both treatment columns
+	// match each other. Finding/severity/treatment get fixed shares; the source
+	// columns split the remainder equally. A floor keeps each source column legible
+	// when there are many sources (the matrix-scroll container then scrolls).
+	const FINDING_WIDTH = 18;
+	const SEVERITY_WIDTH = 9;
+	const TREATMENT_WIDTH = 13;
+	const sourceWidth = $derived(
+		Math.max(
+			8,
+			(100 - FINDING_WIDTH - SEVERITY_WIDTH - TREATMENT_WIDTH * 2) /
+				Math.max(1, sourceColumns.length)
+		)
+	);
+
 	function severityIndex(scale: Scale, key: string): number {
 		return scale.entries.findIndex((entry) => entry.key === key);
 	}
@@ -91,6 +107,15 @@
 		tabindex="0"
 	>
 		<table>
+			<colgroup>
+				<col style="width: {FINDING_WIDTH}%" />
+				<col style="width: {SEVERITY_WIDTH}%" />
+				{#each sourceColumns as column (column.key)}
+					<col style="width: {sourceWidth}%" />
+				{/each}
+				<col style="width: {TREATMENT_WIDTH}%" />
+				<col style="width: {TREATMENT_WIDTH}%" />
+			</colgroup>
 			<caption class="visually-hidden">
 				Findings grouped by category. Each row shows a severity, one cell per source (found, missed,
 				or not covered), and the treatment before and after.
@@ -167,6 +192,9 @@
 
 	table {
 		width: 100%;
+		/* Fixed layout so the colgroup widths win over content: equal source columns,
+		   equal treatment columns. Long cell text wraps within its column. */
+		table-layout: fixed;
 		border-collapse: collapse;
 		font-family: var(--font-sans);
 		font-size: var(--text-sm);
@@ -195,7 +223,10 @@
 	thead th {
 		background: var(--report-surface);
 		border-bottom: 2px solid var(--report-rule-strong);
-		white-space: nowrap;
+		/* Headers wrap if a fixed column is narrower than the label (e.g. a long
+		   source name), rather than forcing horizontal overflow. */
+		white-space: normal;
+		overflow-wrap: break-word;
 	}
 
 	td {
