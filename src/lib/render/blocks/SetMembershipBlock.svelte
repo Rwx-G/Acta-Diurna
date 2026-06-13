@@ -45,6 +45,15 @@
 
 	const figureTitle = $derived(block.title ?? 'Coverage by source combination');
 
+	// Each source column's colour, resolved from the sources scale (the same colour
+	// the legend swatch and the matrix source tint use). Filled dots wear it so a
+	// column is identifiable by colour, not only by the label beneath it.
+	const sourceColors = $derived(
+		sourceScale
+			? sourceScale.entries.map((_, index) => scaleEntryColor(sourceScale, index, theme))
+			: []
+	);
+
 	function severityColor(scale: Scale | undefined, key: string): string {
 		if (!scale) return 'var(--report-chart-1)';
 		const index = scale.entries.findIndex((entry) => entry.key === key);
@@ -83,7 +92,6 @@
 				<li class="pill-row" class:even={rowIndex % 2 === 0}>
 					<span class="visually-hidden">{row.summary}</span>
 					<div class="dot-cell" aria-hidden="true">
-						<span class="row-count">{row.count}</span>
 						<svg
 							class="dot-strip"
 							width={geometry.strip.width}
@@ -100,7 +108,13 @@
 							{/if}
 							{#each row.dots as dot, dotIndex (dotIndex)}
 								{#if dot.filled}
-									<circle cx={dot.cx} cy={dotHalf} r={geometry.dotRadius} class="dot-filled" />
+									<circle
+										cx={dot.cx}
+										cy={dotHalf}
+										r={geometry.dotRadius}
+										class="dot-filled"
+										style="fill: {sourceColors[dotIndex]}"
+									/>
 								{/if}
 							{/each}
 						</svg>
@@ -187,9 +201,8 @@
 
 	.label-row {
 		display: flex;
-		/* The trailing labels sit under the dot column only (the count is omitted),
-		   so pad-start by the count column + gap to keep them x-aligned to the dots. */
-		padding-left: calc(1ch + var(--space-2));
+		/* The labels sit under the dot strip, which starts at the row's left edge
+		   (no count column), so they are already x-aligned to the dots. */
 	}
 
 	.empty {
@@ -221,15 +234,6 @@
 		stroke: var(--report-text);
 		stroke-width: 2.5;
 		stroke-linecap: round;
-	}
-
-	.row-count {
-		font-family: var(--font-sans);
-		font-size: var(--text-tick);
-		font-weight: 600;
-		color: var(--report-text-muted);
-		min-width: 1ch;
-		text-align: right;
 	}
 
 	.pills {
