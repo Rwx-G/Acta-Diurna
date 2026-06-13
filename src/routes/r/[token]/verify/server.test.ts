@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	getShareByToken: vi.fn(),
+	isMultiAuthor: vi.fn(),
 	setReaderCookie: vi.fn(),
 	completeVerification: vi.fn(),
 	verificationConsume: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/server/sharing', () => ({ getShareByToken: mocks.getShareByToken }));
+vi.mock('$lib/server/mode', () => ({ isMultiAuthor: mocks.isMultiAuthor }));
 vi.mock('$lib/server/auth/cookies', () => ({ setReaderCookie: mocks.setReaderCookie }));
 vi.mock('$lib/server/auth/rate-limit', () => ({
 	GLOBAL_VERIFICATION_KEY: 'global',
@@ -50,6 +52,8 @@ beforeEach(() => {
 	mocks.verificationConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 	mocks.shareConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 	mocks.globalConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+	// The magic-link landing only exists in MULTI mode; default the suite there.
+	mocks.isMultiAuthor.mockReturnValue(true);
 });
 
 describe('GET /r/[token]/verify', () => {
@@ -181,5 +185,21 @@ describe('GET /r/[token]/verify', () => {
 		});
 		expect(mocks.shareConsume).not.toHaveBeenCalled();
 		expect(mocks.globalConsume).not.toHaveBeenCalled();
+	});
+
+	it('single mode: the landing opens NO session - it bounces to expired, consuming no token (story 8.4)', async () => {
+		// A stale multi-era magic link clicked after SMTP was removed (or a forged
+		// ?t=) must not grant access. The single-mode guard bounces to the neutral
+		// expired state before any consume, so the verification link cannot grant
+		// access it no longer should.
+		mocks.isMultiAuthor.mockReturnValue(false);
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+
+		await expect(GET(event('?t=stillvalid'))).rejects.toMatchObject({
+			status: 303,
+			location: '/r/tok?expired=1'
+		});
+		expect(mocks.completeVerification).not.toHaveBeenCalled();
+		expect(mocks.setReaderCookie).not.toHaveBeenCalled();
 	});
 });

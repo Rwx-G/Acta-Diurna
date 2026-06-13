@@ -7,6 +7,7 @@ import {
 	verificationRateLimiter,
 	verificationShareLimiter
 } from '$lib/server/auth/rate-limit';
+import { isMultiAuthor } from '$lib/server/mode';
 import { completeVerification, serveNeutralClosed } from '$lib/server/reader';
 import { getShareByToken } from '$lib/server/sharing';
 
@@ -46,6 +47,15 @@ export const GET: RequestHandler = async ({
 	const share = await getShareByToken(params.token);
 	if (!share || share.status !== 'active') {
 		serveNeutralClosed(setHeaders);
+	}
+
+	// Single mode (story 8.4): there is no magic-link verification - reads are
+	// consultation tokens served at the load. A landing here (a stale MULTI-era
+	// link clicked after SMTP was removed, or a forged `?t=`) opens NO session; it
+	// bounces to the neutral expired state, identical to a dead token, so the mode
+	// change never lets a verification link grant access it no longer should.
+	if (!isMultiAuthor()) {
+		redirect(303, `/r/${params.token}?expired=1`);
 	}
 
 	const rawVerification = url.searchParams.get('t') ?? '';

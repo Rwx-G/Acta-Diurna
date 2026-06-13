@@ -9,6 +9,7 @@ import {
 } from '$lib/server/auth/rate-limit';
 import { validateReaderSession } from '$lib/server/auth/sessions';
 import { getPublishedDocument } from '$lib/server/documents/reports';
+import { isMultiAuthor } from '$lib/server/mode';
 import { AppError } from '$lib/server/problem';
 import {
 	isPlausibleEmail,
@@ -16,25 +17,38 @@ import {
 	requestVerification,
 	serveNeutralClosed
 } from '$lib/server/reader';
-import { getShareByToken } from '$lib/server/sharing';
+import { getShareByToken, servesConsultation } from '$lib/server/sharing';
 import type { DocumentV1, ValidationErrorDetail } from '$lib/schema';
 
 /**
- * Reader verification gate (story 3.3) in front of the `/r/[token]` render
- * route. The flow (UX Flow C):
+ * Mode-aware reader gate (stories 3.3 + 8.4) in front of the `/r/[token]` render
+ * route. It resolves the share, then branches on the CURRENT operating mode:
  *
  *   - Resolve the share by its token (3.2 `getShareByToken`). A closed share
  *     (revoked/expired) or an unknown token serves ONE neutral 404 - byte-for-
- *     byte identical, no leak of which (NFR9/FR20, the 3.5 seam).
- *   - Active + a valid reader session FOR THIS SHARE -> serve the published
- *     snapshot directly, no re-verification (FR23).
- *   - Active + no session -> render the email-prompt VerifyCard; the
- *     `request-verification` action mails a single-use magic link and ALWAYS
- *     returns the same neutral confirmation (NFR9).
+ *     byte identical, no leak of which (NFR9/FR20, the 3.5 seam). This is BEFORE
+ *     the mode branch, so the leak-free posture is identical in both modes.
+ *   - SINGLE mode (no SMTP): a live consultation share (`servesConsultation`)
+ *     grants the published view DIRECTLY - no email, no verify card, no reader
+ *     session. The token IS the consultation grant (story 8.4). A live but
+ *     `restricted` share (a MULTI-era artifact) is NOT consultation-eligible, so
+ *     it falls through to the same neutral 404 - the mode change never opens a
+ *     recipient-gated link to anyone holding it.
+ *   - MULTI mode (SMTP): the Epic 3 verified flow, unchanged:
+ *       - a valid reader session FOR THIS SHARE serves the snapshot, no
+ *         re-verification (FR23);
+ *       - no session renders the email-prompt VerifyCard; the
+ *         `request-verification` action mails a single-use magic link and ALWAYS
+ *         returns the same neutral confirmation (NFR9).
  *
  * The reader session is validated HERE, not in a hook, because it is per-share:
  * the share id from this URL is part of the validation, so a session for another
  * share never authorizes this one.
+ *
+ * The whole reader surface stays noindex + no-store in both modes: the
+ * `/r/*` X-Robots-Tag header (hooks.server.ts) and the `<meta robots>` cover
+ * indexing regardless of the branch taken, and every serving exit below sets
+ * `cache-control: no-store`.
  */
 
 type LoadResult =
@@ -50,6 +64,20 @@ export const load: PageServerLoad = async ({
 }): Promise<LoadResult> => {
 	const share = await getShareByToken(params.token);
 	if (!share || share.status !== 'active') serveNeutralClosed(setHeaders);
+
+	// SINGLE mode (story 8.4): the share IS the consultation grant. A live `open`
+	// share serves the report directly - no email, no verify card, no reader
+	// session. A live `restricted` share is NOT consultation-eligible here (a
+	// MULTI-era artifact whose recipient list cannot be enforced without email),
+	// so it falls through to the neutral closed exit below rather than opening to
+	// anyone holding the link. `servesConsultation` is false in multi mode, so the
+	// verified flow runs untouched there.
+	if (servesConsultation(share)) return serveReport(share.reportId, setHeaders);
+
+	// MULTI mode from here. A `restricted` share reached in single mode (not
+	// consultation-eligible) is closed: the same byte-identical neutral 404 a
+	// revoked/expired/unknown token serves, no leak that it once existed.
+	if (!isMultiAuthor()) serveNeutralClosed(setHeaders);
 
 	// FR23: a returning reader with a live session bound to THIS share skips
 	// verification entirely.
@@ -125,6 +153,13 @@ async function requestVerificationAction(event: RequestEvent) {
 		// the token once existed.
 		serveNeutralClosed(event.setHeaders);
 	}
+
+	// Single mode (story 8.4): there is no verification path - the consultation
+	// load already served the report, and a `restricted` share is closed. A stray
+	// POST to this action is inert: it returns the same neutral `sent` state
+	// without issuing a token or sending mail, so it reveals nothing and does no
+	// work that has no SMTP to back it.
+	if (!isMultiAuthor()) return { state: 'sent' as const };
 
 	// The per-IP bucket is consumed first, on EVERY submission, so a single IP is
 	// always bounded. The per-share and global brakes are consumed only once a

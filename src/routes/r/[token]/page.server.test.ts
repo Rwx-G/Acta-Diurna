@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	getShareByToken: vi.fn(),
+	servesConsultation: vi.fn(),
+	isMultiAuthor: vi.fn(),
 	readReaderCookie: vi.fn(),
 	validateReaderSession: vi.fn(),
 	getPublishedDocument: vi.fn(),
@@ -17,7 +19,11 @@ const mocks = vi.hoisted(() => ({
 	globalConsume: vi.fn()
 }));
 
-vi.mock('$lib/server/sharing', () => ({ getShareByToken: mocks.getShareByToken }));
+vi.mock('$lib/server/sharing', () => ({
+	getShareByToken: mocks.getShareByToken,
+	servesConsultation: mocks.servesConsultation
+}));
+vi.mock('$lib/server/mode', () => ({ isMultiAuthor: mocks.isMultiAuthor }));
 vi.mock('$lib/server/auth/cookies', () => ({ readReaderCookie: mocks.readReaderCookie }));
 vi.mock('$lib/server/auth/sessions', () => ({
 	validateReaderSession: mocks.validateReaderSession
@@ -89,6 +95,11 @@ beforeEach(() => {
 	mocks.verificationConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 	mocks.shareConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 	mocks.globalConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+	// Default to MULTI mode (the Epic 3 verified flow): the existing tests assert
+	// that path. `servesConsultation` is false in multi mode, so the gate never
+	// takes the single-mode direct-serve branch unless a test opts in below.
+	mocks.isMultiAuthor.mockReturnValue(true);
+	mocks.servesConsultation.mockReturnValue(false);
 });
 
 describe('load (the gate)', () => {
@@ -188,6 +199,86 @@ describe('load (the gate)', () => {
 		const result = await load(loadEvent({ url: new URL('https://host/r/tok?expired=1') }).event);
 
 		expect(result).toEqual({ state: 'expired' });
+	});
+});
+
+describe('load in SINGLE mode (consultation token, story 8.4)', () => {
+	beforeEach(() => {
+		// No SMTP: the gate serves a live consultation share directly. `isMultiAuthor`
+		// is false and `servesConsultation` decides per share mode (the real predicate
+		// is unit-tested in shares.test.ts; here it is the route-wiring seam).
+		mocks.isMultiAuthor.mockReturnValue(false);
+	});
+
+	it('serves the report DIRECTLY for a live consultation share - no verify, no session', async () => {
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.servesConsultation.mockReturnValue(true);
+		mocks.getPublishedDocument.mockResolvedValue({ version: 1, title: 'Doc', sections: [] });
+		const { event, setHeaders } = loadEvent();
+
+		const result = await load(event);
+
+		expect(result).toMatchObject({ state: 'verified', renderError: null });
+		// The token IS the grant: no reader cookie is read, no session validated.
+		expect(mocks.readReaderCookie).not.toHaveBeenCalled();
+		expect(mocks.validateReaderSession).not.toHaveBeenCalled();
+		// no-store holds in single mode too (NFR10).
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
+	});
+
+	it('serves the neutral 404 for a revoked consultation share (revocation still applies)', async () => {
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'revoked' });
+		const { event, setHeaders } = loadEvent();
+
+		await expect(load(event)).rejects.toMatchObject({ __neutral404: true });
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
+		// A closed share is rejected before the consultation branch is even consulted.
+		expect(mocks.servesConsultation).not.toHaveBeenCalled();
+		expect(mocks.getPublishedDocument).not.toHaveBeenCalled();
+	});
+
+	it('serves the neutral 404 for an expired consultation share', async () => {
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, status: 'expired' });
+
+		await expect(load(loadEvent().event)).rejects.toMatchObject({ __neutral404: true });
+		expect(mocks.getPublishedDocument).not.toHaveBeenCalled();
+	});
+
+	it('serves the neutral 404 for an unknown token', async () => {
+		mocks.getShareByToken.mockResolvedValue(null);
+
+		await expect(load(loadEvent().event)).rejects.toMatchObject({ __neutral404: true });
+	});
+
+	it('transition: a live RESTRICTED share under single mode is closed (neutral 404, never opened)', async () => {
+		// A multi-era restricted share viewed after SMTP was removed is NOT
+		// consultation-eligible: the gate serves the neutral 404 rather than opening a
+		// recipient-gated link to anyone holding it. No escalation across the downgrade.
+		mocks.getShareByToken.mockResolvedValue({ ...ACTIVE_SHARE, mode: 'restricted' });
+		mocks.servesConsultation.mockReturnValue(false);
+		const { event, setHeaders } = loadEvent();
+
+		await expect(load(event)).rejects.toMatchObject({ __neutral404: true });
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
+		expect(mocks.getPublishedDocument).not.toHaveBeenCalled();
+	});
+});
+
+describe('transition: a consultation (open) share under MULTI mode requires verification', () => {
+	it('does NOT serve directly - it falls through to the verify prompt', async () => {
+		// Newly-enabled SMTP: a single-era open consultation share now runs the
+		// verified flow (servesConsultation is false in multi mode). With no session it
+		// prompts for email rather than serving the report - a stricter gate, never an
+		// escalation.
+		mocks.isMultiAuthor.mockReturnValue(true);
+		mocks.servesConsultation.mockReturnValue(false);
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+		mocks.readReaderCookie.mockReturnValue(null);
+
+		const result = await load(loadEvent().event);
+
+		expect(result).toEqual({ state: 'prompt' });
+		expect(mocks.getPublishedDocument).not.toHaveBeenCalled();
 	});
 });
 
@@ -322,5 +413,19 @@ describe('request-verification action (enumeration-safety)', () => {
 		await expect(
 			actions['request-verification'](actionEvent({ email: 'a@example.com' }))
 		).rejects.toMatchObject({ __neutral404: true });
+	});
+
+	it('single mode: the action is inert - returns neutral "sent", issues nothing (story 8.4)', async () => {
+		// There is no verification path in single mode (the consultation load already
+		// served the report). A stray POST returns the neutral state without consuming
+		// a rate-limit bucket or calling the verification orchestration.
+		mocks.isMultiAuthor.mockReturnValue(false);
+		mocks.getShareByToken.mockResolvedValue(ACTIVE_SHARE);
+
+		const result = await actions['request-verification'](actionEvent({ email: 'a@example.com' }));
+
+		expect(result).toEqual({ state: 'sent' });
+		expect(mocks.requestVerification).not.toHaveBeenCalled();
+		expect(mocks.verificationConsume).not.toHaveBeenCalled();
 	});
 });
