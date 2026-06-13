@@ -26,6 +26,15 @@ vi.mock('$lib/server/authors', () => ({
 	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
 }));
 
+// Mode-aware sharing UI (story 8.4): default the suite to MULTI mode (the
+// restricted/open + recipient controls path the existing tests assert); the
+// single-mode describe flips it to assert the consultation-token behavior.
+const modeState = vi.hoisted(() => ({ multi: true }));
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => (modeState.multi ? 'multi' : 'single'),
+	isMultiAuthor: () => modeState.multi
+}));
+
 const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 // Use the real email helpers so recipient parsing/normalization is exercised.
 vi.mock('$lib/server/reader', async () => {
@@ -78,6 +87,7 @@ function actionEvent(fields: Record<string, string>): never {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	modeState.multi = true;
 	listRecipientsForSharesMock.mockResolvedValue(new Map());
 	setShareRecipientsMock.mockResolvedValue(undefined);
 	setShareModeMock.mockResolvedValue(1);
@@ -110,6 +120,44 @@ describe('load', () => {
 		} as Parameters<typeof load>[0]);
 
 		expect(JSON.stringify(result)).not.toContain('token');
+	});
+
+	it('surfaces multi=true in multi mode and reads each share allow-list', async () => {
+		getReportMock.mockResolvedValue(publishedReport());
+		listSharesMock.mockResolvedValue([]);
+
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
+
+		expect(result!.multi).toBe(true);
+		expect(listRecipientsForSharesMock).toHaveBeenCalled();
+	});
+
+	it('single mode: surfaces multi=false and skips the recipient read (no allow-lists, story 8.4)', async () => {
+		modeState.multi = false;
+		getReportMock.mockResolvedValue(publishedReport());
+		listSharesMock.mockResolvedValue([
+			{
+				id: 's1',
+				mode: 'open',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active'
+			}
+		]);
+
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
+
+		expect(result!.multi).toBe(false);
+		// No email, so no recipient lists exist - the batched read is skipped entirely.
+		expect(listRecipientsForSharesMock).not.toHaveBeenCalled();
+		expect(result!.shares[0].recipients).toEqual([]);
 	});
 });
 
@@ -207,6 +255,34 @@ describe('create-share action', () => {
 
 		expect(result).toMatchObject({ status: 400 });
 		expect(createShareMock).not.toHaveBeenCalled();
+	});
+
+	it('single mode: forces open and carries no recipients, whatever the form sent (story 8.4)', async () => {
+		// The mode/recipient inputs are hidden in single-mode UI, but a crafted POST
+		// could still send them. The action forces `open` and drops recipients, so a
+		// restricted request never reaches the service and no allow-list is set.
+		modeState.multi = false;
+		createShareMock.mockResolvedValue({
+			token: 't',
+			share: {
+				id: 's-single',
+				mode: 'open',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active'
+			}
+		});
+
+		await actions['create-share'](
+			createEvent({ mode: 'restricted', recipients: 'sneaky@example.com' })
+		);
+
+		expect(createShareMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE, {
+			mode: 'open',
+			expiresAt: null
+		});
+		expect(setShareRecipientsMock).not.toHaveBeenCalled();
 	});
 });
 

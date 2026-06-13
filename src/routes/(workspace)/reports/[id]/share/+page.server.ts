@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { resolveAuthorScope } from '$lib/server/authors';
 import type { ReportStatus } from '$lib/server/documents/reports';
 import { getReport } from '$lib/server/documents/reports';
+import { isMultiAuthor } from '$lib/server/mode';
 import {
 	createShare,
 	listShares,
@@ -24,30 +25,44 @@ interface ShareView extends ShareSummary {
 interface SharePageData {
 	report: { id: string; title: string; status: ReportStatus };
 	shares: ShareView[];
+	/**
+	 * The operating mode the UI branches on (story 8.4). MULTI (SMTP configured):
+	 * the restricted/open + recipient controls render unchanged. SINGLE (no SMTP):
+	 * shares are consultation tokens, so the restricted-mode and recipient-list
+	 * controls are hidden and the page explains the consultation behavior.
+	 */
+	multi: boolean;
 }
 
 /**
- * Share management for one report (FR17/FR19/FR21). Loads the report (for its
- * publish status: a draft cannot be shared, FR6), its existing shares, and -
- * for each share - its recipient allow-list so the restricted-mode editor can
- * render the current list. The `create-share` action mints a link and returns
- * the RAW URL exactly once. `set-mode` flips a share restricted<->open;
- * `set-recipients` replaces a restricted share's allow-list (FR19).
+ * Share management for one report (FR17/FR19/FR21, mode-aware per story 8.4).
+ * Loads the report (for its publish status: a draft cannot be shared, FR6), its
+ * existing shares, and - in MULTI mode - each share's recipient allow-list so the
+ * restricted-mode editor can render the current list. The `create-share` action
+ * mints a link and returns the RAW URL exactly once. In MULTI mode `set-mode`
+ * flips a share restricted<->open and `set-recipients` replaces a restricted
+ * share's allow-list (FR19); in SINGLE mode those operations are refused by the
+ * service (no email to verify recipients) and the UI hides their controls.
  */
 export const load: PageServerLoad = async ({ params, locals }): Promise<SharePageData> => {
 	try {
+		const multi = isMultiAuthor();
 		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
 		const report = await getReport(params.id, scope);
 		const summaries = await listShares(report.id, scope);
 		// One batched read for every share's allow-list, not one query per share.
-		const recipientsByShare = await listRecipientsForShares(summaries.map((share) => share.id));
+		// Single mode has no recipient lists, so the read is skipped entirely.
+		const recipientsByShare = multi
+			? await listRecipientsForShares(summaries.map((share) => share.id))
+			: new Map<string, string[]>();
 		const shares = summaries.map((share) => ({
 			...share,
 			recipients: recipientsByShare.get(share.id) ?? []
 		}));
 		return {
 			report: { id: report.id, title: report.title, status: report.status },
-			shares
+			shares,
+			multi
 		};
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));
@@ -90,9 +105,14 @@ export const actions: Actions = {
 			expiresAt = parsed;
 		}
 
-		const mode: ShareMode = rawMode === 'open' ? 'open' : 'restricted';
+		// Single mode mints consultation tokens only (story 8.4): force `open` and
+		// carry no recipient list, so the form's mode/recipient inputs (hidden in
+		// the UI there) can never reach the service as a restricted request. Multi
+		// mode reads the author's choice as before.
+		const multi = isMultiAuthor();
+		const mode: ShareMode = multi && rawMode !== 'open' ? 'restricted' : 'open';
 		const recipients =
-			typeof data.get('recipients') === 'string'
+			multi && typeof data.get('recipients') === 'string'
 				? parseRecipients(data.get('recipients') as string)
 				: [];
 
