@@ -199,6 +199,40 @@ export const verificationFailureLimiter: TokenBucketLimiter = new TokenBucketLim
 	VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND
 );
 
+/** Author sign-in request: a small per-IP burst before the limiter engages. */
+const AUTHOR_VERIFICATION_BUCKET_CAPACITY = 5;
+/** One author sign-in request earned back every 20 seconds once drained. */
+const AUTHOR_VERIFICATION_REFILL_TOKENS_PER_SECOND = 1 / 20;
+/** Total author sign-in requests tolerated across ALL callers before the global brake engages. */
+const AUTHOR_VERIFICATION_FAILURE_CAPACITY = 30;
+/** One global author sign-in allowance earned back every 10 seconds once drained. */
+const AUTHOR_VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND = 1 / 10;
+
+/** Single global key for the author sign-in brake (mirrors GLOBAL_LOGIN_FAILURE_KEY). */
+export const GLOBAL_AUTHOR_VERIFICATION_KEY = 'global:/login/author-verify';
+
+/**
+ * Per-IP limiter for the author magic-link request (story 8.3). The author login
+ * has no per-share dimension (an author signs in to the whole workspace), so this
+ * is a plain per-IP bucket keyed by ip + route. Consumed on every sign-in request
+ * by the login action. Sized like the reader verification per-IP bucket.
+ */
+export const authorVerificationRateLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	AUTHOR_VERIFICATION_BUCKET_CAPACITY,
+	AUTHOR_VERIFICATION_REFILL_TOKENS_PER_SECOND
+);
+
+/**
+ * IP-independent second brake for author sign-in requests: bounds total mail
+ * amplification when client addresses collapse behind a shared proxy or are
+ * spoofed (the reverse-proxy second line, same pattern as login/verification).
+ * Consumed on every genuine sign-in request, after the per-IP limiter.
+ */
+export const authorVerificationFailureLimiter: TokenBucketLimiter = new TokenBucketLimiter(
+	AUTHOR_VERIFICATION_FAILURE_CAPACITY,
+	AUTHOR_VERIFICATION_FAILURE_REFILL_TOKENS_PER_SECOND
+);
+
 /** API auth (AR12): a small per-IP burst of failed bearer attempts before the limiter engages. */
 const API_AUTH_BUCKET_CAPACITY = 10;
 /** One API auth attempt earned back every 6 seconds once drained. */
