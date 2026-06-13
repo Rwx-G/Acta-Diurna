@@ -157,6 +157,104 @@ realm carries concurrent load (Epic 3) and the database is provisioned for the
 extra connections; keep it below the Postgres `max_connections` ceiling minus
 headroom for migrations and maintenance.
 
+## Authentication modes (single vs multi-author)
+
+The instance runs in one of two authentication modes. The mode is chosen
+**entirely by the SMTP environment at boot** - there is no runtime toggle, no
+web-UI "verify" button, and no persisted "verified" flag. SMTP present means
+multi-author mode; SMTP absent means single-author mode.
+
+| | Single mode (SMTP absent) | Multi mode (SMTP configured) |
+|---|---|---|
+| Author sign-in | One shared password (`AUTHOR_PASSWORD_HASH`) | Email magic link, self-service within `AUTHOR_EMAIL_DOMAIN` |
+| Password login | Enabled | **Disabled** (the field is absent, the action refuses) |
+| Author identity | Anonymous (one implicit author owns everything) | The signed-in email (shown in the workspace) |
+| Reports | One implicit owner | Each author sees only their own (tenancy filtering) |
+| Reader shares | Unverified consultation tokens | Verified magic-link reader flow (optionally domain-restricted) |
+
+The login screen reflects the mode automatically: single mode shows the password
+field, multi mode shows the email field - never both. In multi mode the workspace
+surfaces the logged-in author's email near the sign-out button, and each author
+sees only their own reports, data sets, shares, and tokens.
+
+### Identity env vars
+
+These select and shape multi-author mode. All are read once at boot.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SMTP_HOST` | for multi | Presence of the SMTP block is what selects multi mode |
+| `SMTP_PORT` | with SMTP | Relay port (e.g. `25`, `465`, `587`) |
+| `SMTP_FROM` | with SMTP | Envelope-from address for sign-in mail |
+| `SMTP_USER` / `SMTP_PASSWORD` | optional | Relay credentials; omit both for an unauthenticated relay |
+| `SMTP_TLS_MODE` | optional | `starttls`, `tls`, or `none` (plaintext, internal relay only) |
+| `AUTHOR_EMAIL_DOMAIN` | for multi | Bare domain (e.g. `example.com`); author self-sign-up is restricted to emails within it |
+| `INITIAL_OWNER_EMAIL` | for multi | The author who inherits the password-era reports on the first multi boot; must be within `AUTHOR_EMAIL_DOMAIN` |
+| `READER_EMAIL_DOMAINS` | optional | Comma-separated reader destination allow-list (e.g. `*.example.com, example.org`); unset means any verified reader may read, subject to the per-share recipient list |
+
+The SMTP block is **all-or-nothing**: if any `SMTP_*` var is present, `SMTP_HOST`,
+`SMTP_PORT`, and `SMTP_FROM` must all be present, otherwise the container refuses
+to boot. A partial relay config is caught at startup, not at send time.
+
+### Fail-fast boot rules (no lockout by misconfig)
+
+When SMTP is configured (multi mode), env validation **additionally requires**
+`AUTHOR_EMAIL_DOMAIN` and `INITIAL_OWNER_EMAIL`, and `INITIAL_OWNER_EMAIL` must
+sit **inside** `AUTHOR_EMAIL_DOMAIN` (case-insensitive). A missing or out-of-domain
+value fails the boot with an actionable message rather than starting an instance
+where nobody can authenticate - multi mode has no password fallback, so a silent
+lockout by misconfiguration must be impossible. In single mode none of these are
+required.
+
+### Bare internal relay (port 25, no TLS, no auth)
+
+An internal smarthost on port 25 with no credentials is supported. Set
+`SMTP_TLS_MODE=none` and omit `SMTP_USER` / `SMTP_PASSWORD`: the mailer builds the
+transport with `secure:false`, no `requireTLS`, and no `auth` object, and
+`transporter.verify()` succeeds on that profile. Authenticated STARTTLS (587) and
+implicit-TLS (465) profiles work unchanged - set `SMTP_TLS_MODE` and the
+credentials accordingly. Plaintext (`none`) is for trusted internal relays only.
+
+### Validate SMTP before relying on it
+
+A CLI helper runs `transporter.verify()` against the configured env and reports
+success or the exact, credential-redacted failure. It **never changes the
+operating mode** - the mode is env-only:
+
+```bash
+pnpm smtp:test
+# inside the running container:
+docker compose exec app node scripts/smtp-test.ts
+```
+
+### Legacy-report inheritance (first multi boot)
+
+The first time an instance boots in multi mode, every pre-existing
+(password-era) report is assigned to the author identified by
+`INITIAL_OWNER_EMAIL`. This is deterministic, one-time, and idempotent: no report
+is orphaned and there is no "claim" race. This is why `INITIAL_OWNER_EMAIL` is
+required and must be in-domain - it is the account that ends up owning the
+existing reports.
+
+### Lockout and recovery
+
+Multi mode has **no password and no break-glass**. If SMTP breaks (the relay is
+unreachable, credentials rotate, the domain config drifts), authors cannot sign
+in until you fix it. There are two recovery paths, both through the **same env
+surface that set the mode**:
+
+1. **Fix the SMTP env** and restart. Validate with `pnpm smtp:test` first.
+2. **Remove the SMTP block** from compose and restart. The instance drops to
+   single mode and the password login (`AUTHOR_PASSWORD_HASH`) works again -
+   immediate regained access.
+
+The downgrade (multi -> single, SMTP removed) is an assumed, documented
+transition: multi-era reports collapse under the single password author (the one
+implicit owner). Re-adding the SMTP block returns to multi mode; ownership is not
+re-keyed, because the implicit author is pinned to `INITIAL_OWNER_EMAIL` when it
+is set. Existing consultation-token or magic-link shares are handled safely across
+the transition (no stale share ever escalates access).
+
 ## See also
 
 - [`migrations.md`](migrations.md) - how boot migrations apply, what a failure

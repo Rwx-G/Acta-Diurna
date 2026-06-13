@@ -155,9 +155,18 @@ Everything is configured from environment variables (see [`.env.example`](.env.e
 | `BODY_SIZE_LIMIT` | no | `52428800` | Max request body in bytes (50 MB, aligned with the upload cap) |
 | `DB_POOL_MAX` | no | `10` | Max PostgreSQL pool connections (1-100) |
 | `READER_SESSION_TTL` | no | unset | Reader session lifetime in days; unset = governed by the share |
-| `SMTP_*` | for sharing | - | Relay for reader magic links (all-or-nothing block) |
+| `SMTP_*` | for sharing | - | Relay for magic links; its presence selects multi-author mode (all-or-nothing block) |
+| `AUTHOR_EMAIL_DOMAIN` / `INITIAL_OWNER_EMAIL` | for multi | - | Author sign-up domain and the owner that inherits existing reports (required when SMTP is set) |
+| `READER_EMAIL_DOMAINS` | no | unset | Reader destination allow-list (multi mode); unset = any verified reader |
 | `LLM_BASE_URL` / `LLM_MODEL` | for AI | - | OpenAI-compatible endpoint; no default, no phone-home |
 | `AI_GENERATION_ENABLED` | for AI | `false` | Second gate: the opt-in that lets the connector make a call |
+
+Authentication has two modes selected by the SMTP environment at boot: **single**
+(no SMTP - one password author) and **multi** (SMTP configured - email magic-link
+authors, password login disabled, per-author tenancy). See
+[`docs/ops/deployment.md`](docs/ops/deployment.md#authentication-modes-single-vs-multi-author)
+for the env vars, fail-fast boot rules, the SMTP test, and the lockout/recovery
+procedure.
 
 ## API & MCP
 
@@ -189,7 +198,7 @@ Validation errors are RFC 9457 problem-details with the offending block path, fi
 ## Documentation
 
 - [`docs/brief.md`](docs/brief.md) - product brief: vision, scope, kickoff decisions log
-- [`docs/ops/deployment.md`](docs/ops/deployment.md) - deployment hardening: reverse-proxy contract, ORIGIN, body size, secrets posture, pool sizing
+- [`docs/ops/deployment.md`](docs/ops/deployment.md) - deployment hardening: reverse-proxy contract, ORIGIN, body size, secrets posture, pool sizing, authentication modes (single vs multi-author)
 - [`docs/ops/migrations.md`](docs/ops/migrations.md) - boot migration behavior, failure logs, and recovery runbook
 - [`CHANGELOG.md`](CHANGELOG.md) - notable changes per the Keep a Changelog format
 
