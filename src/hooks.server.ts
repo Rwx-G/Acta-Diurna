@@ -12,6 +12,7 @@ import {
 	loginRateLimiter
 } from '$lib/server/auth/rate-limit';
 import { validateAuthorSession } from '$lib/server/auth/sessions';
+import { inheritLegacyOwnership } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv } from '$lib/server/env';
@@ -41,7 +42,19 @@ export const init: ServerInit = async () => {
 		logger.fatal({ err: error }, 'database migration failed, refusing to start');
 		throw error;
 	}
-	logger.info('migrations applied, accepting traffic');
+	logger.info('migrations applied');
+
+	// Ownership inheritance (story 8.2): seed the implicit author and backfill any
+	// pre-8.2 (owner-less) reports/data-sets/tokens to it. Idempotent and a no-op
+	// on a fully-owned database, so it runs every boot after migrations and before
+	// traffic. A failure here means ownership is unenforceable, so it is fatal.
+	try {
+		await inheritLegacyOwnership();
+	} catch (error) {
+		logger.fatal({ err: error }, 'ownership inheritance failed, refusing to start');
+		throw error;
+	}
+	logger.info('ownership ready, accepting traffic');
 
 	registerPurgeSweep(env);
 };

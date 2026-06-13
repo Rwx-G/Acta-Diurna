@@ -21,6 +21,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import { ownerFilter, ownerForInsert, type AuthorScope } from '../authors';
 import { hashToken } from '../crypto/hash-token';
 import { getDb } from '../db/client';
 import { uuidv7 } from '../db/ids';
@@ -63,9 +64,17 @@ export interface CreatedApiToken {
 	summary: ApiTokenSummary;
 }
 
-/** The identity a resolved PAT authorizes on the API. Author-scoped (single-author MVP); the token id is carried for audit/logging. */
+/**
+ * The identity a resolved PAT authorizes on the API. The `tokenId` is carried for
+ * audit/logging; `ownerId` (story 8.2) is the author the token belongs to - the
+ * API surface resolves it into an `AuthorScope` so a PAT only ever reaches its
+ * owner's resources. `ownerId` is null only for a legacy token whose owner was
+ * not yet backfilled at resolution time (the scope resolver then falls back to
+ * the implicit author); a live, post-inheritance token always carries one.
+ */
 export interface ApiIdentity {
 	tokenId: string;
+	ownerId: string | null;
 }
 
 function tokenStatus(row: Pick<ApiTokenRow, 'revokedAt'>): ApiTokenStatus {
@@ -91,7 +100,7 @@ function toSummary(row: ApiTokenRow): ApiTokenSummary {
  * ONCE - it is never persisted on any column and never re-fetchable. The caller
  * shows it once and discards it.
  */
-export async function createApiToken(name: string): Promise<CreatedApiToken> {
+export async function createApiToken(name: string, scope: AuthorScope): Promise<CreatedApiToken> {
 	const token = `${PAT_PREFIX}${randomBytes(PAT_BYTES).toString('base64url')}`;
 	const displayFragment = token.slice(-DISPLAY_FRAGMENT_LENGTH);
 
@@ -100,6 +109,7 @@ export async function createApiToken(name: string): Promise<CreatedApiToken> {
 		name,
 		tokenHash: hashToken(token),
 		displayFragment,
+		ownerId: ownerForInsert(scope),
 		createdAt: new Date(),
 		lastUsedAt: null,
 		revokedAt: null
@@ -115,10 +125,11 @@ export async function createApiToken(name: string): Promise<CreatedApiToken> {
  * the derived status - NEVER the raw token (it is gone after creation) and never
  * the hash. The cap is a safety ceiling, not pagination.
  */
-export async function listApiTokens(): Promise<ApiTokenSummary[]> {
+export async function listApiTokens(scope: AuthorScope): Promise<ApiTokenSummary[]> {
 	const rows = await getDb()
 		.select()
 		.from(apiTokens)
+		.where(ownerFilter(scope, apiTokens.ownerId))
 		.orderBy(desc(apiTokens.createdAt))
 		.limit(MAX_TOKENS_LISTED);
 	return rows.map(toSummary);
@@ -128,13 +139,17 @@ export async function listApiTokens(): Promise<ApiTokenSummary[]> {
  * Revokes a token (sets `revoked_at`). Idempotent: revoking an already-revoked
  * token is a no-op success (the `revoked_at IS NULL` guard preserves the original
  * instant), and an unknown id matches nothing and returns silently - the caller
- * has already resolved the token from its own author-realm list.
+ * has already resolved the token from its own author-realm list. The owner filter
+ * (story 8.2) means a cross-author id matches zero rows too: an author can never
+ * revoke another author's token (no existence oracle - the same silent no-op).
  */
-export async function revokeApiToken(id: string): Promise<void> {
+export async function revokeApiToken(id: string, scope: AuthorScope): Promise<void> {
 	await getDb()
 		.update(apiTokens)
 		.set({ revokedAt: new Date() })
-		.where(and(eq(apiTokens.id, id), isNull(apiTokens.revokedAt)));
+		.where(
+			and(eq(apiTokens.id, id), isNull(apiTokens.revokedAt), ownerFilter(scope, apiTokens.ownerId))
+		);
 }
 
 /**
@@ -167,5 +182,5 @@ export async function authenticateApiToken(rawToken: string): Promise<ApiIdentit
 		.where(eq(apiTokens.id, row.id))
 		.catch(() => {});
 
-	return { tokenId: row.id };
+	return { tokenId: row.id, ownerId: row.ownerId ?? null };
 }

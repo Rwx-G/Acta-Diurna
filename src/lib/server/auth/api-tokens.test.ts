@@ -38,6 +38,13 @@ function matchRows(decoded: { column: string; value: unknown }): Record<string, 
 	});
 }
 
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => 'single',
+	isMultiAuthor: () => false
+}));
+
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
 		insert: () => ({
@@ -47,27 +54,34 @@ vi.mock('$lib/server/db/client', () => ({
 				return Promise.resolve();
 			}
 		}),
-		select: () => ({
-			from: () => ({
-				where: (filter: SQL) => {
-					const decoded = decodeEqFilter(filter);
-					dbState.whereFilters.push(decoded);
-					const matched = matchRows(decoded);
-					return {
-						limit: () => Promise.resolve(matched.slice(0, 1)),
-						orderBy: () => Promise.resolve(matched)
-					};
-				},
-				// listApiTokens calls select().from().orderBy().limit() with no where: all
-				// rows up to the cap.
+		select: () => {
+			// listApiTokens calls select().from().where(ownerFilter).orderBy().limit().
+			// In single mode `ownerFilter` is `undefined` (the no-op owner predicate),
+			// so the list path runs all rows up to the cap regardless of the where.
+			const listChain = {
 				orderBy: () => ({
 					limit: (count: number) => {
 						dbState.listLimits.push(count);
 						return Promise.resolve(dbState.rows.slice(0, count));
 					}
 				})
-			})
-		}),
+			};
+			return {
+				from: () => ({
+					where: (filter: SQL | undefined) => {
+						if (filter === undefined) return listChain;
+						const decoded = decodeEqFilter(filter);
+						dbState.whereFilters.push(decoded);
+						const matched = matchRows(decoded);
+						return {
+							limit: () => Promise.resolve(matched.slice(0, 1)),
+							orderBy: () => Promise.resolve(matched)
+						};
+					},
+					...listChain
+				})
+			};
+		},
 		update: () => ({
 			set: (patch: Record<string, unknown>) => ({
 				where: (filter: SQL) => {
@@ -118,6 +132,7 @@ function seedToken(overrides: Partial<ApiTokenRow> = {}): ApiTokenRow {
 		name: 'seeded',
 		tokenHash: sha256('seeded-token'),
 		displayFragment: 'oken',
+		ownerId: null,
 		createdAt: new Date('2026-06-12T10:00:00Z'),
 		lastUsedAt: null,
 		revokedAt: null,
@@ -137,7 +152,7 @@ beforeEach(() => {
 
 describe('createApiToken', () => {
 	it('returns a prefixed raw token and persists only its hash', async () => {
-		const { token, summary } = await createApiToken('CI deploy');
+		const { token, summary } = await createApiToken('CI deploy', TEST_SCOPE);
 
 		// acta_pat_ prefix + 256-bit base64url body (43 chars).
 		expect(token).toMatch(/^acta_pat_[A-Za-z0-9_-]{43}$/);
@@ -154,7 +169,7 @@ describe('createApiToken', () => {
 	});
 
 	it('stores a non-secret display fragment (the last 4 raw chars)', async () => {
-		const { token, summary } = await createApiToken('CI');
+		const { token, summary } = await createApiToken('CI', TEST_SCOPE);
 		expect(summary.displayFragment).toBe(token.slice(-4));
 		expect(dbState.inserted[0].displayFragment).toBe(token.slice(-4));
 		// The fragment alone is far too short to be the token.
@@ -162,8 +177,8 @@ describe('createApiToken', () => {
 	});
 
 	it('has >= 128-bit entropy (256-bit body) and is unique across calls', async () => {
-		const a = await createApiToken('a');
-		const b = await createApiToken('b');
+		const a = await createApiToken('a', TEST_SCOPE);
+		const b = await createApiToken('b', TEST_SCOPE);
 		expect(a.token).not.toBe(b.token);
 		// 43 base64url chars decode to 32 bytes = 256 bits.
 		const body = a.token.slice(PAT_PREFIX.length);
@@ -171,7 +186,7 @@ describe('createApiToken', () => {
 	});
 
 	it('assigns a UUIDv7 id and active status', async () => {
-		const { summary } = await createApiToken('CI');
+		const { summary } = await createApiToken('CI', TEST_SCOPE);
 		expect(summary.id).toMatch(
 			/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 		);
@@ -183,10 +198,10 @@ describe('createApiToken', () => {
 
 describe('listApiTokens', () => {
 	it('projects each token, never exposing the raw token or hash', async () => {
-		const { token } = await createApiToken('first');
+		const { token } = await createApiToken('first', TEST_SCOPE);
 		seedToken({ tokenHash: sha256('second'), name: 'second' });
 
-		const summaries = await listApiTokens();
+		const summaries = await listApiTokens(TEST_SCOPE);
 
 		expect(summaries.length).toBe(2);
 		const serialized = JSON.stringify(summaries);
@@ -200,18 +215,18 @@ describe('listApiTokens', () => {
 	});
 
 	it('returns an empty list when there are no tokens', async () => {
-		await expect(listApiTokens()).resolves.toEqual([]);
+		await expect(listApiTokens(TEST_SCOPE)).resolves.toEqual([]);
 	});
 
 	it('marks a revoked token revoked', async () => {
 		seedToken({ revokedAt: new Date() });
-		const [summary] = await listApiTokens();
+		const [summary] = await listApiTokens(TEST_SCOPE);
 		expect(summary.status).toBe('revoked');
 	});
 
 	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
 		seedToken();
-		await listApiTokens();
+		await listApiTokens(TEST_SCOPE);
 		expect(dbState.listLimits).toEqual([100]);
 	});
 });
@@ -219,29 +234,29 @@ describe('listApiTokens', () => {
 describe('revokeApiToken', () => {
 	it('sets revoked_at on a live token', async () => {
 		const row = seedToken({ revokedAt: null });
-		await revokeApiToken(row.id);
+		await revokeApiToken(row.id, TEST_SCOPE);
 		expect(row.revokedAt).toBeInstanceOf(Date);
 	});
 
 	it('is idempotent: revoking an already-revoked token preserves the original instant', async () => {
 		const original = new Date('2026-06-01T00:00:00Z');
 		const row = seedToken({ revokedAt: original });
-		await revokeApiToken(row.id);
+		await revokeApiToken(row.id, TEST_SCOPE);
 		expect(row.revokedAt).toEqual(original);
 	});
 
 	it('is a silent no-op for an unknown id', async () => {
-		await expect(revokeApiToken('does-not-exist')).resolves.toBeUndefined();
+		await expect(revokeApiToken('does-not-exist', TEST_SCOPE)).resolves.toBeUndefined();
 	});
 });
 
 describe('authenticateApiToken', () => {
 	it('resolves a live token by hashing the raw bearer (never a raw match)', async () => {
-		const { token, summary } = await createApiToken('CI');
+		const { token, summary } = await createApiToken('CI', TEST_SCOPE);
 
 		const identity = await authenticateApiToken(token);
 
-		expect(identity).toEqual({ tokenId: summary.id });
+		expect(identity).toEqual({ tokenId: summary.id, ownerId: TEST_SCOPE.authorId });
 		// The lookup filtered on token_hash = sha256(token), not the raw token.
 		expect(dbState.whereFilters).toContainEqual({ column: 'token_hash', value: sha256(token) });
 	});
@@ -261,7 +276,7 @@ describe('authenticateApiToken', () => {
 	});
 
 	it('returns null for a revoked token', async () => {
-		const { token } = await createApiToken('CI');
+		const { token } = await createApiToken('CI', TEST_SCOPE);
 		const row = dbState.rows[0] as ApiTokenRow;
 		row.revokedAt = new Date();
 
@@ -269,7 +284,7 @@ describe('authenticateApiToken', () => {
 	});
 
 	it('stamps last_used_at on a successful authentication', async () => {
-		const { token } = await createApiToken('CI');
+		const { token } = await createApiToken('CI', TEST_SCOPE);
 		const row = dbState.rows[0] as ApiTokenRow;
 		expect(row.lastUsedAt).toBeNull();
 
