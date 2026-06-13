@@ -23,13 +23,17 @@ import { AppError, errorPageShape } from '$lib/server/problem';
  * crash. The renderer only ever receives a current-version `DocumentV1`.
  */
 export const load: PageServerLoad = async ({
-	params
+	params,
+	locals
 }): Promise<
 	| { document: DocumentV1; status: string; renderError: null }
 	| { document: null; status: string; renderError: ValidationErrorDetail[] }
 > => {
 	try {
-		const report = await getReport(params.id, await resolveAuthorScope());
+		const report = await getReport(
+			params.id,
+			await resolveAuthorScope(locals.authorSession?.authorId)
+		);
 		const result = validateStoredDocument(report.document);
 		if (result.ok) {
 			return { document: result.document, status: report.status, renderError: null };

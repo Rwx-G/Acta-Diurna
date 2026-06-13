@@ -11,13 +11,16 @@ export const load: PageServerLoad = async () => {
 export const actions: Actions = {
 	// Create a report from a skeleton (FR11): instantiate a draft mirroring the
 	// skeleton structure, then open it in the editor.
-	instantiate: async ({ request }) => {
+	instantiate: async ({ request, locals }) => {
 		const data = await request.formData();
 		const id = data.get('id');
 		if (typeof id !== 'string') return fail(400, { message: 'Missing skeleton id.' });
 		let reportId: string;
 		try {
-			const report = await instantiateReport(id, await resolveAuthorScope());
+			const report = await instantiateReport(
+				id,
+				await resolveAuthorScope(locals.authorSession?.authorId)
+			);
 			reportId = report.id;
 		} catch (thrown) {
 			if (thrown instanceof AppError) {

@@ -96,6 +96,7 @@ type SaveAction = typeof actions.save;
 function saveEvent(formData: FormData): Parameters<SaveAction>[0] {
 	return {
 		params: { id: REPORT_ID },
+		locals: { authorSession: null },
 		request: new Request('http://localhost/reports/x/edit?/save', {
 			method: 'POST',
 			body: formData
@@ -115,7 +116,10 @@ describe('load', () => {
 		listSkeletonsMock.mockResolvedValue([]);
 		isAiEnabledMock.mockReturnValue(true);
 
-		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
 
 		expect(result).toEqual({ report, dataSets: [], skeletons: [], aiEnabled: true });
 		expect(getReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
@@ -128,7 +132,10 @@ describe('load', () => {
 		listSkeletonsMock.mockResolvedValue([]);
 		isAiEnabledMock.mockReturnValue(false);
 
-		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
 
 		expect(result).toMatchObject({ aiEnabled: false });
 	});
@@ -142,7 +149,9 @@ describe('load', () => {
 		isAiEnabledMock.mockReturnValue(true);
 
 		try {
-			await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+			await load({ params: { id: REPORT_ID }, locals: { authorSession: null } } as Parameters<
+				typeof load
+			>[0]);
 			expect.unreachable('load must throw');
 		} catch (thrown) {
 			expect(isHttpError(thrown) && thrown.status === 404).toBe(true);
@@ -271,7 +280,7 @@ describe('save action', () => {
 });
 
 function actionEvent(id = REPORT_ID): { params: { id: string } } {
-	return { params: { id } } as { params: { id: string } };
+	return { params: { id }, locals: { authorSession: null } } as { params: { id: string } };
 }
 
 type BindAction = typeof actions.bind;
@@ -281,6 +290,7 @@ function bindEvent(form: Record<string, string>): Parameters<BindAction>[0] {
 	for (const [key, value] of Object.entries(form)) data.set(key, value);
 	return {
 		params: { id: REPORT_ID },
+		locals: { authorSession: null },
 		request: new Request('http://localhost/reports/x/edit?/bind', { method: 'POST', body: data })
 	} as Parameters<BindAction>[0];
 }
@@ -354,6 +364,7 @@ function postEvent(action: string, form: Record<string, string>): Parameters<Reb
 	for (const [key, value] of Object.entries(form)) data.set(key, value);
 	return {
 		params: { id: REPORT_ID },
+		locals: { authorSession: null },
 		request: new Request(`http://localhost/reports/x/edit?/${action}`, {
 			method: 'POST',
 			body: data

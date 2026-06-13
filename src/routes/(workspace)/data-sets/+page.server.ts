@@ -6,8 +6,8 @@ import { ingestFile, listDataSets, MAX_UPLOAD_BYTES, readStreamToCap } from '$li
 import { tooLarge } from '$lib/server/ingestion/errors';
 import { AppError } from '$lib/server/problem';
 
-export const load: PageServerLoad = async () => {
-	return { dataSets: await listDataSets(await resolveAuthorScope()) };
+export const load: PageServerLoad = async ({ locals }) => {
+	return { dataSets: await listDataSets(await resolveAuthorScope(locals.authorSession?.authorId)) };
 };
 
 /**
@@ -40,7 +40,7 @@ async function readCappedFormData(request: Request): Promise<FormData> {
 }
 
 export const actions: Actions = {
-	upload: async ({ request }) => {
+	upload: async ({ request, locals }) => {
 		let data: FormData;
 		try {
 			data = await readCappedFormData(request);
@@ -55,7 +55,10 @@ export const actions: Actions = {
 			return fail(400, { message: 'Choose a file to upload.' });
 		}
 		try {
-			const dataSet = await ingestFile({ file, scope: await resolveAuthorScope() });
+			const dataSet = await ingestFile({
+				file,
+				scope: await resolveAuthorScope(locals.authorSession?.authorId)
+			});
 			return { uploaded: { id: dataSet.id, filename: dataSet.filename } };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {

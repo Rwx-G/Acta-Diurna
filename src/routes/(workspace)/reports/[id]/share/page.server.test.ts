@@ -61,6 +61,7 @@ function createEvent(
 ): Parameters<(typeof actions)['create-share']>[0] {
 	return {
 		params: { id: REPORT_ID },
+		locals: { authorSession: null },
 		request: formRequest(fields),
 		url: new URL('http://localhost/reports/x/share')
 	} as unknown as Parameters<(typeof actions)['create-share']>[0];
@@ -69,6 +70,7 @@ function createEvent(
 function actionEvent(fields: Record<string, string>): never {
 	return {
 		params: { id: REPORT_ID },
+		locals: { authorSession: null },
 		request: formRequest(fields),
 		url: new URL('http://localhost/reports/x/share')
 	} as never;
@@ -87,7 +89,10 @@ describe('load', () => {
 		getReportMock.mockResolvedValue(publishedReport());
 		listSharesMock.mockResolvedValue([]);
 
-		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
 
 		expect(result).toBeDefined();
 		expect(result!.report.status).toBe('published');
@@ -99,7 +104,10 @@ describe('load', () => {
 		getReportMock.mockResolvedValue(publishedReport());
 		listSharesMock.mockResolvedValue([]);
 
-		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
 
 		expect(JSON.stringify(result)).not.toContain('token');
 	});
@@ -219,7 +227,10 @@ describe('load with recipients', () => {
 			new Map([['s1', ['a@example.com', 'b@example.com']]])
 		);
 
-		const result = await load({ params: { id: REPORT_ID } } as Parameters<typeof load>[0]);
+		const result = await load({
+			params: { id: REPORT_ID },
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
 
 		expect(listRecipientsForSharesMock).toHaveBeenCalledWith(['s1']);
 		expect(result!.shares[0].recipients).toEqual(['a@example.com', 'b@example.com']);

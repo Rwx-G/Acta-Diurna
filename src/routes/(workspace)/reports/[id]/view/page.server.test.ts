@@ -13,7 +13,10 @@ vi.mock('$lib/server/authors', () => ({
 const getReportMock = vi.mocked(getReport);
 
 function loadEvent(id: string) {
-	return { params: { id } } as unknown as Parameters<typeof load>[0];
+	return {
+		params: { id },
+		locals: { authorSession: null }
+	} as unknown as Parameters<typeof load>[0];
 }
 
 function reportWith(document: unknown, status: 'draft' | 'published') {

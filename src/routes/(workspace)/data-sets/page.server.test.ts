@@ -21,7 +21,7 @@ const ingestFileMock = vi.mocked(ingestFile);
 type UploadAction = (typeof actions)['upload'];
 
 function event(request: Request): Parameters<UploadAction>[0] {
-	return { request } as unknown as Parameters<UploadAction>[0];
+	return { request, locals: { authorSession: null } } as unknown as Parameters<UploadAction>[0];
 }
 
 /** A real multipart request the action's `.formData()` re-parse can read. */

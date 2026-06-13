@@ -34,9 +34,9 @@ interface SharePageData {
  * the RAW URL exactly once. `set-mode` flips a share restricted<->open;
  * `set-recipients` replaces a restricted share's allow-list (FR19).
  */
-export const load: PageServerLoad = async ({ params }): Promise<SharePageData> => {
+export const load: PageServerLoad = async ({ params, locals }): Promise<SharePageData> => {
 	try {
-		const scope = await resolveAuthorScope();
+		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
 		const report = await getReport(params.id, scope);
 		const summaries = await listShares(report.id, scope);
 		// One batched read for every share's allow-list, not one query per share.
@@ -66,7 +66,7 @@ function parseRecipients(raw: string): string[] {
 }
 
 export const actions: Actions = {
-	'create-share': async ({ params, request, url }) => {
+	'create-share': async ({ params, request, url, locals }) => {
 		const data = await request.formData();
 		const rawExpiry = data.get('expiresAt');
 		const rawMode = data.get('mode');
@@ -97,7 +97,7 @@ export const actions: Actions = {
 				: [];
 
 		try {
-			const scope = await resolveAuthorScope();
+			const scope = await resolveAuthorScope(locals.authorSession?.authorId);
 			const { token, share } = await createShare(params.id, scope, { mode, expiresAt });
 			// A restricted share with an initial recipient list set in one gesture.
 			if (mode === 'restricted' && recipients.length > 0) {
@@ -112,7 +112,7 @@ export const actions: Actions = {
 		}
 	},
 
-	'set-mode': async ({ request }) => {
+	'set-mode': async ({ request, locals }) => {
 		const data = await request.formData();
 		const shareId = data.get('shareId');
 		const rawMode = data.get('mode');
@@ -120,12 +120,16 @@ export const actions: Actions = {
 			return fail(400, { message: 'Missing share.' });
 		}
 		const mode: ShareMode = rawMode === 'open' ? 'open' : 'restricted';
-		const updated = await setShareMode(shareId, mode, await resolveAuthorScope());
+		const updated = await setShareMode(
+			shareId,
+			mode,
+			await resolveAuthorScope(locals.authorSession?.authorId)
+		);
 		if (updated === 0) return fail(404, { message: 'Share not found.' });
 		return { modeSet: { shareId, mode } };
 	},
 
-	'set-recipients': async ({ request }) => {
+	'set-recipients': async ({ request, locals }) => {
 		const data = await request.formData();
 		const shareId = data.get('shareId');
 		const raw = data.get('recipients');
@@ -137,7 +141,11 @@ export const actions: Actions = {
 			// setShareRecipients validates the share id (unknown/malformed/foreign -> 404)
 			// and the list size (over the cap -> 422) before any write, so a stale or
 			// garbage shareId is a clean fail, never a 500 from the FK or a cast error.
-			await setShareRecipients(shareId, recipients, await resolveAuthorScope());
+			await setShareRecipients(
+				shareId,
+				recipients,
+				await resolveAuthorScope(locals.authorSession?.authorId)
+			);
 			return { recipientsSet: { shareId, count: recipients.length } };
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
@@ -147,7 +155,7 @@ export const actions: Actions = {
 		}
 	},
 
-	'revoke-share': async ({ request }) => {
+	'revoke-share': async ({ request, locals }) => {
 		const data = await request.formData();
 		const shareId = data.get('shareId');
 		if (typeof shareId !== 'string' || shareId.length === 0) {
@@ -157,7 +165,7 @@ export const actions: Actions = {
 		// live reader sessions. Revoking an already-revoked share is a no-op, so a
 		// double-submit is harmless. revokeShare gates on ownership (story 8.2): a
 		// share the author does not own is a silent no-op, never a cross-author revoke.
-		await revokeShare(shareId, await resolveAuthorScope());
+		await revokeShare(shareId, await resolveAuthorScope(locals.authorSession?.authorId));
 		return { revoked: { shareId } };
 	}
 };

@@ -30,9 +30,9 @@ import { runAction } from '$lib/server/action';
 import { parseSlotMapping } from './bind-form';
 import { applyNarrativeFields } from './editor-state';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
 	try {
-		const scope = await resolveAuthorScope();
+		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
 		return {
 			report: await getReport(params.id, scope),
 			dataSets: await listDataSets(scope),
@@ -52,12 +52,12 @@ export const load: PageServerLoad = async ({ params }) => {
 };
 
 export const actions: Actions = {
-	save: async ({ params, request }) => {
+	save: async ({ params, request, locals }) => {
 		const data = await request.formData();
 		const raw = data.get('document');
 		return runAction(
 			async () => {
-				const scope = await resolveAuthorScope();
+				const scope = await resolveAuthorScope(locals.authorSession?.authorId);
 				let documentInput: unknown;
 				if (typeof raw === 'string') {
 					if (raw.length > MAX_DOCUMENT_BYTES) {
@@ -83,7 +83,7 @@ export const actions: Actions = {
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
 	},
-	bind: async ({ params, request }) => {
+	bind: async ({ params, request, locals }) => {
 		const data = await request.formData();
 		const blockId = String(data.get('blockId') ?? '');
 		const dataSetId = String(data.get('dataSetId') ?? '');
@@ -104,14 +104,14 @@ export const actions: Actions = {
 					blockId,
 					dataSetId,
 					slotMapping,
-					await resolveAuthorScope()
+					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
 				return { boundAt: report.updatedAt.toISOString() };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
 	},
-	rebind: async ({ params, request }) => {
+	rebind: async ({ params, request, locals }) => {
 		// Auto-rebinding (FR14): inject a fresh data set and re-resolve every bound
 		// block whose fields match it. Returns the per-block diagnostics + the
 		// summary so the chips turn green/amber/red in one action.
@@ -122,7 +122,11 @@ export const actions: Actions = {
 		}
 		return runAction(
 			async () => {
-				const result = await rebindReport(params.id, dataSetId, await resolveAuthorScope());
+				const result = await rebindReport(
+					params.id,
+					dataSetId,
+					await resolveAuthorScope(locals.authorSession?.authorId)
+				);
 				return {
 					reboundAt: result.report.updatedAt.toISOString(),
 					diagnostics: result.diagnostics,
@@ -133,7 +137,7 @@ export const actions: Actions = {
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
 	},
-	remap: async ({ params, request }) => {
+	remap: async ({ params, request, locals }) => {
 		// Remap-in-place (FR15): point a drifted expected field at an available
 		// field; the remap persists in the binding and the block re-resolves.
 		const data = await request.formData();
@@ -152,7 +156,7 @@ export const actions: Actions = {
 					dataSetId,
 					expectedField,
 					availableField,
-					await resolveAuthorScope()
+					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
 				return { remappedAt: report.updatedAt.toISOString() };
 			},
@@ -187,7 +191,7 @@ export const actions: Actions = {
 						dataSetId,
 						requestId: locals.requestId
 					},
-					await resolveAuthorScope()
+					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
 				return {
 					generate: {
@@ -244,7 +248,7 @@ export const actions: Actions = {
 						dataSetId,
 						requestId: locals.requestId
 					},
-					await resolveAuthorScope(),
+					await resolveAuthorScope(locals.authorSession?.authorId),
 					params.id
 				);
 				return {
@@ -254,21 +258,27 @@ export const actions: Actions = {
 			(problem) => ({ generate: { message: problem.message, errors: problem.errors } })
 		);
 	},
-	publish: async ({ params }) => {
+	publish: async ({ params, locals }) => {
 		// A 422 (invalid draft) carries the actionable errors[]; the editor renders
 		// them at the failing blocks, reusing the save-path rendering.
 		return runAction(
 			async () => {
-				const report = await publishReport(params.id, await resolveAuthorScope());
+				const report = await publishReport(
+					params.id,
+					await resolveAuthorScope(locals.authorSession?.authorId)
+				);
 				return { published: true, status: report.status };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
 	},
-	unpublish: async ({ params }) => {
+	unpublish: async ({ params, locals }) => {
 		return runAction(
 			async () => {
-				const report = await unpublishToDraft(params.id, await resolveAuthorScope());
+				const report = await unpublishToDraft(
+					params.id,
+					await resolveAuthorScope(locals.authorSession?.authorId)
+				);
 				return { published: false, status: report.status };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })

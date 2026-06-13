@@ -32,7 +32,8 @@ type DeleteAction = typeof actions.delete;
 
 function deleteEvent(formData: FormData): Parameters<DeleteAction>[0] {
 	return {
-		request: new Request('http://localhost/reports?/delete', { method: 'POST', body: formData })
+		request: new Request('http://localhost/reports?/delete', { method: 'POST', body: formData }),
+		locals: { authorSession: null }
 	} as Parameters<DeleteAction>[0];
 }
 
@@ -40,7 +41,8 @@ type DuplicateAction = typeof actions.duplicate;
 
 function duplicateEvent(formData: FormData): Parameters<DuplicateAction>[0] {
 	return {
-		request: new Request('http://localhost/reports?/duplicate', { method: 'POST', body: formData })
+		request: new Request('http://localhost/reports?/duplicate', { method: 'POST', body: formData }),
+		locals: { authorSession: null }
 	} as Parameters<DuplicateAction>[0];
 }
 
@@ -60,7 +62,9 @@ describe('load', () => {
 		];
 		listReportsMock.mockResolvedValue(summaries);
 
-		const result = await load({} as Parameters<typeof load>[0]);
+		const result = await load({
+			locals: { authorSession: null }
+		} as Parameters<typeof load>[0]);
 
 		expect(result).toEqual({ reports: summaries });
 	});

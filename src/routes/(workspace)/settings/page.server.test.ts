@@ -77,7 +77,9 @@ describe('load', () => {
 	it('reports SMTP as configured with the sender and TLS mode', async () => {
 		mailerConfig.mockReturnValue({ from: 'reports@example.com', tlsMode: 'starttls' });
 
-		const result = (await load({} as Parameters<typeof load>[0])) as {
+		const result = (await load({ locals: { authorSession: null } } as Parameters<
+			typeof load
+		>[0])) as {
 			smtp: { configured: true; from: string; tlsMode: string } | null;
 		};
 
@@ -91,7 +93,9 @@ describe('load', () => {
 	it('reports SMTP as absent when not configured', async () => {
 		mailerConfig.mockReturnValue(null);
 
-		const result = (await load({} as Parameters<typeof load>[0])) as {
+		const result = (await load({ locals: { authorSession: null } } as Parameters<
+			typeof load
+		>[0])) as {
 			smtp: { configured: true; from: string; tlsMode: string } | null;
 		};
 
@@ -108,7 +112,9 @@ describe('load (AI)', () => {
 		mailerConfig.mockReturnValue(null);
 		aiConfig.mockReturnValue(null);
 
-		const result = (await load({} as Parameters<typeof load>[0])) as AiLoad;
+		const result = (await load({ locals: { authorSession: null } } as Parameters<
+			typeof load
+		>[0])) as AiLoad;
 
 		expect(result.ai).toBeNull();
 	});
@@ -122,7 +128,9 @@ describe('load (AI)', () => {
 		});
 		isAiEnabled.mockReturnValue(false);
 
-		const result = (await load({} as Parameters<typeof load>[0])) as AiLoad;
+		const result = (await load({ locals: { authorSession: null } } as Parameters<
+			typeof load
+		>[0])) as AiLoad;
 
 		expect(result.ai).toEqual({
 			configured: true,
@@ -138,7 +146,9 @@ describe('load (AI)', () => {
 		aiConfig.mockReturnValue({ baseUrl: 'https://llm.example.com/v1', model: 'gpt-test' });
 		isAiEnabled.mockReturnValue(true);
 
-		const result = (await load({} as Parameters<typeof load>[0])) as AiLoad;
+		const result = (await load({ locals: { authorSession: null } } as Parameters<
+			typeof load
+		>[0])) as AiLoad;
 
 		expect(result.ai?.enabled).toBe(true);
 	});
@@ -286,7 +296,9 @@ describe('load (tokens)', () => {
 		];
 		listApiTokens.mockResolvedValue(tokens);
 
-		const result = (await load({} as Parameters<typeof load>[0])) as { tokens: typeof tokens };
+		const result = (await load({ locals: { authorSession: null } } as Parameters<
+			typeof load
+		>[0])) as { tokens: typeof tokens };
 
 		expect(result.tokens).toEqual(tokens);
 	});

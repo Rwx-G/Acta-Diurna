@@ -15,7 +15,7 @@ import { runAction } from '$lib/server/action';
 // instead of offering a test-send that always 503s. The address itself is not
 // secret; the password is never read here. Also lists the author's API tokens
 // (D10) - id/name/fragment/timestamps/status only, never the raw token or hash.
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const config = mailerConfig();
 	const ai = aiConfig();
 	return {
@@ -26,7 +26,7 @@ export const load: PageServerLoad = async () => {
 		ai: ai
 			? { configured: true as const, baseUrl: ai.baseUrl, model: ai.model, enabled: isAiEnabled() }
 			: null,
-		tokens: await listApiTokens(await resolveAuthorScope())
+		tokens: await listApiTokens(await resolveAuthorScope(locals.authorSession?.authorId))
 	};
 };
 
@@ -90,7 +90,7 @@ export const actions: Actions = {
 	// D10: mint a personal access token. The raw token is returned ONCE on this
 	// action result (shown once in the UI, never re-fetchable, never logged); only
 	// its hash is stored. A reload loses the raw token, by design.
-	'create-token': async ({ request }) => {
+	'create-token': async ({ request, locals }) => {
 		const data = await request.formData();
 		const name = data.get('name');
 		if (typeof name !== 'string' || name.trim().length === 0) {
@@ -98,17 +98,20 @@ export const actions: Actions = {
 				token: { created: false as const, message: 'Enter a name for the token.' }
 			});
 		}
-		const { token, summary } = await createApiToken(name.trim(), await resolveAuthorScope());
+		const { token, summary } = await createApiToken(
+			name.trim(),
+			await resolveAuthorScope(locals.authorSession?.authorId)
+		);
 		return { token: { created: true as const, raw: token, name: summary.name } };
 	},
 	// D10: revoke a token (idempotent). The list reloads showing the revoked chip.
-	'revoke-token': async ({ request }) => {
+	'revoke-token': async ({ request, locals }) => {
 		const data = await request.formData();
 		const id = data.get('tokenId');
 		if (typeof id !== 'string' || id.length === 0) {
 			return fail(400, { token: { created: false as const, message: 'Missing token id.' } });
 		}
-		await revokeApiToken(id, await resolveAuthorScope());
+		await revokeApiToken(id, await resolveAuthorScope(locals.authorSession?.authorId));
 		return { token: { revoked: true as const } };
 	},
 	logout: async ({ cookies }) => {

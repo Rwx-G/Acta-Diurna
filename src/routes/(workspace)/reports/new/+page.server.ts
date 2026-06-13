@@ -12,8 +12,11 @@ export const load: PageServerLoad = async () => {
 export const actions: Actions = {
 	// The draft gets a neutral title; the editor opens with the title field
 	// ready for an inline rename (no intermediate naming form).
-	default: async () => {
-		const report = await createReport(DEFAULT_REPORT_TITLE, await resolveAuthorScope());
+	default: async ({ locals }) => {
+		const report = await createReport(
+			DEFAULT_REPORT_TITLE,
+			await resolveAuthorScope(locals.authorSession?.authorId)
+		);
 		redirect(303, `/reports/${report.id}/edit`);
 	}
 };

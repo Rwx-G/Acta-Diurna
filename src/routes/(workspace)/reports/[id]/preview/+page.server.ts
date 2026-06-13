@@ -12,9 +12,12 @@ import { AppError, errorPageShape } from '$lib/server/problem';
  * blocks still render and invalid ones surface a gentle notice (AR: "what you
  * preview is what they read").
  */
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
 	try {
-		const report = await getReport(params.id, await resolveAuthorScope());
+		const report = await getReport(
+			params.id,
+			await resolveAuthorScope(locals.authorSession?.authorId)
+		);
 		return { reportId: report.id, document: report.document };
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));

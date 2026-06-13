@@ -39,7 +39,9 @@ describe('create action', () => {
 		} as Report);
 
 		try {
-			await actions.default({} as Parameters<typeof actions.default>[0]);
+			await actions.default({
+				locals: { authorSession: null }
+			} as Parameters<typeof actions.default>[0]);
 			expect.unreachable('create must redirect');
 		} catch (thrown) {
 			expectRedirect(thrown, '/reports/01970000-0000-7000-8000-000000000001/edit');
