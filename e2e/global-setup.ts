@@ -14,7 +14,9 @@ import {
 	FIXTURE_DOCUMENT,
 	FIXTURE_REPORT_ID,
 	MATRIX_FIXTURE_DOCUMENT,
-	MATRIX_FIXTURE_REPORT_ID
+	MATRIX_FIXTURE_REPORT_ID,
+	PHASE_B_FIXTURE_DOCUMENT,
+	PHASE_B_FIXTURE_REPORT_ID
 } from './fixtures.ts';
 
 const PORT = 4173;
@@ -29,7 +31,8 @@ async function seedFixture(databaseUrl: string): Promise<void> {
 		const now = new Date();
 		for (const { id, document } of [
 			{ id: FIXTURE_REPORT_ID, document: FIXTURE_DOCUMENT },
-			{ id: MATRIX_FIXTURE_REPORT_ID, document: MATRIX_FIXTURE_DOCUMENT }
+			{ id: MATRIX_FIXTURE_REPORT_ID, document: MATRIX_FIXTURE_DOCUMENT },
+			{ id: PHASE_B_FIXTURE_REPORT_ID, document: PHASE_B_FIXTURE_DOCUMENT }
 		]) {
 			const result = validateDocument(document);
 			if (!result.ok) {

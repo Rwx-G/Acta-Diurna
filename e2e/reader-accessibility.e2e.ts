@@ -1,10 +1,15 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { FIXTURE_REPORT_ID, MATRIX_FIXTURE_REPORT_ID } from './fixtures.ts';
+import {
+	FIXTURE_REPORT_ID,
+	MATRIX_FIXTURE_REPORT_ID,
+	PHASE_B_FIXTURE_REPORT_ID
+} from './fixtures.ts';
 
 // Authenticated via the `setup` project storage state (config dependency).
 const VIEW_URL = `/reports/${FIXTURE_REPORT_ID}/view`;
 const MATRIX_VIEW_URL = `/reports/${MATRIX_FIXTURE_REPORT_ID}/view`;
+const PHASE_B_VIEW_URL = `/reports/${PHASE_B_FIXTURE_REPORT_ID}/view`;
 
 /**
  * The CI-gating a11y check (NFR14/15, architecture validation decision). Runs
@@ -93,6 +98,29 @@ test('the rendered set-membership UpSet has no axe-core violations (WCAG 2 A/AA)
 	await page.goto(MATRIX_VIEW_URL);
 	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 	await expect(page.getByRole('img', { name: 'Coverage by source combination' })).toBeVisible();
+
+	const results = await new AxeBuilder({ page })
+		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+		.analyze();
+
+	expect(results.violations).toEqual([]);
+});
+
+/**
+ * Every Epic 7 Phase B block on the default theme: the callout (7.7, info and
+ * danger tones with icon + kicker + an inline-code run), the code block (7.8),
+ * the card grid (7.9), the structured list and steps (7.10), the timeline
+ * (7.11), the chip-cluster (7.5) and the scaleRef status table (7.5). These
+ * blocks carry component-level a11y assertions; this is the e2e that gates them
+ * under axe-core on the rendered reader surface (structure, names, roles, and
+ * the AA floor), default theme, desktop and mobile via the two Playwright
+ * projects. Status is never colour alone: every badge, chip and callout tone
+ * carries its label in words. NFR14.
+ */
+test('the rendered Phase B blocks have no axe-core violations (WCAG 2 A/AA)', async ({ page }) => {
+	await page.goto(PHASE_B_VIEW_URL);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+	await expect(page.getByRole('table')).toBeVisible();
 
 	const results = await new AxeBuilder({ page })
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
