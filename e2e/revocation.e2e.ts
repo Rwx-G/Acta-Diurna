@@ -1,40 +1,22 @@
-import { readFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import pg from 'pg';
-import { hashToken } from '../src/lib/server/crypto/hash-token.ts';
-import { DB_URL_FILE, E2E_BASE_URL, FIXTURE_REPORT_ID } from './fixtures.ts';
+import { FIXTURE_REPORT_ID } from './fixtures.ts';
 
-// Revocation & leak-free posture (story 3.5, FR20/NFR9/NFR10), end to end against
-// the real build. An author creates an OPEN share, a reader verifies (via the DB
-// token seam, since the raw magic link only ever goes to the unreachable SMTP
-// relay) and reads the report. The author then REVOKES the share. On the reader's
-// very next load the same link serves the neutral page (404), the report title is
-// gone from the HTML, and the live reader session is cut off - revocation is
-// immediate, no cache window (reader responses are no-store).
+// Revocation & leak-free posture (story 3.5 + 8.4, FR20/NFR9/NFR10), end to end
+// against the real build. The e2e harness runs SINGLE mode (no SMTP, see
+// global-setup.ts), where a share is a consultation token: opening the link
+// serves the report directly. The author then REVOKES the share. On the reader's
+// very next load the SAME link serves the neutral page (404), the report title is
+// gone from the HTML, and the cut-off is immediate - revocation has no cache
+// window (reader responses are no-store). Single mode has no verified reader
+// session; the consultation read is cut by the share going inactive.
 
-async function postForm(
-	page: import('@playwright/test').Page,
-	url: string,
-	form: Record<string, string>
-): Promise<{ type?: string }> {
-	const response = await page.request.post(url, {
-		headers: { origin: E2E_BASE_URL, 'content-type': 'application/x-www-form-urlencoded' },
-		form,
-		maxRedirects: 0,
-		failOnStatusCode: false
-	});
-	return (await response.json()) as { type?: string };
-}
-
-test('revoke: a verified reader is cut off and the link serves the neutral page (no title leak)', async ({
+test('revoke: a consultation link is cut off and serves the neutral page (no title leak)', async ({
 	page
 }, testInfo) => {
 	test.skip(testInfo.project.name === 'mobile', 'share creation is desktop-only (workspace)');
 
-	// Author creates an OPEN share (any verified email may read).
+	// Author creates a share. In single mode it is an open consultation token.
 	await page.goto(`/reports/${FIXTURE_REPORT_ID}/share`);
-	await page.getByLabel('Access').selectOption('open');
 	await page.getByRole('button', { name: 'Generate link' }).click();
 	const linkCode = page.locator('.created-url');
 	await expect(linkCode).toBeVisible();
@@ -44,32 +26,8 @@ test('revoke: a verified reader is cut off and the link serves the neutral page 
 	const reader = await page.context().browser()!.newContext();
 	const readerPage = await reader.newPage();
 	try {
-		// Reader verifies through the DB seam (a known raw token inserted directly).
-		await postForm(readerPage, `/r/${shareToken}?/request-verification`, {
-			email: 'reader@example.com'
-		});
-		const rawVerification = randomBytes(32).toString('base64url');
-		const databaseUrl = readFileSync(DB_URL_FILE, 'utf8').trim();
-		const pool = new pg.Pool({ connectionString: databaseUrl });
-		try {
-			const shareRow = await pool.query<{ id: string }>(
-				'select id from shares where token_hash = $1 limit 1',
-				[hashToken(shareToken)]
-			);
-			const shareId = shareRow.rows[0].id;
-			await pool.query(
-				`insert into verification_tokens (id, token_hash, share_id, email, expires_at, created_at)
-				 values ($1, $2, $3, $4, now() + interval '15 minutes', now())`,
-				[crypto.randomUUID(), hashToken(rawVerification), shareId, 'reader@example.com']
-			);
-		} finally {
-			await pool.end();
-		}
-
-		// Clicking the magic link lands on the report; the reader now holds a live
-		// acta_reader session and can read.
-		await readerPage.goto(`/r/${shareToken}/verify?t=${rawVerification}`);
-		await expect(readerPage).toHaveURL(new RegExp(`/r/${shareToken}$`));
+		// The consultation link serves the report directly (no email, no verify card).
+		await readerPage.goto(`/r/${shareToken}`);
 		await expect(readerPage.getByRole('application')).toBeVisible();
 
 		// The author revokes the share via the one-click UI (two-click confirm). The
