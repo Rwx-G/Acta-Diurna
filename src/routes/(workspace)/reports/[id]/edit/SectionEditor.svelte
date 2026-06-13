@@ -34,23 +34,28 @@
 
 	const sectionIssues = $derived(errors[`section:${section.id}`] ?? []);
 
-	const BLOCK_TYPES: BlockType[] = [
-		'text',
-		'table',
-		'chart',
-		'kpi',
-		'image',
-		'comparison-matrix',
-		'field-grid',
-		'legend',
-		'set-membership',
-		'chip-cluster',
-		'callout',
-		'code',
-		'card-grid',
-		'list',
-		'timeline'
-	];
+	// `satisfies Record<BlockType, true>` makes the menu exhaustive: a new block
+	// type missing a key is a compile error (no silently-absent "Add" button), and
+	// a typo'd or removed key is rejected too. The order here is the menu order.
+	const BLOCK_MENU = {
+		text: true,
+		table: true,
+		chart: true,
+		kpi: true,
+		image: true,
+		'comparison-matrix': true,
+		'field-grid': true,
+		legend: true,
+		'set-membership': true,
+		'chip-cluster': true,
+		callout: true,
+		code: true,
+		'card-grid': true,
+		list: true,
+		timeline: true
+	} satisfies Record<BlockType, true>;
+
+	const BLOCK_TYPES = Object.keys(BLOCK_MENU) as BlockType[];
 </script>
 
 <section class="section-card" aria-label={`Section: ${section.title}`}>
