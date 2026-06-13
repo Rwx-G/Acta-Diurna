@@ -16,6 +16,7 @@ import { ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { dataSets, type DataSetField, type DataSetRow } from '$lib/server/db/schema';
+import { getReport } from '$lib/server/documents/reports';
 import { serverEnv } from '$lib/server/env';
 import { AppError } from '$lib/server/problem';
 import { parseCsv } from './csv.ts';
@@ -164,6 +165,16 @@ export async function ingestFile(input: IngestInput): Promise<DataSet> {
 	const format = detectFormat(file.name, file.type);
 	if (format === 'xlsx') {
 		throw excelNotEnabled();
+	}
+
+	// Validate the target report is owned by the pushing author BEFORE stamping it
+	// on the data set (story 8.2 IDOR fix). A foreign/unknown report id is the same
+	// 404 the scoped `getReport` raises - the gate `rebindReport` already applies on
+	// the push - so a `data_sets.report_id` can never reference another author's
+	// report. In single mode the scope is the implicit author, so the check passes
+	// for every existing report exactly as before.
+	if (reportId !== null) {
+		await getReport(reportId, scope);
 	}
 
 	const bytes = new Uint8Array(await file.arrayBuffer());

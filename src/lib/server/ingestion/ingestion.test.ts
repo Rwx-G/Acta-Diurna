@@ -19,6 +19,21 @@ vi.mock('$lib/server/mode', () => ({
 	isMultiAuthor: () => false
 }));
 
+// The ingestion service now validates a supplied reportId via the scoped getReport
+// (story 8.2 IDOR fix): a foreign/unknown report id is the same 404, so the
+// data set's report_id can never reference another author's report. The mock
+// resolves a configured set of owned report ids and 404s everything else.
+const ownedReportIds = vi.hoisted(() => ({ ids: new Set<string>() }));
+
+vi.mock('$lib/server/documents/reports', () => ({
+	getReport: (id: string) => {
+		if (ownedReportIds.ids.has(id)) return Promise.resolve({ id });
+		return Promise.reject(
+			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
+		);
+	}
+}));
+
 const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 
 const dbState = vi.hoisted(() => ({
@@ -53,8 +68,12 @@ async function expectAppError(promise: Promise<unknown>, status: number): Promis
 	throw new Error(`expected an AppError with status ${status}`);
 }
 
+const OWNED_REPORT_ID = '01970000-0000-7000-8000-000000000001';
+
 beforeEach(() => {
 	dbState.dataSets.clear();
+	// The report ids the happy-path tests target are owned by the pushing author.
+	ownedReportIds.ids = new Set([OWNED_REPORT_ID]);
 });
 
 afterAll(async () => {
@@ -190,6 +209,43 @@ describe('ingestBytes - the raw-body API entry (story 4.3)', () => {
 			422
 		);
 		expect(error.type).toBe('/problems/unparseable-file');
+	});
+});
+
+describe('ingestFile - report ownership gate (story 8.2 IDOR fix)', () => {
+	it('refuses a reportId the author does not own with the same 404 and stores nothing', async () => {
+		const foreignReportId = '01970000-0000-7000-8000-0000000000b1';
+		const error = await expectAppError(
+			ingestFile({
+				file: fileFrom('d.csv', 'a\n1'),
+				reportId: foreignReportId,
+				scope: TEST_SCOPE
+			}),
+			404
+		);
+		expect(error.type).toBe('/problems/report-not-found');
+		// No row stamped with a cross-author report id (the data set is never written).
+		expect(dbState.dataSets.size).toBe(0);
+	});
+
+	it('refuses an unknown reportId on the raw-bytes push the same way', async () => {
+		await expectAppError(
+			ingestBytes({
+				bytes: new TextEncoder().encode('a\n1'),
+				format: 'csv',
+				filename: 'd.csv',
+				reportId: '01970000-0000-7000-8000-00000000dead',
+				scope: TEST_SCOPE
+			}),
+			404
+		);
+		expect(dbState.dataSets.size).toBe(0);
+	});
+
+	it('stores an unbound data set (no reportId) without any ownership check', async () => {
+		const dataSet = await ingestFile({ file: fileFrom('d.csv', 'a\n1'), scope: TEST_SCOPE });
+		expect(dataSet.reportId).toBeNull();
+		expect(dbState.dataSets.size).toBe(1);
 	});
 });
 
