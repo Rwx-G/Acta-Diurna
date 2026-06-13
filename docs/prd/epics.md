@@ -187,6 +187,12 @@ New scope, post-V1 (not in the original FR list). Grows the block catalogue with
 
 **Capabilities (proposed FR40-FR52):** Phase A - comparison-matrix, set-membership (UpSet), field-grid, legend, categorical scales. Phase B - status badge / chip-cluster + table conditional formatting, callout / admonition, code block + inline code, curated inline-SVG icon set, card grid, structured list / steps, timeline / roadmap, field-grid meta-strip.
 
+### Epic 8: Identity & Multi-Author (SMTP-gated)
+
+New scope, post-V1. Turns the single-password instance into a multi-author one, with the operating mode chosen by the SMTP configuration (an ops/env decision). SMTP absent = the current single-password author + unverified consultation-token shares. SMTP configured = email-magic-link authors (self-service within an allowed domain, the password disabled) + verified reader shares. The invariant holds in both: **one report = one author (owner)**, and in multi mode authors are siloed (each sees only their own reports). This is the deferred multi-author / tenancy work, now triggered. Identity = email: a magic link proves an identified person, where a shared password is anonymous.
+
+**Capabilities (proposed FR53-FR60):** env-driven operating mode (single vs multi) with fail-fast boot validation; SMTP transport supporting port-25 / no-TLS / no-auth relays + a CLI connection test; per-report ownership and per-author tenancy filtering (closes the multi-author IDOR); magic-link author authentication with domain self-service; mode-aware reader sharing (consultation token vs verified magic link); optional reader-domain whitelist; mode-aware login + workspace UX.
+
 ## Epic 1: Foundation & First Beautiful Report
 
 The author deploys Acta Diurna in five minutes, logs in, creates a structured report, and sees it rendered presentation-ready - the product's core promise proven end to end.
@@ -1068,3 +1074,172 @@ So that a report header can show Author / Date / Scope / Status as a single divi
 **Given** the variant
 **When** audited
 **Then** it is SSR, Zod-validated, renderer-pure, AAA on the default theme, within the reader budget
+
+## Epic 8: Identity & Multi-Author (SMTP-gated)
+
+Turns the single-password instance into a multi-author one. The operating mode is an OPS decision expressed entirely in the environment (the compose env), not a web-UI action: configure SMTP and the instance runs multi-author; leave it unconfigured and it runs single-author. This is the deferred multi-author / tenancy work (1.5 "Multi-author IDOR prep"), now triggered by SMTP. Auth is security-critical: every story passes the dev -> QA -> auditor loop.
+
+### Foundational design (resolved with the product owner, confirm at kickoff)
+
+- **Two operating modes, chosen by SMTP at boot (env-driven, no runtime gate).**
+  - **Single mode (SMTP absent):** ONE author authenticated by `AUTHOR_PASSWORD_HASH` (today's behavior). Reader shares are unverified CONSULTATION TOKENS: the share link grants read access, with no per-recipient email verification (the restricted/allow-list mode is unavailable without email). Revocation + expiry + the leak-free neutral posture still apply.
+  - **Multi mode (SMTP configured):** authors authenticate by EMAIL MAGIC LINK, self-service within `AUTHOR_EMAIL_DOMAIN`; the PASSWORD LOGIN IS DISABLED. Reader shares use the verified magic-link flow (Epic 3), optionally restricted to allowed reader domains. Identity = email (a magic link proves an identified person; a shared password is anonymous).
+- **The mode is purely a function of the SMTP env at boot.** No web-UI "verify" button, no persisted "verified" flag. SMTP correctness is the operator's responsibility.
+- **Fail-fast boot validation (anti-lockout by misconfig).** When SMTP is configured (multi mode), the env validation ALSO requires `AUTHOR_EMAIL_DOMAIN` and `INITIAL_OWNER_EMAIL`, and `INITIAL_OWNER_EMAIL` must be within `AUTHOR_EMAIL_DOMAIN`; otherwise the container refuses to boot with a clear message. This prevents a silent lockout (SMTP on but no valid author domain -> nobody can authenticate, and there is no password fallback in multi mode).
+- **SMTP transport must support a bare port-25 anonymous relay.** `SMTP_TLS_MODE=none` with no `SMTP_USER`/`SMTP_PASSWORD` (an internal smarthost): the mailer builds `secure:false`, NO `requireTLS`, and NO `auth` object when credentials are absent; `transporter.verify()` works on that profile. A CLI command (`pnpm smtp:test` / a docker-exec entrypoint) runs `transporter.verify()` against the configured env as an OPS DEBUG HELPER - it never gates the mode.
+- **One report = one author (owner), in both modes.** Reports gain an `owner_id`. In single mode there is exactly one implicit author (the password author) owning everything. In multi mode every report / data-set / share / API-token read and write is scoped to the authenticated author (tenancy filtering) - this closes the multi-author IDOR; authors are SILOED (each sees only their own). PATs are per-author.
+- **Bascule and recovery (documented ops procedures).** On the FIRST boot in multi mode, all password-era reports are assigned to the author identified by `INITIAL_OWNER_EMAIL` (deterministic inheritance, no "claim" race). Downgrade (SMTP removed -> single mode) returns to single-password; multi-era reports collapse under the single password author (an assumed, documented downgrade). LOCKOUT RECOVERY: multi mode has no password and no break-glass, so if SMTP breaks the operator fixes or removes the SMTP env in compose and restarts (removing SMTP regains single-password access) - the same env surface that set the mode resolves it.
+- **Reuse, do not reinvent.** Author magic-link auth reuses the Epic 3 reader verification machinery (single-use, TTL'd, hashed tokens; enumeration-safe neutral responses; the realm-parameterized session core). The author realm stays separate from the reader realm and the PAT realm (NFR12).
+- **Build order.** 8.1 mode foundation + SMTP transport (the seam every other story reads) -> 8.2 author identity + per-report ownership + tenancy filtering (the load-bearing security change) -> 8.3 magic-link author auth -> 8.4 mode-aware sharing -> 8.5 reader-domain whitelist -> 8.6 login/workspace UX + operator docs.
+
+### Story 8.1: Operating-Mode Foundation and SMTP Transport
+
+As an operator,
+I want the instance to choose single- vs multi-author mode from the SMTP environment, validated fail-fast at boot,
+So that turning multi-author on or off is a deliberate ops action with no silent lockout.
+
+**Acceptance Criteria:**
+
+**Given** SMTP is NOT configured in the environment
+**When** the app boots
+**Then** it resolves to SINGLE mode (password author, consultation-token shares), exactly as today, and `AUTHOR_EMAIL_DOMAIN` / `INITIAL_OWNER_EMAIL` are not required
+
+**Given** SMTP IS configured (the all-or-nothing SMTP block is present and shape-valid)
+**When** the app boots
+**Then** it resolves to MULTI mode AND the env validation requires `AUTHOR_EMAIL_DOMAIN` and `INITIAL_OWNER_EMAIL` (with `INITIAL_OWNER_EMAIL` inside `AUTHOR_EMAIL_DOMAIN`); a missing or out-of-domain value FAILS the boot with an actionable message (never a silent lockout)
+
+**Given** a bare internal relay (`SMTP_TLS_MODE=none`, no `SMTP_USER` / `SMTP_PASSWORD`, port 25)
+**When** the mailer transport is built and `transporter.verify()` runs
+**Then** it connects with `secure:false`, no `requireTLS`, and no `auth` object, and verify succeeds (the anonymous-smarthost profile works); STARTTLS/TLS + authenticated profiles still work unchanged
+
+**Given** an operator wants to validate SMTP before relying on it
+**When** they run the provided CLI connection test (`pnpm smtp:test` or the docker-exec equivalent)
+**Then** it runs `transporter.verify()` against the configured env and reports success or the exact, credential-redacted failure - and this command NEVER changes the operating mode (the mode is env-only)
+
+**Given** the resolved mode
+**When** any downstream code needs it
+**Then** a single mode resolver exposes it (`single` | `multi`) so auth, sharing, and the UI branch on one source of truth
+
+### Story 8.2: Author Identity and Per-Report Ownership
+
+As the platform,
+I want every report owned by exactly one author and every data access scoped to the authenticated author,
+So that multiple authors share an instance without seeing or touching each other's reports (closing the multi-author IDOR).
+
+**Acceptance Criteria:**
+
+**Given** the author model
+**When** the schema is migrated
+**Then** an `authors` table identifies an author by normalized email (multi mode) or the single implicit password author (single mode), and `reports` (plus the ownership-relevant rows) carry an `owner_id` foreign key
+
+**Given** an instance with password-era reports booting into MULTI mode for the first time
+**When** the inheritance migration runs
+**Then** every pre-existing report is assigned to the author identified by `INITIAL_OWNER_EMAIL` (deterministic, one-time, idempotent), so no report is orphaned and no "claim" race exists
+
+**Given** an authenticated author in multi mode
+**When** they list / read / update / publish / delete a report, a data set, a share, or an API token
+**Then** the service filters by `owner_id = the author`: another author's resources are invisible (list) and a direct id access returns the same not-found the reader path uses (no existence oracle) - every service entry point (`getReport`, `listReports`, `rebindReport`, share + token services, the REST/MCP surfaces) enforces the owner predicate
+
+**Given** single mode
+**When** the same services run
+**Then** there is exactly one implicit author who owns everything and the owner predicate is a no-op (today's behavior preserved); the migration and filtering must not change single-mode semantics
+
+**Given** API tokens (PATs) in multi mode
+**When** an author mints / uses / lists / revokes a token
+**Then** the token is scoped to that author and authorizes only that author's resources; a PAT never crosses authors (the API identity carries the owner)
+
+### Story 8.3: Magic-Link Author Authentication
+
+As an author with an email in the allowed domain,
+I want to sign in by clicking an emailed magic link,
+So that multi-author access is by identified person, with no shared password.
+
+**Acceptance Criteria:**
+
+**Given** MULTI mode and an email within `AUTHOR_EMAIL_DOMAIN`
+**When** the email is submitted at the author login
+**Then** a single-use, TTL'd, hashed magic link is emailed (reusing the Epic 3 verification machinery); clicking it opens an author-realm session and, on first sign-in, mints the author record (self-service provisioning)
+
+**Given** MULTI mode
+**When** the password login is attempted
+**Then** it is DISABLED (the password field is absent and the action refuses) - magic link is the only author path
+
+**Given** an email NOT in `AUTHOR_EMAIL_DOMAIN` (or any unknown email)
+**When** it is submitted
+**Then** the response is the SAME neutral "check your email" as a valid one (enumeration-safe, NFR9) and no link is sent and no author is minted
+
+**Given** SINGLE mode
+**When** the login is shown
+**Then** the password login applies unchanged (no magic link, no email field)
+
+**Given** the author realm
+**When** a session is issued
+**Then** it stays strictly separate from the reader realm and the PAT realm (its own cookie, NFR12), reusing the realm-parameterized session core
+
+### Story 8.4: Mode-Aware Reader Sharing
+
+As an author,
+I want sharing to match the instance mode,
+So that a no-SMTP instance can still share (consultation token) and an SMTP instance keeps verified reader access.
+
+**Acceptance Criteria:**
+
+**Given** SINGLE mode
+**When** an author shares a published report
+**Then** the share is an unverified CONSULTATION TOKEN: opening the link grants read access directly (no email, no verification gate); the restricted/recipient-allow-list mode is unavailable and the UI says so; expiry, one-click revocation, and the leak-free neutral page for revoked/expired/unknown links all still apply
+
+**Given** MULTI mode
+**When** an author shares a published report
+**Then** the verified magic-link reader flow (Epic 3) applies unchanged (restricted or open mode, per-recipient verification)
+
+**Given** either mode
+**When** the reader gate handles a request
+**Then** it branches on the resolved mode (consultation-token validation vs verified-session validation) and the enumeration-safe / no-store / noindex posture holds in both
+
+**Given** a share created in one mode
+**When** the instance mode later changes
+**Then** the behavior is documented and safe (a consultation share under newly-enabled SMTP, and vice versa) - define and test the transition so a stale share never escalates access
+
+### Story 8.5: Reader Domain Whitelist (multi mode, optional)
+
+As an operator,
+I want to restrict reader verification to allowed destination domains,
+So that share links can only ever verify recipients from domains I trust.
+
+**Acceptance Criteria:**
+
+**Given** MULTI mode with `READER_EMAIL_DOMAINS` set (one or more domain patterns, e.g. `*.example.com`)
+**When** a reader submits an email for verification
+**Then** an email NOT matching an allowed pattern is refused with the SAME neutral "check your email" (enumeration-safe) and no link is sent - a destination allow-list complementing the per-share recipient list
+
+**Given** `READER_EMAIL_DOMAINS` unset
+**When** a reader verifies
+**Then** behavior is unchanged (any verified email may read, subject to the per-share recipient list)
+
+**Given** the whitelist
+**When** it is evaluated
+**Then** the match is on the normalized email domain against the configured patterns, applied behind the neutral return (no timing or response oracle, NFR9)
+
+### Story 8.6: Mode-Aware Login and Workspace UX, plus Operator Docs
+
+As an author and as an operator,
+I want the UI and the docs to reflect the active mode,
+So that signing in and operating the instance are clear in both single and multi mode.
+
+**Acceptance Criteria:**
+
+**Given** the active mode
+**When** the login screen renders
+**Then** SINGLE mode shows the password field and MULTI mode shows the email (magic-link) field - never both, driven by the one mode resolver
+
+**Given** MULTI mode
+**When** an author is in the workspace
+**Then** they see ONLY their own reports / data sets / shares / tokens, and their identity (email) is surfaced; nothing reveals another author's existence or resources
+
+**Given** the operator
+**When** they read the deployment docs
+**Then** `docs/ops/deployment.md` documents both modes, the env vars (`AUTHOR_EMAIL_DOMAIN`, `INITIAL_OWNER_EMAIL`, `READER_EMAIL_DOMAINS`, the SMTP block), the fail-fast boot rules, the bare-relay support, the CLI SMTP test, and the lockout/recovery procedure (no password in multi mode -> fix/remove SMTP env and restart)
+
+**Given** the whole epic
+**When** audited
+**Then** the auth-realm separation, the tenancy filtering (no IDOR), the enumeration-safety, and the no-lockout-by-misconfig guarantees are verified and test-backed
