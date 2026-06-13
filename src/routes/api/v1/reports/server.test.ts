@@ -30,8 +30,12 @@ const SUMMARY: ReportSummary = {
 
 const REPORT = { id: SUMMARY.id, title: 'Q2 report', status: 'draft' } as Report;
 
-function postRequest(body: unknown): { request: Request } {
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+const LOCALS = { apiIdentity: { tokenId: 'tok', ownerId: TEST_SCOPE.authorId } };
+
+function postRequest(body: unknown): { request: Request; locals: typeof LOCALS } {
 	return {
+		locals: LOCALS,
 		request: new Request('http://localhost/api/v1/reports', {
 			method: 'POST',
 			body: JSON.stringify(body)
@@ -47,7 +51,7 @@ describe('GET /api/v1/reports', () => {
 	it('returns the listReports projection in a { items } envelope', async () => {
 		listReportsMock.mockResolvedValue([SUMMARY]);
 
-		const response = await GET({} as Parameters<typeof GET>[0]);
+		const response = await GET({ locals: LOCALS } as unknown as Parameters<typeof GET>[0]);
 
 		expect(response.status).toBe(200);
 		const body = (await response.json()) as { items: unknown[] };
@@ -65,7 +69,7 @@ describe('POST /api/v1/reports', () => {
 		const response = await POST(postRequest({}) as Parameters<typeof POST>[0]);
 
 		expect(response.status).toBe(201);
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE);
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith(DEFAULT_REPORT_TITLE, TEST_SCOPE);
 		expect(createWithDocumentMock).not.toHaveBeenCalled();
 	});
 
@@ -74,7 +78,7 @@ describe('POST /api/v1/reports', () => {
 
 		await POST(postRequest({ title: 'Custom' }) as Parameters<typeof POST>[0]);
 
-		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('Custom');
+		expect(createReportMock).toHaveBeenCalledExactlyOnceWith('Custom', TEST_SCOPE);
 	});
 
 	it('instantiates a provided document via createReportWithDocument', async () => {
@@ -84,12 +88,13 @@ describe('POST /api/v1/reports', () => {
 		const response = await POST(postRequest({ document }) as Parameters<typeof POST>[0]);
 
 		expect(response.status).toBe(201);
-		expect(createWithDocumentMock).toHaveBeenCalledExactlyOnceWith(document);
+		expect(createWithDocumentMock).toHaveBeenCalledExactlyOnceWith(document, TEST_SCOPE);
 		expect(createReportMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects a non-object body with a 400 problem+json (no service call)', async () => {
 		const event = {
+			locals: LOCALS,
 			request: new Request('http://localhost/api/v1/reports', { method: 'POST', body: '[]' })
 		};
 		const response = await POST(event as Parameters<typeof POST>[0]);

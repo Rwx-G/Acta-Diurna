@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveApiAuthorScope } from '$lib/server/authors';
 import { unpublishToDraft } from '$lib/server/documents/reports';
 import { runApi } from '$lib/server/api';
 
@@ -9,5 +10,7 @@ import { runApi } from '$lib/server/api';
  * Idempotent on a draft. The service takes no concurrency token (reverting to
  * draft is not a lost-update hazard), so no body is read.
  */
-export const POST: RequestHandler = ({ params }) =>
-	runApi(async () => json(await unpublishToDraft(params.id)));
+export const POST: RequestHandler = ({ params, locals }) =>
+	runApi(async () =>
+		json(await unpublishToDraft(params.id, await resolveApiAuthorScope(locals.apiIdentity!)))
+	);

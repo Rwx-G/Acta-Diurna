@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveApiAuthorScope } from '$lib/server/authors';
 import { ingestBytes, rebindReport } from '$lib/server/ingestion';
 import { runApi } from '$lib/server/api';
 import { formatFromContentType, readBodyBytes, readFilename, readTargetReportId } from './body';
@@ -43,20 +44,21 @@ import { formatFromContentType, readBodyBytes, readFilename, readTargetReportId 
  * does NOT catch endpoint throws): a parse failure is the 2.4 422/415
  * problem+json, an oversize body the 2.4 413, a published target the 2.5 409.
  */
-export const POST: RequestHandler = ({ request, url }) =>
+export const POST: RequestHandler = ({ request, url, locals }) =>
 	runApi(async () => {
 		const format = formatFromContentType(request);
 		const reportId = readTargetReportId(url);
 		const filename = readFilename(request, format);
 		const bytes = await readBodyBytes(request);
+		const scope = await resolveApiAuthorScope(locals.apiIdentity!);
 
-		const dataSet = await ingestBytes({ bytes, format, filename, reportId });
+		const dataSet = await ingestBytes({ bytes, format, filename, scope, reportId });
 
 		if (reportId === null) {
 			return json({ dataSet }, { status: 201 });
 		}
 
-		const result = await rebindReport(reportId, dataSet.id);
+		const result = await rebindReport(reportId, dataSet.id, scope);
 		return json(
 			{
 				dataSet,

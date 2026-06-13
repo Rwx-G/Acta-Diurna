@@ -10,12 +10,17 @@ const unpublishMock = vi.mocked(unpublishToDraft);
 
 const ID = '01970000-0000-7000-8000-000000000001';
 
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 beforeEach(() => {
 	vi.clearAllMocks();
 });
 
 function event(): Parameters<typeof POST>[0] {
-	return { params: { id: ID } } as unknown as Parameters<typeof POST>[0];
+	return {
+		params: { id: ID },
+		locals: { apiIdentity: { tokenId: 'tok', ownerId: TEST_SCOPE.authorId } }
+	} as unknown as Parameters<typeof POST>[0];
 }
 
 describe('POST /api/v1/reports/:id/unpublish', () => {
@@ -26,7 +31,7 @@ describe('POST /api/v1/reports/:id/unpublish', () => {
 
 		expect(response.status).toBe(200);
 		expect((await response.json()).status).toBe('draft');
-		expect(unpublishMock).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(unpublishMock).toHaveBeenCalledExactlyOnceWith(ID, TEST_SCOPE);
 	});
 
 	it('surfaces the service 404 as problem+json (thin adapter)', async () => {

@@ -12,9 +12,12 @@ const ID = '01970000-0000-7000-8000-000000000001';
 const NEW_ID = '01970000-0000-7000-8000-000000000002';
 const DUPLICATE = { id: NEW_ID, title: 'Q2', status: 'draft' } as Report;
 
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
+
 function event(): Parameters<typeof POST>[0] {
 	return {
 		params: { id: ID },
+		locals: { apiIdentity: { tokenId: 'tok', ownerId: TEST_SCOPE.authorId } },
 		request: new Request(`http://localhost/api/v1/reports/${ID}/duplicate`, { method: 'POST' })
 	} as unknown as Parameters<typeof POST>[0];
 }
@@ -33,7 +36,7 @@ describe('POST /api/v1/reports/:id/duplicate', () => {
 		const body = (await response.json()) as { id: string; status: string };
 		expect(body.id).toBe(NEW_ID);
 		expect(body.status).toBe('draft');
-		expect(duplicateMock).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(duplicateMock).toHaveBeenCalledExactlyOnceWith(ID, TEST_SCOPE);
 	});
 
 	it('surfaces the service 404 as problem+json on an unknown id (thin adapter)', async () => {

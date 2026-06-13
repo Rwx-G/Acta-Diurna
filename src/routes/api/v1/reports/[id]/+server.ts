@@ -1,14 +1,17 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveApiAuthorScope } from '$lib/server/authors';
 import { deleteDraft, getReport } from '$lib/server/documents/reports';
 import { composeReportUpdate } from '$lib/server/documents/update-composition';
 import { AppError } from '$lib/server/problem';
 import { runApi } from '$lib/server/api';
 import { readExpectedUpdatedAt, readJsonObject } from '../body';
 
-/** `GET /api/v1/reports/:id` - one report; the service 404s an unknown/malformed id. */
-export const GET: RequestHandler = ({ params }) =>
-	runApi(async () => json(await getReport(params.id)));
+/** `GET /api/v1/reports/:id` - one report; the service 404s an unknown/malformed/foreign id. */
+export const GET: RequestHandler = ({ params, locals }) =>
+	runApi(async () =>
+		json(await getReport(params.id, await resolveApiAuthorScope(locals.apiIdentity!)))
+	);
 
 /**
  * `PATCH /api/v1/reports/:id` - partial update (backlog Epic 4 decision: PATCH,
@@ -26,7 +29,7 @@ export const GET: RequestHandler = ({ params }) =>
  * tool (story 5.2) and this route cannot drift - the route only parses transport.
  * At least one of `title`/`document` must be present (the helper 400s otherwise).
  */
-export const PATCH: RequestHandler = ({ params, request }) =>
+export const PATCH: RequestHandler = ({ params, request, locals }) =>
 	runApi(async () => {
 		const body = await readJsonObject(request);
 		const expectedUpdatedAt = readExpectedUpdatedAt(body);
@@ -41,18 +44,21 @@ export const PATCH: RequestHandler = ({ params, request }) =>
 		}
 
 		return json(
-			await composeReportUpdate({
-				id: params.id,
-				title: body['title'] as string | undefined,
-				document: body['document'],
-				expectedUpdatedAt
-			})
+			await composeReportUpdate(
+				{
+					id: params.id,
+					title: body['title'] as string | undefined,
+					document: body['document'],
+					expectedUpdatedAt
+				},
+				await resolveApiAuthorScope(locals.apiIdentity!)
+			)
 		);
 	});
 
 /** `DELETE /api/v1/reports/:id` - 204; the service 409s a published (non-draft) report. */
-export const DELETE: RequestHandler = ({ params }) =>
+export const DELETE: RequestHandler = ({ params, locals }) =>
 	runApi(async () => {
-		await deleteDraft(params.id);
+		await deleteDraft(params.id, await resolveApiAuthorScope(locals.apiIdentity!));
 		return new Response(null, { status: 204 });
 	});

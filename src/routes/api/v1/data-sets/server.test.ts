@@ -19,6 +19,8 @@ const rebindReportMock = vi.mocked(rebindReport);
 const REPORT_ID = '01970000-0000-7000-8000-000000000001';
 const DATA_SET_ID = '01970000-0000-7000-8000-0000000000aa';
 
+const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000bb' };
+
 const DATA_SET: DataSet = {
 	id: DATA_SET_ID,
 	reportId: REPORT_ID,
@@ -49,6 +51,7 @@ function post(options: {
 	});
 	return {
 		request,
+		locals: { apiIdentity: { tokenId: 'tok', ownerId: TEST_SCOPE.authorId } },
 		url: new URL(`http://localhost/api/v1/data-sets${query}`)
 	} as unknown as Parameters<typeof POST>[0];
 }
@@ -87,7 +90,7 @@ describe('POST /api/v1/data-sets', () => {
 		const ingestArg = ingestBytesMock.mock.calls[0][0];
 		expect(ingestArg.format).toBe('csv');
 		expect(ingestArg.reportId).toBe(REPORT_ID);
-		expect(rebindReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, DATA_SET_ID);
+		expect(rebindReportMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, DATA_SET_ID, TEST_SCOPE);
 	});
 
 	it('derives JSON format from the Content-Type', async () => {

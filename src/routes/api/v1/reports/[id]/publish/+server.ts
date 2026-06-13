@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveApiAuthorScope } from '$lib/server/authors';
 import { publishReport } from '$lib/server/documents/reports';
 import { runApi } from '$lib/server/api';
 import { readOptionalExpectedUpdatedAt } from '../../body';
@@ -12,8 +13,9 @@ import { readOptionalExpectedUpdatedAt } from '../../body';
  * `{ expectedUpdatedAt }` body opts into the optimistic-concurrency 409. A bare
  * POST with no body publishes without a concurrency guard.
  */
-export const POST: RequestHandler = ({ params, request }) =>
+export const POST: RequestHandler = ({ params, request, locals }) =>
 	runApi(async () => {
 		const expectedUpdatedAt = await readOptionalExpectedUpdatedAt(request);
-		return json(await publishReport(params.id, expectedUpdatedAt));
+		const scope = await resolveApiAuthorScope(locals.apiIdentity!);
+		return json(await publishReport(params.id, scope, expectedUpdatedAt));
 	});

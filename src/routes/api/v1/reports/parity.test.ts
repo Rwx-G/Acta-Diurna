@@ -30,6 +30,7 @@ const INVALID_DOCUMENT = {
 
 function postWith(document: unknown): Parameters<typeof POST>[0] {
 	return {
+		locals: { apiIdentity: { tokenId: 'tok', ownerId: '01970000-0000-7000-8000-0000000000aa' } },
 		request: new Request('http://localhost/api/v1/reports', {
 			method: 'POST',
 			body: JSON.stringify({ document })

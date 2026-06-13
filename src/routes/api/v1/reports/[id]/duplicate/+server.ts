@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveApiAuthorScope } from '$lib/server/authors';
 import { duplicateReport } from '$lib/server/documents/reports';
 import { runApi } from '$lib/server/api';
 
@@ -12,5 +13,9 @@ import { runApi } from '$lib/server/api';
  * duplicated into an editable draft like any other (no 409 here - duplicating is
  * status-agnostic). No request body.
  */
-export const POST: RequestHandler = ({ params }) =>
-	runApi(async () => json(await duplicateReport(params.id), { status: 201 }));
+export const POST: RequestHandler = ({ params, locals }) =>
+	runApi(async () =>
+		json(await duplicateReport(params.id, await resolveApiAuthorScope(locals.apiIdentity!)), {
+			status: 201
+		})
+	);
