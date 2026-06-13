@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { ComparisonMatrixBlock as ComparisonMatrixBlockType, Scales } from '$lib/schema';
+	import type {
+		BlockType,
+		ComparisonMatrixBlock as ComparisonMatrixBlockType,
+		Scales
+	} from '$lib/schema';
 	import type { BlockView } from '../document-view.ts';
 	import CalloutBlock from './CalloutBlock.svelte';
 	import CardGridBlock from './CardGridBlock.svelte';
@@ -33,6 +37,32 @@
 		matrixBlocks?: Map<string, ComparisonMatrixBlockType>;
 		theme?: string;
 	} = $props();
+
+	// Exhaustiveness guard for the `{#if block.type === ...}` dispatch below. The
+	// template chain cannot itself be exhaustiveness-checked by svelte-check, so
+	// this `satisfies Record<BlockType, true>` is the compile-time backstop: a new
+	// block type missing a branch here is a compile error. Every key listed must
+	// have a matching `{:else if}` arm; the terminal `{:else}` only catches a
+	// forward-version block the validator let through, never a forgotten v1 type.
+	// Keep this set in lockstep with the dispatch arms.
+	const HANDLED_BLOCK_TYPES = {
+		text: true,
+		table: true,
+		chart: true,
+		kpi: true,
+		image: true,
+		'comparison-matrix': true,
+		'field-grid': true,
+		legend: true,
+		'chip-cluster': true,
+		callout: true,
+		code: true,
+		'set-membership': true,
+		'card-grid': true,
+		list: true,
+		timeline: true
+	} satisfies Record<BlockType, true>;
+	void HANDLED_BLOCK_TYPES;
 </script>
 
 <div class="block" id={view.anchorId}>
@@ -75,6 +105,14 @@
 		<ListBlock block={view.block} />
 	{:else if view.block.type === 'timeline'}
 		<TimelineBlock block={view.block} {scales} {theme} />
+	{:else}
+		<!-- A validated-but-unhandled block (a forward-version type the validator let
+		through). Render the same neutral notice as the invalid path rather than
+		blanking. The HANDLED_BLOCK_TYPES guard above makes a forgotten v1 type a
+		compile error, so this only fires for a future schema version. -->
+		<p class="invalid" role="status">
+			{view.invalidNotice ?? 'This block is not valid yet. Fix it in the editor.'}
+		</p>
 	{/if}
 </div>
 
