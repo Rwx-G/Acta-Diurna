@@ -8,13 +8,19 @@ const validEnv = {
 	AUTHOR_PASSWORD_HASH: '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$c29tZWhhc2g'
 };
 
+// SMTP present resolves the instance to multi mode, which the superRefine
+// requires AUTHOR_EMAIL_DOMAIN + INITIAL_OWNER_EMAIL for (Epic 8). The shared
+// fixture carries both so every SMTP test stays multi-mode-valid; the negative
+// identity tests below omit one var on purpose.
 const validSmtp = {
 	SMTP_HOST: 'smtp.example.com',
 	SMTP_PORT: '587',
 	SMTP_USER: 'mailer',
 	SMTP_PASSWORD: 'relay-secret',
 	SMTP_FROM: 'reports@example.com',
-	SMTP_TLS_MODE: 'starttls'
+	SMTP_TLS_MODE: 'starttls',
+	AUTHOR_EMAIL_DOMAIN: 'example.com',
+	INITIAL_OWNER_EMAIL: 'owner@example.com'
 };
 
 const validLlm = {
@@ -289,5 +295,84 @@ describe('parseEnv', () => {
 		expect(() => parseEnv({ ORIGIN: 'nope' })).toThrowError(
 			/DATABASE_URL[\s\S]*ORIGIN[\s\S]*SESSION_SECRET/
 		);
+	});
+
+	describe('multi-mode identity (Epic 8)', () => {
+		// The shared validSmtp fixture carries the identity vars; smtpOnly strips
+		// them so the negative tests can assert the fail-fast on each missing var.
+		const { AUTHOR_EMAIL_DOMAIN, INITIAL_OWNER_EMAIL, ...smtpOnly } = validSmtp;
+		void AUTHOR_EMAIL_DOMAIN;
+		void INITIAL_OWNER_EMAIL;
+
+		it('keeps identity vars optional when SMTP is absent (single mode)', () => {
+			const env = parseEnv(validEnv);
+
+			expect(env.AUTHOR_EMAIL_DOMAIN).toBeUndefined();
+			expect(env.INITIAL_OWNER_EMAIL).toBeUndefined();
+			expect(env.READER_EMAIL_DOMAINS).toBeUndefined();
+		});
+
+		it('parses identity vars alongside a complete SMTP block (multi mode)', () => {
+			const env = parseEnv({ ...validEnv, ...validSmtp });
+
+			expect(env.AUTHOR_EMAIL_DOMAIN).toBe('example.com');
+			expect(env.INITIAL_OWNER_EMAIL).toBe('owner@example.com');
+		});
+
+		it('requires AUTHOR_EMAIL_DOMAIN when SMTP is configured', () => {
+			expect(() =>
+				parseEnv({ ...validEnv, ...smtpOnly, INITIAL_OWNER_EMAIL: 'owner@example.com' })
+			).toThrowError(/AUTHOR_EMAIL_DOMAIN: required when SMTP is configured \(multi-author mode\)/);
+		});
+
+		it('requires INITIAL_OWNER_EMAIL when SMTP is configured', () => {
+			expect(() =>
+				parseEnv({ ...validEnv, ...smtpOnly, AUTHOR_EMAIL_DOMAIN: 'example.com' })
+			).toThrowError(/INITIAL_OWNER_EMAIL: required when SMTP is configured \(multi-author mode\)/);
+		});
+
+		it('rejects an INITIAL_OWNER_EMAIL outside AUTHOR_EMAIL_DOMAIN (anti-lockout)', () => {
+			expect(() =>
+				parseEnv({
+					...validEnv,
+					...smtpOnly,
+					AUTHOR_EMAIL_DOMAIN: 'example.com',
+					INITIAL_OWNER_EMAIL: 'owner@other.org'
+				})
+			).toThrowError(/INITIAL_OWNER_EMAIL: must be within AUTHOR_EMAIL_DOMAIN \(example\.com\)/);
+		});
+
+		it('matches the owner domain case-insensitively', () => {
+			const env = parseEnv({
+				...validEnv,
+				...smtpOnly,
+				AUTHOR_EMAIL_DOMAIN: 'Example.COM',
+				INITIAL_OWNER_EMAIL: 'Owner@EXAMPLE.com'
+			});
+
+			expect(env.AUTHOR_EMAIL_DOMAIN).toBe('Example.COM');
+		});
+
+		it('names INITIAL_OWNER_EMAIL when it is not an email', () => {
+			expect(() =>
+				parseEnv({ ...validEnv, ...validSmtp, INITIAL_OWNER_EMAIL: 'not-an-email' })
+			).toThrowError(/INITIAL_OWNER_EMAIL: must be an email address/);
+		});
+
+		it('parses READER_EMAIL_DOMAINS into a trimmed, lowercased list', () => {
+			const env = parseEnv({
+				...validEnv,
+				...validSmtp,
+				READER_EMAIL_DOMAINS: '*.Example.com,  partner.ORG ,'
+			});
+
+			expect(env.READER_EMAIL_DOMAINS).toEqual(['*.example.com', 'partner.org']);
+		});
+
+		it('leaves READER_EMAIL_DOMAINS undefined when unset', () => {
+			const env = parseEnv({ ...validEnv, ...validSmtp });
+
+			expect(env.READER_EMAIL_DOMAINS).toBeUndefined();
+		});
 	});
 });

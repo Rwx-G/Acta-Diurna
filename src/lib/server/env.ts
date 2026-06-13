@@ -16,6 +16,14 @@ function isLoopbackOrigin(origin: string): boolean {
 	}
 }
 
+// Lowercased domain part of an email (everything after the last '@'). Used by
+// the multi-mode refine to check INITIAL_OWNER_EMAIL sits inside
+// AUTHOR_EMAIL_DOMAIN. Validation has already confirmed the value is an email,
+// so an '@' is present.
+function emailDomain(email: string): string {
+	return email.slice(email.lastIndexOf('@') + 1).toLowerCase();
+}
+
 const envSchema = z
 	.object({
 		NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -83,6 +91,33 @@ const envSchema = z
 				error: 'must be one of starttls, tls or none'
 			})
 			.optional(),
+		// Identity block (Epic 8, story 8.1). All three are OPTIONAL at the schema
+		// level - a single-mode instance (SMTP absent) never needs them. The
+		// superRefine below makes AUTHOR_EMAIL_DOMAIN and INITIAL_OWNER_EMAIL
+		// REQUIRED once the SMTP block is present (multi mode), because multi mode
+		// has no password fallback and a missing/out-of-domain author identity
+		// would lock everyone out. AUTHOR_EMAIL_DOMAIN is a bare domain
+		// (sub.example.com), not a URL or a pattern; self-service author sign-up is
+		// restricted to emails within it. INITIAL_OWNER_EMAIL inherits the
+		// password-era reports on the first multi-mode boot (story 8.2).
+		AUTHOR_EMAIL_DOMAIN: z.string().min(1).optional(),
+		INITIAL_OWNER_EMAIL: z.email('must be an email address, e.g. owner@example.com').optional(),
+		// Optional reader destination allow-list (multi mode, story 8.5): one or
+		// more comma-separated domain patterns (e.g. `*.example.com, example.org`).
+		// Parsed to a trimmed, lowercased, non-empty list; absent -> any verified
+		// reader email may read (subject to the per-share recipient list).
+		READER_EMAIL_DOMAINS: z
+			.string()
+			.min(1)
+			.optional()
+			.transform((value) =>
+				value === undefined
+					? undefined
+					: value
+							.split(',')
+							.map((pattern) => pattern.trim().toLowerCase())
+							.filter((pattern) => pattern.length > 0)
+			),
 		// LLM endpoint is consumed by the AI connector (Epic 5, story 5.3). The
 		// whole block is optional - the app boots without it and AI generation
 		// simply stays unavailable - but its SHAPE is validated at boot (fail-fast
@@ -161,6 +196,41 @@ const envSchema = z
 						message: 'required when any SMTP_* variable is set (relay is half-configured)'
 					});
 				}
+			}
+		}
+		// Multi-mode identity (Epic 8, story 8.1). A present SMTP block resolves
+		// the instance to MULTI mode (mode.ts is the single source of truth and
+		// reuses this same anySmtp signal). Multi mode authenticates authors by
+		// email magic link with NO password fallback, so AUTHOR_EMAIL_DOMAIN and
+		// INITIAL_OWNER_EMAIL are REQUIRED and INITIAL_OWNER_EMAIL must sit inside
+		// AUTHOR_EMAIL_DOMAIN (case-insensitive) - otherwise the operator would
+		// configure SMTP and lock everyone out. The container fails to boot with an
+		// actionable message rather than starting an unauthenticatable instance.
+		if (anySmtp) {
+			if (env.AUTHOR_EMAIL_DOMAIN === undefined) {
+				ctx.addIssue({
+					code: 'custom',
+					path: ['AUTHOR_EMAIL_DOMAIN'],
+					message:
+						'required when SMTP is configured (multi-author mode) - the bare email domain authors sign in with, e.g. example.com'
+				});
+			}
+			if (env.INITIAL_OWNER_EMAIL === undefined) {
+				ctx.addIssue({
+					code: 'custom',
+					path: ['INITIAL_OWNER_EMAIL'],
+					message:
+						'required when SMTP is configured (multi-author mode) - the email that inherits existing reports, within AUTHOR_EMAIL_DOMAIN'
+				});
+			} else if (
+				env.AUTHOR_EMAIL_DOMAIN !== undefined &&
+				emailDomain(env.INITIAL_OWNER_EMAIL) !== env.AUTHOR_EMAIL_DOMAIN.toLowerCase()
+			) {
+				ctx.addIssue({
+					code: 'custom',
+					path: ['INITIAL_OWNER_EMAIL'],
+					message: `must be within AUTHOR_EMAIL_DOMAIN (${env.AUTHOR_EMAIL_DOMAIN}) so the initial owner can authenticate`
+				});
 			}
 		}
 		// All-or-nothing LLM: if any connection var (LLM_BASE_URL / LLM_API_KEY /

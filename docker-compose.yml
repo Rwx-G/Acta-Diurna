@@ -34,6 +34,15 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_TLS_MODE: ${SMTP_TLS_MODE:-}
+      # Identity / multi-author (Epic 8). Configuring SMTP above switches the
+      # instance to MULTI mode, which REQUIRES these two: the bare email domain
+      # authors sign in with, and the email that inherits existing reports (it
+      # must be within AUTHOR_EMAIL_DOMAIN). Leave SMTP unset to stay in
+      # single-password mode, where these are ignored. READER_EMAIL_DOMAINS is an
+      # optional multi-mode reader allow-list (comma-separated patterns).
+      AUTHOR_EMAIL_DOMAIN: ${AUTHOR_EMAIL_DOMAIN:-}
+      INITIAL_OWNER_EMAIL: ${INITIAL_OWNER_EMAIL:-}
+      READER_EMAIL_DOMAINS: ${READER_EMAIL_DOMAINS:-}
     volumes:
       - uploads:/data/uploads
     depends_on:
