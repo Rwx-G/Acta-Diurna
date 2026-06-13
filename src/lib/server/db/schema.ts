@@ -32,6 +32,29 @@ export const sessions = pgTable(
 
 export type SessionRow = typeof sessions.$inferSelect;
 
+// An author identity (Epic 8, story 8.2): the owner of reports, data sets, and
+// API tokens, and (story 8.3) the subject of an author-realm session. Identity =
+// email. In SINGLE mode there is exactly ONE implicit author (the password
+// author) owning everything, seeded at boot under a sentinel email; in MULTI
+// mode each magic-link author is a row, minted on first sign-in (8.3).
+//
+// `email` is normalized (lowercased/trimmed) BEFORE it reaches this table - the
+// same boundary normalization the reader identity path applies - so the unique
+// index is a canonical-email identity key (`Foo@X.com` and `foo@x.com` are one
+// author). The single-mode implicit author uses a reserved sentinel local part
+// that no real submitted email can collide with (see authors/identity.ts).
+export const authors = pgTable(
+	'authors',
+	{
+		id: uuid('id').primaryKey(),
+		email: text('email').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [uniqueIndex('authors_email_idx').on(table.email)]
+);
+
+export type AuthorRow = typeof authors.$inferSelect;
+
 // D2: the report document lives in a JSONB column; the relational columns
 // around it carry only what lists and lifecycle checks need. `schema_version`
 // is denormalized from the document so version queries never parse JSONB.
@@ -50,10 +73,20 @@ export const reports = pgTable(
 		document: jsonb('document').$type<DocumentV1>().notNull(),
 		publishedDocument: jsonb('published_document').$type<DocumentV1>(),
 		publishedAt: timestamp('published_at', { withTimezone: true }),
+		// Per-report ownership (Epic 8, story 8.2). One report = one author. Added
+		// nullable because the migration runs against pre-existing rows; the boot
+		// inheritance step (authors/inheritance.ts) backfills every null to the
+		// single implicit author (single mode) or INITIAL_OWNER_EMAIL (first multi
+		// boot), so a live row always carries an owner. ON DELETE RESTRICT: an
+		// author owning reports cannot be deleted out from under them (no orphans).
+		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(table) => [check('reports_status_check', sql`${table.status} in ('draft', 'published')`)]
+	(table) => [
+		index('reports_owner_id_idx').on(table.ownerId),
+		check('reports_status_check', sql`${table.status} in ('draft', 'published')`)
+	]
 );
 
 export type ReportRow = typeof reports.$inferSelect;
@@ -102,10 +135,17 @@ export const dataSets = pgTable(
 		fields: jsonb('fields').$type<DataSetField[]>().notNull(),
 		injectedAt: timestamp('injected_at', { withTimezone: true }).notNull().defaultNow(),
 		dataAsOf: timestamp('data_as_of', { withTimezone: true }),
-		storagePath: text('storage_path').notNull()
+		storagePath: text('storage_path').notNull(),
+		// Per-author ownership (Epic 8, story 8.2). A DIRECT owner column, not a
+		// scope-through-report: `report_id` is NULLABLE (a data set can precede or
+		// outlive a report), so a NULL-report data set has no report to inherit an
+		// owner from - it must carry its own. Added nullable, backfilled at boot
+		// like reports. ON DELETE RESTRICT: an author with data sets is not deletable.
+		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' })
 	},
 	(table) => [
 		index('data_sets_report_id_idx').on(table.reportId),
+		index('data_sets_owner_id_idx').on(table.ownerId),
 		check('data_sets_format_check', sql`${table.sourceFormat} in ('csv', 'json', 'xlsx')`)
 	]
 );
@@ -311,12 +351,16 @@ export type ReaderSessionRow = typeof readerSessions.$inferSelect;
 // tokens are distinguishable without re-revealing either (the prefix is greppable
 // and not secret; only the body is).
 //
-// Author-scoped by intent (single-author MVP): no owner column yet, mirroring the
-// 1.5 "Multi-author IDOR prep" backlog note - add owner/tenant when tenancy
-// lands. `name` is the author-chosen label. `last_used_at` (null until first use)
-// is stamped best-effort on each successful authentication; `revoked_at` (null =
-// active) is set on revoke and the row is NEVER deleted (an audit trail). V1 is
-// revoke-only, no expiry (backlog Epic 4 decision).
+// Author-scoped (Epic 8, story 8.2): `owner_id` ties a PAT to the author who
+// minted it. A PAT authorizes ONLY its owner's resources - it never crosses
+// authors (the API identity carries the owner, resolved in `authenticateApiToken`).
+// Added nullable and backfilled at boot like reports/data sets (the inheritance
+// step assigns every pre-existing token to the single implicit author / the
+// INITIAL_OWNER_EMAIL author). ON DELETE RESTRICT: an author with tokens is not
+// deletable. `name` is the author-chosen label. `last_used_at` (null until first
+// use) is stamped best-effort on each successful authentication; `revoked_at`
+// (null = active) is set on revoke and the row is NEVER deleted (an audit trail).
+// V1 is revoke-only, no expiry (backlog Epic 4 decision).
 export const apiTokens = pgTable(
 	'api_tokens',
 	{
@@ -324,12 +368,14 @@ export const apiTokens = pgTable(
 		name: text('name').notNull(),
 		tokenHash: text('token_hash').notNull(),
 		displayFragment: text('display_fragment').notNull(),
+		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 		revokedAt: timestamp('revoked_at', { withTimezone: true })
 	},
 	(table) => [
 		uniqueIndex('api_tokens_token_hash_idx').on(table.tokenHash),
+		index('api_tokens_owner_id_idx').on(table.ownerId),
 		index('api_tokens_revoked_at_idx').on(table.revokedAt)
 	]
 );

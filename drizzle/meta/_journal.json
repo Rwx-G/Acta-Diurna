@@ -92,6 +92,13 @@
       "when": 1781302419364,
       "tag": "0012_verification_tokens_share_id_email_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781378664428,
+      "tag": "0013_authors_ownership",
+      "breakpoints": true
     }
   ]
 }
