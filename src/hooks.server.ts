@@ -175,7 +175,10 @@ const authorRealm: Handle = async ({ event, resolve }) => {
 // SvelteKit asset namespaces. Everything else is the author realm and requires
 // a live session. Defined centrally so the guard has one source of truth.
 export function isPublicPath(pathname: string): boolean {
-	if (pathname === '/login' || pathname === '/healthz') return true;
+	// `/login` and its magic-link landing (`/login/verify`, story 8.3) are the
+	// author entry points - reachable WITHOUT a session, since signing in is how a
+	// session is obtained.
+	if (pathname === '/login' || pathname === '/login/verify' || pathname === '/healthz') return true;
 	if (pathname === '/r' || pathname.startsWith('/r/')) return true;
 	// SvelteKit-served assets (built client, immutable chunks, prerendered).
 	if (pathname.startsWith('/_app/') || pathname.startsWith('/.well-known/')) return true;

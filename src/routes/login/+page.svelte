@@ -1,8 +1,13 @@
 <script lang="ts">
 	import Brand from '$lib/ui/Brand.svelte';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Multi mode (SMTP configured): email magic-link sign-in, the password field is
+	// absent. Single mode: the password field, unchanged from today. Story 8.6
+	// polishes this UX; the field split is correct here (story 8.3).
+	const sent = $derived(form?.state === 'sent');
 </script>
 
 <svelte:head>
@@ -10,19 +15,49 @@
 </svelte:head>
 
 <main class="gateway">
-	<form method="POST" class="card">
-		<Brand layout="stacked" markSize={52} wordmarkSize={20} />
-		<h1>Sign in to your workspace</h1>
+	{#if data.multi}
+		<form method="POST" action="?/request-sign-in" class="card">
+			<Brand layout="stacked" markSize={52} wordmarkSize={20} />
+			<h1>Sign in to your workspace</h1>
 
-		<label for="password">Password</label>
-		<input id="password" name="password" type="password" required autocomplete="current-password" />
+			{#if sent}
+				<p class="notice" role="status">
+					If that address can sign in, a single-use link is on its way. Check your email.
+				</p>
+			{:else}
+				<label for="email">Email</label>
+				<input id="email" name="email" type="email" required autocomplete="email" />
 
-		{#if form?.message}
-			<p class="error" role="alert">{form.message}</p>
-		{/if}
+				{#if form?.state === 'invalid'}
+					<p class="error" role="alert">Enter a valid email address.</p>
+				{:else if form?.state === 'throttled'}
+					<p class="error" role="alert">Too many requests. Try again shortly.</p>
+				{/if}
 
-		<button type="submit">Sign in</button>
-	</form>
+				<button type="submit">Send sign-in link</button>
+			{/if}
+		</form>
+	{:else}
+		<form method="POST" class="card">
+			<Brand layout="stacked" markSize={52} wordmarkSize={20} />
+			<h1>Sign in to your workspace</h1>
+
+			<label for="password">Password</label>
+			<input
+				id="password"
+				name="password"
+				type="password"
+				required
+				autocomplete="current-password"
+			/>
+
+			{#if form?.message}
+				<p class="error" role="alert">{form.message}</p>
+			{/if}
+
+			<button type="submit">Sign in</button>
+		</form>
+	{/if}
 </main>
 
 <style>
@@ -69,6 +104,11 @@
 	.error {
 		margin: 0;
 		color: var(--color-danger);
+	}
+
+	.notice {
+		margin: 0;
+		color: var(--color-ink-65);
 	}
 
 	button {

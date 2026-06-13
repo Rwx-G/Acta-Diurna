@@ -22,6 +22,7 @@ describe('(workspace) layout guard', () => {
 		await expect(
 			callLoad({
 				id: '01970000-0000-7000-8000-000000000000',
+				authorId: null,
 				createdAt: new Date(),
 				expiresAt: new Date(Date.now() + 60_000)
 			})

@@ -4,20 +4,34 @@ import { setAuthorCookie } from '$lib/server/auth/cookies';
 import { verifyAuthorPassword } from '$lib/server/auth/password';
 import { GLOBAL_LOGIN_FAILURE_KEY, loginFailureLimiter } from '$lib/server/auth/rate-limit';
 import { createAuthorSession } from '$lib/server/auth/sessions';
+import { requestAuthorSignIn } from '$lib/server/auth/author-gate';
 import { actions, load } from './+page.server';
+
+// The mode is mocked so single/multi is deterministic, independent of the test
+// env's SMTP config; the gate, password, and session collaborators are mocked too.
+const modeState = vi.hoisted(() => ({ multi: false }));
+vi.mock('$lib/server/mode', () => ({
+	operatingMode: () => (modeState.multi ? 'multi' : 'single'),
+	isMultiAuthor: () => modeState.multi
+}));
 
 vi.mock('$lib/server/auth/cookies', () => ({ setAuthorCookie: vi.fn() }));
 vi.mock('$lib/server/auth/password', () => ({ verifyAuthorPassword: vi.fn() }));
 vi.mock('$lib/server/auth/rate-limit', () => ({
 	GLOBAL_LOGIN_FAILURE_KEY: 'global:/login',
-	loginFailureLimiter: { consume: vi.fn() }
+	GLOBAL_AUTHOR_VERIFICATION_KEY: 'global:/login/author-verify',
+	loginFailureLimiter: { consume: vi.fn() },
+	authorVerificationRateLimiter: { consume: vi.fn(() => ({ allowed: true })) },
+	authorVerificationFailureLimiter: { consume: vi.fn(() => ({ allowed: true })) }
 }));
 vi.mock('$lib/server/auth/sessions', () => ({ createAuthorSession: vi.fn() }));
+vi.mock('$lib/server/auth/author-gate', () => ({ requestAuthorSignIn: vi.fn() }));
 
 const verify = vi.mocked(verifyAuthorPassword);
 const createSession = vi.mocked(createAuthorSession);
 const setCookie = vi.mocked(setAuthorCookie);
 const consumeGlobalFailure = vi.mocked(loginFailureLimiter.consume);
+const requestSignIn = vi.mocked(requestAuthorSignIn);
 
 function loginRequest(fields: Record<string, string>): Request {
 	const body = new FormData();
@@ -32,8 +46,20 @@ async function callAction(fields: Record<string, string>) {
 	} as Parameters<typeof actions.default>[0]);
 }
 
+function requestSignInEvent(fields: Record<string, string>) {
+	return {
+		request: loginRequest(fields),
+		locals: { requestId: 'req-1' },
+		url: new URL('http://localhost:3000/login'),
+		getClientAddress: () => '203.0.113.7'
+	} as Parameters<(typeof actions)['request-sign-in']>[0];
+}
+
 beforeEach(() => {
+	modeState.multi = false;
 	vi.clearAllMocks();
+	createSession.mockResolvedValue({ token: 'sess', expiresAt: new Date() });
+	requestSignIn.mockResolvedValue(undefined);
 });
 
 describe('login load', () => {
@@ -44,6 +70,7 @@ describe('login load', () => {
 					requestId: 'test',
 					authorSession: {
 						id: '01970000-0000-7000-8000-000000000000',
+						authorId: null,
 						createdAt: new Date(),
 						expiresAt: new Date(Date.now() + 60_000)
 					}
@@ -55,10 +82,77 @@ describe('login load', () => {
 		}
 	});
 
-	it('renders the form for unauthenticated visitors', async () => {
+	it('returns the single mode flag for unauthenticated visitors', async () => {
+		modeState.multi = false;
 		await expect(
 			load({ locals: { requestId: 'test', authorSession: null } } as Parameters<typeof load>[0])
-		).resolves.toBeUndefined();
+		).resolves.toEqual({ multi: false });
+	});
+
+	it('returns the multi mode flag for unauthenticated visitors', async () => {
+		modeState.multi = true;
+		await expect(
+			load({ locals: { requestId: 'test', authorSession: null } } as Parameters<typeof load>[0])
+		).resolves.toEqual({ multi: true });
+	});
+});
+
+describe('password login DISABLED in multi mode', () => {
+	it('refuses a password attempt with 403 and never checks the hash', async () => {
+		modeState.multi = true;
+		const result = (await callAction({ password: 'whatever' })) as ActionFailure<{
+			message: string;
+		}>;
+
+		expect(result.status).toBe(403);
+		expect(verify).not.toHaveBeenCalled();
+		expect(createSession).not.toHaveBeenCalled();
+	});
+});
+
+describe('request-sign-in action (multi mode magic link)', () => {
+	it('returns the neutral sent state for a well-shaped email', async () => {
+		modeState.multi = true;
+		const result = await actions['request-sign-in'](
+			requestSignInEvent({ email: 'author@example.com' })
+		);
+		expect(result).toEqual({ state: 'sent' });
+		expect(requestSignIn).toHaveBeenCalledOnce();
+	});
+
+	it('returns the SAME neutral sent state for an unknown email (enumeration-safe)', async () => {
+		modeState.multi = true;
+		const result = await actions['request-sign-in'](
+			requestSignInEvent({ email: 'outsider@other.com' })
+		);
+		expect(result).toEqual({ state: 'sent' });
+	});
+
+	it('fails 400 (form-shape) on a malformed email and issues nothing', async () => {
+		modeState.multi = true;
+		const result = (await actions['request-sign-in'](
+			requestSignInEvent({ email: 'not-an-email' })
+		)) as ActionFailure<{ state: string }>;
+		expect(result.status).toBe(400);
+		expect(requestSignIn).not.toHaveBeenCalled();
+	});
+
+	it('swallows a pre-send failure - the author still sees the neutral state', async () => {
+		modeState.multi = true;
+		requestSignIn.mockRejectedValue(new Error('db down'));
+		const result = await actions['request-sign-in'](
+			requestSignInEvent({ email: 'author@example.com' })
+		);
+		expect(result).toEqual({ state: 'sent' });
+	});
+
+	it('is inert in single mode: neutral state, issues nothing', async () => {
+		modeState.multi = false;
+		const result = await actions['request-sign-in'](
+			requestSignInEvent({ email: 'author@example.com' })
+		);
+		expect(result).toEqual({ state: 'sent' });
+		expect(requestSignIn).not.toHaveBeenCalled();
 	});
 });
 
