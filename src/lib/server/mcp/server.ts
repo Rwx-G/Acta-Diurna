@@ -84,7 +84,7 @@ export function buildMcpServer(scope: AuthorScope): McpServer {
 			description: 'Lists the skeleton library (id, name, updatedAt) for instantiating reports.',
 			annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
 		},
-		() => listSkeletonsTool()
+		() => listSkeletonsTool(scope)
 	);
 
 	server.registerTool(

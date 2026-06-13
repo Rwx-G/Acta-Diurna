@@ -107,9 +107,9 @@ describe('list_skeletons tool', () => {
 		const summaries = [{ id: 'sk-1', name: 'Weekly', updatedAt: new Date('2026-06-01T00:00:00Z') }];
 		listSkeletonsMock.mockResolvedValue(summaries);
 
-		const result = await listSkeletonsTool();
+		const result = await listSkeletonsTool(TEST_SCOPE);
 
-		expect(listSkeletonsMock).toHaveBeenCalledOnce();
+		expect(listSkeletonsMock).toHaveBeenCalledExactlyOnceWith(TEST_SCOPE);
 		const body = payload(result) as { items: unknown[] };
 		expect(body.items).toHaveLength(1);
 	});

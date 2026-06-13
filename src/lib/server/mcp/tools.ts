@@ -81,9 +81,9 @@ export function getSchemaTool(): Promise<McpToolResult> {
 	return withProblemMapping(async () => jsonResult(getPublishedSchema()));
 }
 
-/** `list_skeletons` -> the skeleton library summaries (`listSkeletons`, id/name/updatedAt). */
-export function listSkeletonsTool(): Promise<McpToolResult> {
-	return withProblemMapping(async () => jsonResult({ items: await listSkeletons() }));
+/** `list_skeletons` -> the OWNER-scoped skeleton library summaries (`listSkeletons`, id/name/updatedAt). */
+export function listSkeletonsTool(scope: AuthorScope): Promise<McpToolResult> {
+	return withProblemMapping(async () => jsonResult({ items: await listSkeletons(scope) }));
 }
 
 /** `list_reports` -> the OWNER-scoped report summaries (`listReports`, id/title/status/updatedAt). */

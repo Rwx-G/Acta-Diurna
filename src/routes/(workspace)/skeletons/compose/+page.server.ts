@@ -1,11 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import { resolveAuthorScope } from '$lib/server/authors';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError } from '$lib/server/problem';
 import { saveSkeleton } from '$lib/server/skeletons/skeletons';
 
 export const actions: Actions = {
-	save: async ({ request }) => {
+	save: async ({ request, locals }) => {
 		const data = await request.formData();
 		const raw = data.get('document');
 		if (typeof raw !== 'string') {
@@ -25,7 +26,7 @@ export const actions: Actions = {
 			return fail(400, { message: 'Malformed skeleton payload.', errors: [] });
 		}
 		try {
-			await saveSkeleton(structureInput);
+			await saveSkeleton(structureInput, await resolveAuthorScope(locals.authorSession?.authorId));
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, {

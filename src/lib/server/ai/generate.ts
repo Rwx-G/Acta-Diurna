@@ -191,7 +191,7 @@ interface GenerationContext {
 async function loadContext(input: GenerationInput, scope: AuthorScope): Promise<GenerationContext> {
 	let skeletonStructure: string | null = null;
 	if (input.skeletonId) {
-		const skeleton = await getSkeleton(input.skeletonId);
+		const skeleton = await getSkeleton(input.skeletonId, scope);
 		skeletonStructure = JSON.stringify(
 			skeleton.document.sections.map((section) => ({
 				title: section.title,

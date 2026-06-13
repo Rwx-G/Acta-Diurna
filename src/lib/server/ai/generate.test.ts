@@ -160,7 +160,7 @@ describe('generateOutline (stage 1)', () => {
 
 		await generateOutline({ intent: 'x', skeletonId: 'sk-1', dataSetId: 'ds-1' }, TEST_SCOPE);
 
-		expect(getSkeleton).toHaveBeenCalledWith('sk-1');
+		expect(getSkeleton).toHaveBeenCalledWith('sk-1', TEST_SCOPE);
 		expect(getDataSet).toHaveBeenCalledWith('ds-1', TEST_SCOPE);
 		const messages = chatComplete.mock.calls[0][0] as { content: string }[];
 		expect(messages[1].content).toContain('count (number)');

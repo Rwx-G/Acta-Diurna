@@ -16,8 +16,10 @@ import {
 // `select`, `orderBy` and `delete` chains decode drizzle `eq()` filters the same
 // way the reports/sessions mocks do, so a regression that filters on the wrong
 // column or table misses the map and fails the test. The skeletons insert
-// simulates the unique-name index: a duplicate name throws a pg unique violation
-// (code 23505), exactly what the service catches and translates to a 409.
+// simulates the (owner_id, name) unique index: a duplicate name FOR THE SAME OWNER
+// throws a pg unique violation (code 23505), exactly what the service catches and
+// translates to a 409. Cross-author name collisions do not trip it (the multi-mode
+// tenancy proof lives in skeletons-tenancy.test.ts).
 const dbState = vi.hoisted(() => ({
 	skeletons: new Map<string, Record<string, unknown>>(),
 	reports: new Map<string, Record<string, unknown>>(),
@@ -68,7 +70,9 @@ vi.mock('$lib/server/db/client', () => ({
 				const tableName = getTableName(table as never);
 				const store = storeFor(tableName);
 				if (tableName === 'skeletons') {
-					const clash = [...store.values()].some((existing) => existing.name === row.name);
+					const clash = [...store.values()].some(
+						(existing) => existing.name === row.name && existing.ownerId === row.ownerId
+					);
 					if (clash) return Promise.reject(uniqueViolation());
 				}
 				store.set(String(row.id), row);
@@ -153,7 +157,7 @@ beforeEach(() => {
 
 describe('saveSkeleton', () => {
 	it('validates and persists a composed structure with a fresh UUIDv7 id', async () => {
-		const saved = await saveSkeleton(draftFrom('My skeleton', 'cover', 'dataTable'));
+		const saved = await saveSkeleton(draftFrom('My skeleton', 'cover', 'dataTable'), TEST_SCOPE);
 
 		expect(saved.id).toMatch(UUIDV7_PATTERN);
 		expect(saved.name).toBe('My skeleton');
@@ -172,14 +176,17 @@ describe('saveSkeleton', () => {
 			scales: companionScales(BRICKS),
 			sections: BRICKS.map((brick) => brick.factory())
 		};
-		await expect(saveSkeleton(draft)).resolves.toBeDefined();
+		await expect(saveSkeleton(draft, TEST_SCOPE)).resolves.toBeDefined();
 		expect(dbState.skeletons.size).toBe(1);
 	});
 
 	it('throws 409 /problems/skeleton-name-taken on a duplicate name', async () => {
-		await saveSkeleton(draftFrom('Weekly ops', 'cover'));
+		await saveSkeleton(draftFrom('Weekly ops', 'cover'), TEST_SCOPE);
 
-		const error = await expectAppError(saveSkeleton(draftFrom('Weekly ops', 'summary')), 409);
+		const error = await expectAppError(
+			saveSkeleton(draftFrom('Weekly ops', 'summary'), TEST_SCOPE),
+			409
+		);
 
 		expect(error.type).toBe('/problems/skeleton-name-taken');
 		// The losing save never lands: still one skeleton, the first one.
@@ -190,7 +197,7 @@ describe('saveSkeleton', () => {
 		const draft = draftFrom('Bad', 'cover');
 		draft.sections[0].blocks = [];
 
-		const error = await expectAppError(saveSkeleton(draft), 422);
+		const error = await expectAppError(saveSkeleton(draft, TEST_SCOPE), 422);
 
 		expect(error.errors?.[0].path).toMatch(/^sections\[0\]\.blocks$/);
 		expect(error.errors?.[0].message).toContain('at least one block');
@@ -201,17 +208,17 @@ describe('saveSkeleton', () => {
 		const draft = draftFrom('Bad', 'cover');
 		draft.title = '';
 
-		await expectAppError(saveSkeleton(draft), 422);
+		await expectAppError(saveSkeleton(draft, TEST_SCOPE), 422);
 		expect(dbState.skeletons.size).toBe(0);
 	});
 });
 
 describe('listSkeletons', () => {
 	it('returns the id/name/updatedAt projection ordered by updated_at descending', async () => {
-		await saveSkeleton(draftFrom('First', 'cover'));
-		await saveSkeleton(draftFrom('Second', 'summary'));
+		await saveSkeleton(draftFrom('First', 'cover'), TEST_SCOPE);
+		await saveSkeleton(draftFrom('Second', 'summary'), TEST_SCOPE);
 
-		const list = await listSkeletons();
+		const list = await listSkeletons(TEST_SCOPE);
 
 		expect(list).toHaveLength(2);
 		expect(Object.keys(list[0])).toEqual(['id', 'name', 'updatedAt']);
@@ -224,42 +231,45 @@ describe('listSkeletons', () => {
 
 describe('getSkeleton', () => {
 	it('returns the stored skeleton by id', async () => {
-		const saved = await saveSkeleton(draftFrom('Lookup', 'cover'));
+		const saved = await saveSkeleton(draftFrom('Lookup', 'cover'), TEST_SCOPE);
 
-		const loaded = await getSkeleton(saved.id);
+		const loaded = await getSkeleton(saved.id, TEST_SCOPE);
 
 		expect(loaded.id).toBe(saved.id);
 		expect(loaded.document).toEqual(saved.document);
 	});
 
 	it('throws 404 for an unknown id', async () => {
-		await expectAppError(getSkeleton('01970000-0000-7000-8000-00000000dead'), 404);
+		await expectAppError(getSkeleton('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
 	});
 
 	it('throws 404 for a malformed id without querying', async () => {
-		await expectAppError(getSkeleton('not-a-uuid'), 404);
+		await expectAppError(getSkeleton('not-a-uuid', TEST_SCOPE), 404);
 	});
 });
 
 describe('deleteSkeleton', () => {
 	it('deletes a skeleton by id', async () => {
-		const saved = await saveSkeleton(draftFrom('Disposable', 'cover'));
+		const saved = await saveSkeleton(draftFrom('Disposable', 'cover'), TEST_SCOPE);
 
-		await deleteSkeleton(saved.id);
+		await deleteSkeleton(saved.id, TEST_SCOPE);
 
 		expect(dbState.deletes).toEqual([{ table: 'skeletons', column: 'id', value: saved.id }]);
 		expect(dbState.skeletons.size).toBe(0);
 	});
 
 	it('throws 404 for an unknown id and never issues a delete', async () => {
-		await expectAppError(deleteSkeleton('01970000-0000-7000-8000-00000000dead'), 404);
+		await expectAppError(deleteSkeleton('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
 		expect(dbState.deletes).toHaveLength(0);
 	});
 });
 
 describe('instantiateReport', () => {
 	it('creates a draft report whose document mirrors the skeleton structure exactly (FR11)', async () => {
-		const saved = await saveSkeleton(draftFrom('Recurring', 'cover', 'dataTable', 'kpiRow'));
+		const saved = await saveSkeleton(
+			draftFrom('Recurring', 'cover', 'dataTable', 'kpiRow'),
+			TEST_SCOPE
+		);
 
 		const report = await instantiateReport(saved.id, TEST_SCOPE);
 
@@ -273,7 +283,8 @@ describe('instantiateReport', () => {
 
 	it('two reports from one skeleton are structurally identical (FR11)', async () => {
 		const saved = await saveSkeleton(
-			draftFrom('Quarterly', 'cover', 'summary', 'dataTable', 'chartSection', 'annex')
+			draftFrom('Quarterly', 'cover', 'summary', 'dataTable', 'chartSection', 'annex'),
+			TEST_SCOPE
 		);
 
 		const first = await instantiateReport(saved.id, TEST_SCOPE);

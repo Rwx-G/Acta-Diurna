@@ -101,10 +101,21 @@ export const reports = pgTable(
 export type ReportRow = typeof reports.$inferSelect;
 
 // A skeleton (FR9/FR11) is a reusable report structure: the same JSONB `DocumentV1`
-// the reports table stores, with placeholder bindings instead of data. `name` is
-// unique so the library lists distinct templates (the document title doubles as
-// the name; a duplicate is a 409). `schema_version` is denormalized from the
-// document, mirroring the reports table, so version queries never parse JSONB.
+// the reports table stores, with placeholder bindings instead of data. The
+// document title doubles as the library name. `schema_version` is denormalized
+// from the document, mirroring the reports table, so version queries never parse
+// JSONB.
+//
+// Per-author ownership (Epic 8, story 8.2). Added nullable and backfilled at boot
+// like reports/data sets/tokens (the inheritance step assigns every pre-existing
+// row to the single implicit author / the INITIAL_OWNER_EMAIL author). ON DELETE
+// RESTRICT: an author owning skeletons is not deletable out from under them.
+//
+// The unique index is `(owner_id, name)`, NOT a global `name`: two authors may use
+// the same skeleton name, and the 409 `skeleton-name-taken` only fires WITHIN one
+// author's library - so a name is neither a cross-author squat nor an existence
+// oracle. In single mode (one implicit author) this is equivalent to the prior
+// global-name index.
 export const skeletons = pgTable(
 	'skeletons',
 	{
@@ -112,10 +123,14 @@ export const skeletons = pgTable(
 		name: text('name').notNull(),
 		schemaVersion: integer('schema_version').notNull(),
 		document: jsonb('document').$type<DocumentV1>().notNull(),
+		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(table) => [uniqueIndex('skeletons_name_idx').on(table.name)]
+	(table) => [
+		uniqueIndex('skeletons_owner_id_name_idx').on(table.ownerId, table.name),
+		index('skeletons_owner_id_idx').on(table.ownerId)
+	]
 );
 
 export type SkeletonRow = typeof skeletons.$inferSelect;

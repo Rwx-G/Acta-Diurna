@@ -41,7 +41,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			// the trigger (no offer of a capability that 503s); the panel renders the
 			// enable hint instead. Skeletons feed the generation request panel.
 			aiEnabled: isAiEnabled(),
-			skeletons: await listSkeletons()
+			skeletons: await listSkeletons(scope)
 		};
 	} catch (thrown) {
 		// handleError cannot set a non-500 status for unexpected errors (1.4

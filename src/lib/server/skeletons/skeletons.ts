@@ -10,9 +10,9 @@
  * reports `createReportWithDocument` path so a report from a skeleton goes
  * through the same write contract as a blank report - only the seed differs.
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
-import type { AuthorScope } from '$lib/server/authors';
+import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { skeletons, type SkeletonRow } from '$lib/server/db/schema';
@@ -38,7 +38,7 @@ export interface SkeletonSummary {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Postgres unique_violation; a duplicate skeleton name trips `skeletons_name_idx`. */
+/** Postgres unique_violation; a duplicate skeleton name trips `skeletons_owner_id_name_idx`. */
 const UNIQUE_VIOLATION = '23505';
 
 function toSkeleton(row: SkeletonRow): Skeleton {
@@ -86,7 +86,7 @@ function isUniqueViolation(error: unknown): boolean {
  * `/problems/skeleton-name-taken` (the unique index is the source of truth; the
  * pg unique violation is caught and translated). Returns the persisted skeleton.
  */
-export async function saveSkeleton(structureInput: unknown): Promise<Skeleton> {
+export async function saveSkeleton(structureInput: unknown, scope: AuthorScope): Promise<Skeleton> {
 	const result = validateDocument(structureInput);
 	if (!result.ok) {
 		throw new AppError({
@@ -108,6 +108,7 @@ export async function saveSkeleton(structureInput: unknown): Promise<Skeleton> {
 		name: document.title,
 		schemaVersion: document.version,
 		document,
+		ownerId: ownerForInsert(scope),
 		createdAt: now,
 		updatedAt: now
 	};
@@ -120,24 +121,36 @@ export async function saveSkeleton(structureInput: unknown): Promise<Skeleton> {
 	return toSkeleton(row);
 }
 
-/** Lists the skeleton library, most recently updated first (FR9). */
-export async function listSkeletons(): Promise<SkeletonSummary[]> {
-	const rows = await getDb().select().from(skeletons).orderBy(desc(skeletons.updatedAt));
+/** Lists the owner-scoped skeleton library, most recently updated first (FR9). In
+ *  single mode the owner predicate is a no-op (byte-identical to the pre-8.2 query);
+ *  in multi mode another author's skeletons are invisible. */
+export async function listSkeletons(scope: AuthorScope): Promise<SkeletonSummary[]> {
+	const owner = ownerFilter(scope, skeletons.ownerId);
+	const base = getDb().select().from(skeletons);
+	const rows = await (owner ? base.where(owner) : base).orderBy(desc(skeletons.updatedAt));
 	return rows.map((row) => ({ id: row.id, name: row.name, updatedAt: row.updatedAt }));
 }
 
-/** Loads one skeleton; 404 when the id is unknown or malformed. */
-export async function getSkeleton(id: string): Promise<Skeleton> {
+/**
+ * Loads one skeleton; 404 when the id is unknown, malformed, or owned by another
+ * author. The owner predicate ANDs into the lookup (multi mode) so a cross-author
+ * id raises the SAME 404 - no existence oracle. In single mode the predicate is
+ * undefined and the WHERE is the bare id match, byte-identical to the pre-8.2 query.
+ */
+export async function getSkeleton(id: string, scope: AuthorScope): Promise<Skeleton> {
 	// Boundary check: a malformed id is a 404, not a postgres cast error.
 	if (!UUID_PATTERN.test(id)) throw notFound();
-	const rows = await getDb().select().from(skeletons).where(eq(skeletons.id, id)).limit(1);
+	const owner = ownerFilter(scope, skeletons.ownerId);
+	const where = owner ? and(eq(skeletons.id, id), owner) : eq(skeletons.id, id);
+	const rows = await getDb().select().from(skeletons).where(where).limit(1);
 	if (rows.length === 0) throw notFound();
 	return toSkeleton(rows[0]);
 }
 
-/** Deletes a skeleton by id; 404 when unknown or malformed (no cascade exists). */
-export async function deleteSkeleton(id: string): Promise<void> {
-	await getSkeleton(id);
+/** Deletes a skeleton by id; 404 when unknown, malformed, or owned by another
+ *  author (the scoped read is the gate). No cascade exists. */
+export async function deleteSkeleton(id: string, scope: AuthorScope): Promise<void> {
+	await getSkeleton(id, scope);
 	await getDb().delete(skeletons).where(eq(skeletons.id, id));
 }
 
@@ -150,6 +163,6 @@ export async function deleteSkeleton(id: string): Promise<void> {
  * the skeleton id is unknown.
  */
 export async function instantiateReport(skeletonId: string, scope: AuthorScope): Promise<Report> {
-	const skeleton = await getSkeleton(skeletonId);
+	const skeleton = await getSkeleton(skeletonId, scope);
 	return createReportWithDocument(skeleton.document, scope);
 }

@@ -4,8 +4,10 @@ import { resolveAuthorScope } from '$lib/server/authors';
 import { AppError } from '$lib/server/problem';
 import { deleteSkeleton, instantiateReport, listSkeletons } from '$lib/server/skeletons/skeletons';
 
-export const load: PageServerLoad = async () => {
-	return { skeletons: await listSkeletons() };
+export const load: PageServerLoad = async ({ locals }) => {
+	return {
+		skeletons: await listSkeletons(await resolveAuthorScope(locals.authorSession?.authorId))
+	};
 };
 
 export const actions: Actions = {
@@ -30,12 +32,12 @@ export const actions: Actions = {
 		}
 		redirect(303, `/reports/${reportId}/edit`);
 	},
-	delete: async ({ request }) => {
+	delete: async ({ request, locals }) => {
 		const data = await request.formData();
 		const id = data.get('id');
 		if (typeof id !== 'string') return fail(400, { message: 'Missing skeleton id.' });
 		try {
-			await deleteSkeleton(id);
+			await deleteSkeleton(id, await resolveAuthorScope(locals.authorSession?.authorId));
 		} catch (thrown) {
 			if (thrown instanceof AppError) {
 				return fail(thrown.status, { message: thrown.detail ?? thrown.title });
