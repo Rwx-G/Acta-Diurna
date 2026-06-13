@@ -18,7 +18,6 @@
  * finding `text`/`treatment`, honoring "do not ship raw datasets beyond what the
  * SVG needs".
  */
-import { scalePoint } from 'd3-scale';
 import { line } from 'd3-shape';
 import type { Finding, ScaleEntry, SourceState } from '$lib/schema';
 
@@ -81,10 +80,16 @@ export interface UpSetGeometry {
 	dotRadius: number;
 }
 
-const STRIP_WIDTH = 160;
 const STRIP_HEIGHT = 28;
-const STRIP_PADDING = 0.5;
 const DOT_RADIUS = 6;
+// Column spacing ADAPTS to the source labels so the trailing label row never
+// overlaps or clips: each column is at least as wide as its label (estimated from
+// the character count at the tick font) plus padding, with a floor. The dot
+// columns space out to match, keeping every source label legible whatever the
+// number or length of sources.
+const LABEL_CHAR_WIDTH = 6.5;
+const COLUMN_LABEL_PAD = 14;
+const MIN_COLUMN_GAP = 44;
 
 /** The pill text for a finding: its short `tag`, else its full `label`. */
 function pillText(finding: Pick<Finding, 'tag' | 'label'>): string {
@@ -152,17 +157,20 @@ export function computeUpSetGeometry(
 		else groups.set(key, [finding]);
 	}
 
-	// The shared column scale: dot x-positions in the strip's own coordinate space,
-	// identical for every row so the source columns line up vertically.
-	const xScale = scalePoint<string>()
-		.domain(sourceOrder)
-		.range([0, STRIP_WIDTH])
-		.padding(STRIP_PADDING);
+	// The shared column geometry: each column is wide enough for its source label
+	// (estimated from the character count), so the dot x-positions - identical for
+	// every row so the source columns line up vertically - also space the trailing
+	// labels apart enough to never overlap or clip.
+	const columnGap = Math.max(
+		MIN_COLUMN_GAP,
+		...sourceEntries.map((entry) => entry.label.length * LABEL_CHAR_WIDTH + COLUMN_LABEL_PAD)
+	);
+	const stripWidth = columnGap * sourceEntries.length;
 
-	const sources = sourceEntries.map((entry) => ({
+	const sources = sourceEntries.map((entry, columnIndex) => ({
 		key: entry.key,
 		label: entry.label,
-		cx: xScale(entry.key) ?? STRIP_WIDTH / 2
+		cx: columnGap / 2 + columnIndex * columnGap
 	}));
 
 	// The empty-set group (findings no source found) is emitted as an explicit
@@ -234,7 +242,7 @@ export function computeUpSetGeometry(
 	return {
 		sources,
 		rows,
-		strip: { width: STRIP_WIDTH, height: STRIP_HEIGHT },
+		strip: { width: stripWidth, height: STRIP_HEIGHT },
 		dotRadius: DOT_RADIUS
 	};
 }
