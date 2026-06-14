@@ -98,3 +98,25 @@ test('the what-changed view shows the first-issue neutral state for a fresh seri
 
 	await expect(page.getByText('This is the first issue of the series')).toBeVisible();
 });
+
+test('the what-changed view shows the predecessor-unpublished neutral state', async ({
+	page
+}, testInfo) => {
+	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
+
+	// The predecessor exists in the series but is still a DRAFT (never published), so
+	// it has no frozen edition to diff against. Build it: create the source, leave it
+	// a draft, duplicate it (the copy's predecessor is the still-draft source), then
+	// publish only the copy. The copy's view shows the distinct predecessor-unpublished
+	// state, not the first-issue one.
+	const created = await postForm(page, `${E2E_BASE_URL}/reports/new`, {});
+	const sourceId = idFromEditorRedirect(created.location);
+
+	const duplicated = await postForm(page, `${E2E_BASE_URL}/reports?/duplicate`, { id: sourceId });
+	const issueId = idFromEditorRedirect(duplicated.location);
+	await postForm(page, `${E2E_BASE_URL}/reports/${issueId}/edit?/publish`, {});
+
+	await page.goto(`/reports/${issueId}/changes`);
+
+	await expect(page.getByText('The previous issue is not published yet')).toBeVisible();
+});

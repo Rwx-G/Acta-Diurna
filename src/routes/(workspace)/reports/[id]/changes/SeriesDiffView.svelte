@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SeriesDiff, BlockDiff } from '$lib/schema';
+	import type { SeriesDiff, BlockDiff, ChangeVerdict } from '$lib/schema';
 	import type { SeriesDiffBaseline } from '$lib/server/documents/reports';
 	import { formatUtcDateTime } from '$lib/format';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -23,30 +23,35 @@
 		baseline?.publishedAt ? formatUtcDateTime(baseline.publishedAt) : null
 	);
 
-	const STRUCTURAL_LABEL: Record<BlockDiff['change'], string> = {
-		added: 'Added',
-		removed: 'Removed',
-		moved: 'Moved',
-		kept: 'Unchanged'
+	// A verdict tag carries its display label AND its CSS tone together, so the
+	// template never re-derives the tone from the label (a copy/i18n change to a
+	// label would otherwise silently break styling). The tone is mapped DIRECTLY from
+	// the engine's `ChangeVerdict` and the data/content flags, never from the string.
+	type Tone = 'added' | 'removed' | 'moved' | 'kept' | 'changed';
+	interface VerdictTag {
+		label: string;
+		tone: Tone;
+	}
+
+	const STRUCTURAL_VERDICT: Record<ChangeVerdict, VerdictTag> = {
+		added: { label: 'Added', tone: 'added' },
+		removed: { label: 'Removed', tone: 'removed' },
+		moved: { label: 'Moved', tone: 'moved' },
+		kept: { label: 'Unchanged', tone: 'kept' }
 	};
+
+	const DATA_CHANGED: VerdictTag = { label: 'Data changed', tone: 'changed' };
+	const CONTENT_CHANGED: VerdictTag = { label: 'Content changed', tone: 'changed' };
 
 	// Every applicable verdict for a block, not just the first (AC2): a moved block
 	// whose data also changed shows both. A `kept`/`moved` block with no data or
 	// content change keeps its structural tag alone, so an unchanged block reads as
 	// "Unchanged" rather than vanishing.
-	function verdicts(block: BlockDiff): string[] {
-		const tags: string[] = [STRUCTURAL_LABEL[block.change]];
-		if (block.dataChanged) tags.push('Data changed');
-		if (block.contentChanged) tags.push('Content changed');
+	function verdicts(block: BlockDiff): VerdictTag[] {
+		const tags: VerdictTag[] = [STRUCTURAL_VERDICT[block.change]];
+		if (block.dataChanged) tags.push(DATA_CHANGED);
+		if (block.contentChanged) tags.push(CONTENT_CHANGED);
 		return tags;
-	}
-
-	function verdictTone(tag: string): string {
-		if (tag === 'Added') return 'added';
-		if (tag === 'Removed') return 'removed';
-		if (tag === 'Moved') return 'moved';
-		if (tag === 'Unchanged') return 'kept';
-		return 'changed';
 	}
 </script>
 
@@ -79,8 +84,8 @@
 			<article class="section" data-section-change={section.change}>
 				<header class="section-head">
 					<h2>{section.title}</h2>
-					<span class="tag {verdictTone(STRUCTURAL_LABEL[section.change])}">
-						{STRUCTURAL_LABEL[section.change]}
+					<span class="tag {STRUCTURAL_VERDICT[section.change].tone}">
+						{STRUCTURAL_VERDICT[section.change].label}
 					</span>
 				</header>
 
@@ -93,8 +98,8 @@
 								<span class="block-type">{block.type}</span>
 								<span class="block-id">{block.id}</span>
 								<span class="tags">
-									{#each verdicts(block) as tag (tag)}
-										<span class="tag {verdictTone(tag)}">{tag}</span>
+									{#each verdicts(block) as tag (tag.label)}
+										<span class="tag {tag.tone}">{tag.label}</span>
 									{/each}
 								</span>
 							</li>

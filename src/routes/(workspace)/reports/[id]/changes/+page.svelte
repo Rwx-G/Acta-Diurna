@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import PageHeader from '$lib/ui/PageHeader.svelte';
+	import EmptyState from '$lib/ui/EmptyState.svelte';
 	import SeriesDiffView from './SeriesDiffView.svelte';
 	import type { PageProps } from './$types';
 
@@ -31,14 +32,10 @@
 	</PageHeader>
 
 	{#if data.state === 'not-published'}
-		<div class="gate" role="status">
-			<h2>Publish to compare</h2>
-			<p>
-				The "what changed" view diffs two published editions. Publish
-				<strong>{data.title}</strong> first, then open this view to see how it differs from the previous
-				issue.
-			</p>
-		</div>
+		<EmptyState
+			title="Publish to compare"
+			description={`The "what changed" view diffs two published editions. Publish ${data.title} first, then open this view to see how it differs from the previous issue.`}
+		/>
 	{:else}
 		<SeriesDiffView diff={data.diff} baseline={data.baseline} />
 	{/if}
@@ -57,20 +54,5 @@
 
 	.back:hover {
 		text-decoration: underline;
-	}
-
-	.gate {
-		max-width: var(--content-width);
-		margin: 0 auto;
-		padding: var(--space-6);
-	}
-
-	.gate h2 {
-		margin: 0 0 var(--space-3);
-		font-size: var(--text-xl);
-	}
-
-	.gate p {
-		color: var(--color-ink-65);
 	}
 </style>
