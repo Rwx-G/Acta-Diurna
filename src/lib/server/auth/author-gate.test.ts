@@ -168,4 +168,19 @@ describe('completeAuthorSignIn', () => {
 		expect(mocks.ensureAuthor).not.toHaveBeenCalled();
 		expect(mocks.createAuthorSession).not.toHaveBeenCalled();
 	});
+
+	it('re-checks the domain at consume: a now-out-of-domain email mints nothing and returns null', async () => {
+		// The token consumed successfully (it was in-domain at issue), but the email
+		// is no longer in AUTHOR_EMAIL_DOMAIN (the operator narrowed it since). The
+		// consumed token is discarded onto the neutral null path.
+		mocks.consumeAuthorVerificationToken.mockResolvedValue('author@example.com');
+		mocks.isAuthorEmailInDomain.mockReturnValue(false);
+
+		const result = await completeAuthorSignIn('raw');
+
+		expect(result).toBeNull();
+		expect(mocks.isAuthorEmailInDomain).toHaveBeenCalledWith('author@example.com');
+		expect(mocks.ensureAuthor).not.toHaveBeenCalled();
+		expect(mocks.createAuthorSession).not.toHaveBeenCalled();
+	});
 });

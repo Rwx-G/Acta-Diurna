@@ -104,6 +104,14 @@ export async function completeAuthorSignIn(rawToken: string): Promise<CreatedSes
 	const email = await consumeAuthorVerificationToken(rawToken);
 	if (!email) return null;
 
+	// Re-check the domain at CONSUME, not only at issue: AUTHOR_EMAIL_DOMAIN may
+	// have been narrowed between the link being sent and it being clicked (an
+	// operator tightening the allowed domain), and the bound email must STILL be
+	// in-domain to provision an author. A now-out-of-domain token is discarded onto
+	// the SAME neutral null (expired) path - no author minted, no session opened.
+	// One pure env read; the token is already burned by the consume above.
+	if (!isAuthorEmailInDomain(email)) return null;
+
 	// First sign-in mints the author row (self-service); a returning author finds
 	// the existing row. ensureAuthor is idempotent and concurrency-safe.
 	const authorId = await ensureAuthor(email);
