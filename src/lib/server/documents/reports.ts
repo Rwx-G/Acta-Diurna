@@ -26,6 +26,7 @@ import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { logger } from '$lib/server/logger';
 import { AppError } from '$lib/server/problem';
 import { bakeBindingDeltas } from './bake-delta.ts';
+import { bakeChangeSummary } from './bake-change-summary.ts';
 
 export type ReportStatus = 'draft' | 'published';
 
@@ -825,15 +826,28 @@ export async function publishReport(
 	// into the published snapshot, so the reader reads the delta straight off the
 	// validated document with no prior-issue data shipped.
 	//
-	// No second full `validateOrThrow` on the baked result: `bakeBindingDeltas` is
-	// structure-preserving (it only adds or removes the optional, schema-valid
-	// `binding.delta`, computed by the schema-package `computeBindingDelta` which emits a
-	// finite-numbers-only `BindingDelta`) over an already-validated current-version
-	// document, so a second full schema walk would be a redundant cost on every publish.
-	// The "baked doc equals the draft except for delta fields" bake test pins the
-	// structure-preserving post-condition.
+	// No second full `validateOrThrow` on the baked result: both bakes are
+	// structure-preserving over an already-validated current-version document.
+	// `bakeBindingDeltas` only adds or removes the optional, schema-valid
+	// `binding.delta` (computed by the schema-package `computeBindingDelta`, which emits a
+	// finite-numbers-only `BindingDelta`); `bakeChangeSummary` only sets the optional,
+	// schema-valid `changeSummary` field from the schema-package `buildChangeSummaryEntries`
+	// (sections, verdicts, audience tags, and the already-baked deltas - all schema-valid).
+	// A second full schema walk would be a redundant cost on every publish; the
+	// structure-preserving post-condition is pinned by the bake tests.
 	const predecessor = await predecessorSnapshot(row.predecessorId, scope, migrations);
-	const document = bakeBindingDeltas(validated, predecessor);
+	const withDeltas = bakeBindingDeltas(validated, predecessor);
+	// Story 9.5: bake the OPT-IN reader-facing change summary AFTER the delta bake, so its
+	// headline movements read the freshly-baked KPI deltas. The bake is a no-op unless the
+	// document carries `changeSummary.enabled === true`; a first issue, an unpublished
+	// predecessor, or a drifted pair bakes no entries (the panel does not appear). The
+	// predecessor edge being absent (a first issue) vs present-but-unpublished only changes
+	// the neutral reason; both yield no entries, so the reason is informational here.
+	const document = bakeChangeSummary(
+		withDeltas,
+		predecessor,
+		row.predecessorId === null ? 'first-issue' : 'predecessor-unpublished'
+	);
 	const now = new Date();
 	const where =
 		expectedUpdatedAt === undefined

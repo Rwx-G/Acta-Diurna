@@ -983,6 +983,86 @@ describe('publishReport', () => {
 		// Nothing was published: the issue stays a draft.
 		expect(dbState.rowsById.get(issue.id)?.status).toBe('draft');
 	});
+
+	// Story 9.5: the publish-time reader change-summary bake. An OPT-IN issue gets a
+	// leak-safe `changeSummary.entries` distilled from the diff against the predecessor's
+	// published snapshot, frozen into this issue's snapshot - the precompute-onto-the-
+	// document pattern of the 9.4 delta bake, run AFTER it.
+	function summaryDocument(intro: string, options: { enabled?: boolean } = {}): DocumentV1 {
+		const changeSummary = options.enabled === undefined ? undefined : { enabled: options.enabled };
+		const result = validateDocument({
+			version: 1,
+			title: 'Quarterly Review',
+			...(changeSummary ? { changeSummary } : {}),
+			sections: [
+				{
+					id: 'intro',
+					title: 'Intro',
+					blocks: [{ type: 'text', id: 'p', paragraphs: [[{ text: intro }]] }]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('summary fixture must be valid');
+		return result.document;
+	}
+
+	it('bakes the opt-in reader change summary against the predecessor snapshot (Story 9.5)', async () => {
+		const predecessor = seedReport({
+			id: '01970000-0000-7000-8000-0000000000a1',
+			status: 'published',
+			publishedDocument: summaryDocument('Old prose, the first edition.'),
+			publishedAt: new Date('2026-06-01T09:00:00Z')
+		});
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000a2',
+			document: summaryDocument('New prose, the second edition.', { enabled: true }),
+			predecessorId: predecessor.id
+		});
+
+		const report = await publishReport(issue.id, TEST_SCOPE);
+
+		expect(report.publishedDocument?.changeSummary?.enabled).toBe(true);
+		expect(report.publishedDocument?.changeSummary?.entries).toEqual([
+			{ sectionId: 'intro', sectionTitle: 'Intro', change: 'updated' }
+		]);
+		// Leak tripwire: the predecessor's prior prose is NEVER in the baked summary.
+		expect(JSON.stringify(report.publishedDocument?.changeSummary)).not.toContain(
+			'Old prose, the first edition.'
+		);
+		// The draft document keeps the bare opt-in, no baked entries.
+		expect(report.document.changeSummary).toEqual({ enabled: true });
+	});
+
+	it('bakes no entries when the opt-in is off (default), leaving the document unchanged', async () => {
+		const predecessor = seedReport({
+			id: '01970000-0000-7000-8000-0000000000a3',
+			status: 'published',
+			publishedDocument: summaryDocument('Old prose.'),
+			publishedAt: new Date('2026-06-01T09:00:00Z')
+		});
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000a4',
+			document: summaryDocument('New prose.'),
+			predecessorId: predecessor.id
+		});
+
+		const report = await publishReport(issue.id, TEST_SCOPE);
+
+		expect(report.publishedDocument?.changeSummary).toBeUndefined();
+	});
+
+	it('bakes no entries on a first opt-in issue (no predecessor), keeping the opt-in on', async () => {
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000a5',
+			document: summaryDocument('First issue.', { enabled: true }),
+			predecessorId: null
+		});
+
+		const report = await publishReport(issue.id, TEST_SCOPE);
+
+		expect(report.publishedDocument?.changeSummary).toEqual({ enabled: true });
+		expect(report.publishedDocument?.changeSummary?.entries).toBeUndefined();
+	});
 });
 
 describe('unpublishToDraft', () => {
