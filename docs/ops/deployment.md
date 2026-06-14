@@ -167,6 +167,29 @@ realm carries concurrent load (Epic 3) and the database is provisioned for the
 extra connections; keep it below the Postgres `max_connections` ceiling minus
 headroom for migrations and maintenance.
 
+## Database transport security
+
+The default compose stack runs the app and PostgreSQL as sibling containers on a
+private Docker network, addressed by service name (`db`). That link is not
+loopback but it never leaves the host's private network, so it ships without TLS
+and the app does not require it - the trivial-deploy path is unchanged.
+
+A **remote** database (a managed Postgres, a separate host) is different: a
+`DATABASE_URL` whose host is non-loopback and that carries **no TLS directive**
+ships every query in cleartext over the network between the app and the database.
+Under `NODE_ENV=production`, the app logs a single boot `warn` in that case:
+
+> DATABASE_URL points at a remote host with no TLS directive: database traffic is
+> unencrypted. For a remote database, set `sslmode=require` in the connection
+> string.
+
+Rule: **for a remote database, append `sslmode=require`** (or stronger,
+`verify-full`) to `DATABASE_URL`, e.g.
+`postgresql://user:pass@db.example.com:5432/acta_diurna?sslmode=require`. A
+loopback host and any URL already declaring `sslmode=`/`ssl=true` are exempt and
+never warned about. The warning is informational, not a boot failure, precisely
+so the private-network compose path is never broken.
+
 ## Authentication modes (single vs multi-author)
 
 The instance runs in one of two authentication modes. The mode is chosen

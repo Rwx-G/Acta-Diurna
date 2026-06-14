@@ -16,6 +16,35 @@ function isLoopbackOrigin(origin: string): boolean {
 	}
 }
 
+function isLoopbackHost(hostname: string): boolean {
+	return LOOPBACK_HOSTS.has(hostname) || hostname.startsWith('127.');
+}
+
+/**
+ * True when a production DB link ships queries in CLEARTEXT to a REMOTE host: the
+ * `DATABASE_URL` host is non-loopback AND the connection string carries no TLS
+ * directive (`sslmode=` or `ssl=true`). The intended docker-compose path (the app
+ * talking to a sibling Postgres CONTAINER by service name) is non-loopback but a
+ * private-network link, so this is a boot WARNING, never a fatal: a remote
+ * database is the case that should set `sslmode=require`. Loopback hosts and any
+ * URL already declaring TLS are exempt (no warn). Outside production this is
+ * always false (a dev/test link is never warned about).
+ */
+export function isUnencryptedRemoteDbLink(env: Pick<Env, 'NODE_ENV' | 'DATABASE_URL'>): boolean {
+	if (env.NODE_ENV !== 'production') return false;
+	let url: URL;
+	try {
+		url = new URL(env.DATABASE_URL);
+	} catch {
+		return false;
+	}
+	if (isLoopbackHost(url.hostname)) return false;
+	const sslMode = url.searchParams.get('sslmode');
+	const ssl = url.searchParams.get('ssl');
+	const declaresTls = (sslMode !== null && sslMode !== 'disable') || ssl === 'true';
+	return !declaresTls;
+}
+
 // Lowercased domain part of an email (everything after the last '@'). Used by
 // the multi-mode refine to check INITIAL_OWNER_EMAIL sits inside
 // AUTHOR_EMAIL_DOMAIN. Validation has already confirmed the value is an email,

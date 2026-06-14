@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEnv } from './env';
+import { isUnencryptedRemoteDbLink, parseEnv } from './env';
 
 const validEnv = {
 	DATABASE_URL: 'postgresql://acta:secret@db:5432/acta_diurna',
@@ -309,6 +309,57 @@ describe('parseEnv', () => {
 		expect(() => parseEnv({ ORIGIN: 'nope' })).toThrowError(
 			/DATABASE_URL[\s\S]*ORIGIN[\s\S]*SESSION_SECRET/
 		);
+	});
+
+	describe('isUnencryptedRemoteDbLink (A2 boot-warn predicate)', () => {
+		it('warns for a remote production link with no TLS directive', () => {
+			expect(
+				isUnencryptedRemoteDbLink({
+					NODE_ENV: 'production',
+					DATABASE_URL: 'postgresql://acta:secret@db.example.com:5432/acta_diurna'
+				})
+			).toBe(true);
+		});
+
+		it('is silent for a loopback host', () => {
+			for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+				expect(
+					isUnencryptedRemoteDbLink({
+						NODE_ENV: 'production',
+						DATABASE_URL: `postgresql://acta:secret@${host}:5432/acta_diurna`
+					})
+				).toBe(false);
+			}
+		});
+
+		it('is silent when the connection string already declares TLS', () => {
+			for (const suffix of ['?sslmode=require', '?ssl=true', '?sslmode=verify-full']) {
+				expect(
+					isUnencryptedRemoteDbLink({
+						NODE_ENV: 'production',
+						DATABASE_URL: `postgresql://acta:secret@db.example.com:5432/acta_diurna${suffix}`
+					})
+				).toBe(false);
+			}
+		});
+
+		it('warns when sslmode is explicitly disabled (a remote link still ships cleartext)', () => {
+			expect(
+				isUnencryptedRemoteDbLink({
+					NODE_ENV: 'production',
+					DATABASE_URL: 'postgresql://acta:secret@db.example.com:5432/acta_diurna?sslmode=disable'
+				})
+			).toBe(true);
+		});
+
+		it('is silent outside production (a dev/test link is never warned about)', () => {
+			expect(
+				isUnencryptedRemoteDbLink({
+					NODE_ENV: 'development',
+					DATABASE_URL: 'postgresql://acta:secret@db.example.com:5432/acta_diurna'
+				})
+			).toBe(false);
+		});
 	});
 
 	describe('multi-mode identity (Epic 8)', () => {
