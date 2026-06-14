@@ -14,20 +14,29 @@ import { getTableName } from 'drizzle-orm';
 
 const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-purge-'));
 
-vi.mock('$lib/server/env', () => ({ serverEnv: () => ({ UPLOADS_DIR: uploadsDir }) }));
+// A mutable env the sweep reads through serverEnv(); tests flip
+// ACCESS_RECORD_RETENTION_DAYS to exercise the set/unset retention gate.
+const envState: { ACCESS_RECORD_RETENTION_DAYS?: number } = {};
+vi.mock('$lib/server/env', () => ({
+	serverEnv: () => ({ UPLOADS_DIR: uploadsDir, ...envState })
+}));
 
 const warn = vi.fn();
 vi.mock('$lib/server/logger', () => ({ logger: { warn, info: vi.fn(), error: vi.fn() } }));
 
 const {
 	DEFAULT_ORPHAN_RETENTION_DAYS,
+	accessRecordCutoff,
 	orphanCutoff,
+	purgeAccessRecords,
 	purgeOrphanDataSets,
-	purgeVerificationTokens
+	purgeVerificationTokens,
+	runPurgeSweep
 } = await import('./purge.ts');
 
 beforeEach(() => {
 	warn.mockReset();
+	delete envState.ACCESS_RECORD_RETENTION_DAYS;
 });
 
 interface DeletedRows {
@@ -90,6 +99,38 @@ describe('orphanCutoff (grace-window boundary)', () => {
 		// The predicate is strict `<`: a row at or after the cutoff is retained.
 		expect(justInsideGrace > cutoff).toBe(true);
 		expect(justOutsideGrace < cutoff).toBe(true);
+	});
+});
+
+describe('accessRecordCutoff (retention-window boundary)', () => {
+	const now = new Date('2026-06-12T00:00:00.000Z');
+
+	it('subtracts the retention window in whole days', () => {
+		expect(accessRecordCutoff(now, 90).toISOString()).toBe('2026-03-14T00:00:00.000Z');
+	});
+
+	it('a record at or after the cutoff is retained (strict `<`)', () => {
+		const cutoff = accessRecordCutoff(now, 30);
+		expect(new Date(cutoff.getTime() + 1) > cutoff).toBe(true);
+		expect(new Date(cutoff.getTime() - 1) < cutoff).toBe(true);
+	});
+});
+
+describe('purgeAccessRecords', () => {
+	it('deletes the aged rows and returns the count', async () => {
+		const { db, whereCalls } = fakeDb({
+			access_records: [{ id: 'a1' }, { id: 'a2' }]
+		});
+
+		const removed = await purgeAccessRecords(db, new Date(), 90);
+
+		expect(removed).toBe(2);
+		expect(whereCalls).toEqual([{ table: 'access_records' }]);
+	});
+
+	it('returns 0 when nothing aged past the window', async () => {
+		const { db } = fakeDb({ access_records: [] });
+		expect(await purgeAccessRecords(db, new Date(), 90)).toBe(0);
 	});
 });
 
@@ -186,5 +227,27 @@ describe('purgeOrphanDataSets', () => {
 		);
 		await unlink(stray);
 		await rm(outside, { recursive: true, force: true });
+	});
+});
+
+describe('runPurgeSweep (access-record retention gate)', () => {
+	it('skips access_records when ACCESS_RECORD_RETENTION_DAYS is unset (audit kept)', async () => {
+		const { db, whereCalls } = fakeDb({});
+
+		await runPurgeSweep(db, new Date());
+
+		// Tokens + orphan data sets always sweep; access_records is NOT touched when
+		// the retention var is unset, so the audit trail is kept indefinitely.
+		expect(whereCalls.map((call) => call.table)).not.toContain('access_records');
+		expect(whereCalls.map((call) => call.table)).toEqual(['verification_tokens', 'data_sets']);
+	});
+
+	it('sweeps access_records when ACCESS_RECORD_RETENTION_DAYS is set', async () => {
+		envState.ACCESS_RECORD_RETENTION_DAYS = 90;
+		const { db, whereCalls } = fakeDb({ access_records: [{ id: 'a1' }] });
+
+		await runPurgeSweep(db, new Date());
+
+		expect(whereCalls.map((call) => call.table)).toContain('access_records');
 	});
 });

@@ -8,16 +8,17 @@
  * Each function is pure over its `db` argument so it is individually testable,
  * and returns the number of rows it removed for the sweep to log.
  *
- * NOT purged here: `access_records`. Audit-trail retention (FR24) is governed by
- * Epic 6 story 6.3 ("Access Audit & Retention"), a deliberate retention policy,
- * not a blind time-based janitor. Adding it here would silently destroy audit
- * history; leave it to 6.3.
+ * Access-record retention (Epic 6 story 6.3, FR24/FR38/NFR11): `access_records`
+ * IS swept here now, but ONLY when `ACCESS_RECORD_RETENTION_DAYS` is set. Unset
+ * = the audit trail is KEPT indefinitely (the conservative default: never
+ * silently destroy audit history). When set, records older than the window are
+ * deleted - a deliberate, configurable retention policy, not a blind janitor.
  */
 import { unlink } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { and, isNull, lt, or, isNotNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { dataSets, verificationTokens } from '$lib/server/db/schema';
+import { accessRecords, dataSets, verificationTokens } from '$lib/server/db/schema';
 import type * as schema from '$lib/server/db/schema';
 import { serverEnv } from '$lib/server/env';
 import { logger } from '$lib/server/logger';
@@ -121,15 +122,61 @@ export function orphanRetentionDays(): number {
 }
 
 /**
- * Runs one full sweep: spent verification tokens, then orphaned data sets. Logs
- * the removed counts. Errors are logged, not thrown, so a single failing sweep
- * never crashes the long-running interval that drives it.
+ * The instant before which an access record is past its retention window: `now`
+ * minus `retentionDays`. A record at exactly the cutoff is NOT collected (strict
+ * `<`), so the boundary is inclusive of the retention window. Shares the day math
+ * with {@link orphanCutoff} but is a distinct policy (audit trail, not orphan).
+ */
+export function accessRecordCutoff(now: Date, retentionDays: number): Date {
+	return new Date(now.getTime() - retentionDays * MS_PER_DAY);
+}
+
+/**
+ * Deletes access-audit rows older than the retention window (`accessed_at < now -
+ * retentionDays`), FR24/FR38/NFR11. Pure over `db` and individually testable;
+ * returns the number of rows removed. The CALLER decides whether to run it at all
+ * (the sweep skips it entirely when `ACCESS_RECORD_RETENTION_DAYS` is unset), so
+ * this function always deletes against the window it is given - it never reads the
+ * environment. No RETURNING: the sweep needs only the count.
+ */
+export async function purgeAccessRecords(
+	db: Db,
+	now: Date,
+	retentionDays: number
+): Promise<number> {
+	const cutoff = accessRecordCutoff(now, retentionDays);
+	const result = await db.delete(accessRecords).where(lt(accessRecords.accessedAt, cutoff));
+	return result.rowCount ?? 0;
+}
+
+/**
+ * The access-record retention window in DAYS, or `undefined` when unset. Unset is
+ * the conservative default: the sweep then KEEPS the audit trail indefinitely
+ * (story 6.3 - retention is opt-in so an operator never loses audit history by
+ * accident). A set value bounds how long accesses are kept (GDPR data
+ * minimization).
+ */
+export function accessRecordRetentionDays(): number | undefined {
+	return serverEnv().ACCESS_RECORD_RETENTION_DAYS;
+}
+
+/**
+ * Runs one full sweep: spent verification tokens, orphaned data sets, then aged
+ * access records (only when `ACCESS_RECORD_RETENTION_DAYS` is set - unset KEEPS
+ * the audit trail). Logs the removed counts. Errors are logged, not thrown, so a
+ * single failing sweep never crashes the long-running interval that drives it.
  */
 export async function runPurgeSweep(db: Db, now: Date = new Date()): Promise<void> {
 	try {
 		const tokens = await purgeVerificationTokens(db, now);
 		const orphans = await purgeOrphanDataSets(db, now, orphanRetentionDays());
-		logger.info({ verificationTokens: tokens, orphanDataSets: orphans }, 'purge sweep complete');
+		const retentionDays = accessRecordRetentionDays();
+		const accesses =
+			retentionDays === undefined ? 0 : await purgeAccessRecords(db, now, retentionDays);
+		logger.info(
+			{ verificationTokens: tokens, orphanDataSets: orphans, accessRecords: accesses },
+			'purge sweep complete'
+		);
 	} catch (error) {
 		logger.error({ err: error }, 'purge sweep failed');
 	}

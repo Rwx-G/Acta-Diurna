@@ -139,13 +139,23 @@ is the upgrade path; it complicates the trivial-deploy promise, so it is opt-in.
 
 ## Purge job knobs
 
-A boot-registered sweep deletes spent verification tokens and orphaned data sets.
+A boot-registered sweep deletes spent verification tokens, orphaned data sets,
+and (when configured) aged reader access-audit records.
 
 - `PURGE_INTERVAL_MINUTES` (default 60): how often the sweep runs.
 - `DATA_SET_ORPHAN_RETENTION_DAYS` (default 30): grace window before an unbound
   data set (and its uploaded file) is treated as an orphan and deleted. An
   unbound data set is a legitimate transient state, so this window separates a
   fresh upload from an abandoned one.
+- `ACCESS_RECORD_RETENTION_DAYS` (no default, OPTIONAL): retention window in days
+  for the reader access-audit trail (the **Access audit** workspace view - who
+  opened which of an author's reports, when). **Unset means the audit history is
+  kept indefinitely** - the conservative default, so audit history is never
+  destroyed by accident. Set a number of days and the sweep deletes access
+  records whose access timestamp is older than that window. This is the GDPR data
+  minimization knob: bound how long reader-access history lives. The audit view
+  is owner-scoped (each author sees only accesses to their own reports), so
+  retention applies uniformly across authors.
 
 The sweep never runs under `NODE_ENV=test`.
 

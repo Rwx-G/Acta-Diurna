@@ -68,6 +68,15 @@ const envSchema = z
 		// freshly-uploaded set from a truly-abandoned one. Bounded so a typo cannot
 		// disable collection (huge value) or delete fresh uploads (zero).
 		DATA_SET_ORPHAN_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).optional(),
+		// Retention window (DAYS) for the reader access-audit trail (story 6.3,
+		// FR24/FR38/NFR11). OPTIONAL and, unlike the orphan grace, with NO default:
+		// UNSET means the audit records are KEPT indefinitely (the conservative
+		// choice - never silently destroy audit history). SET to N days makes the
+		// purge sweep delete `access_records` whose `accessed_at` is older than N
+		// days (GDPR data minimization: an operator bounds how long reader-access
+		// history lives). Bounded so a typo cannot delete fresh accesses (zero) or
+		// set an absurd window (same 1..3650 range as the orphan grace).
+		ACCESS_RECORD_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).optional(),
 		// Period (MINUTES) of the boot-registered purge sweep (spent verification
 		// tokens + orphaned data sets). OPTIONAL, default 60. The sweep never runs
 		// under NODE_ENV=test (the suite must not spawn a timer).

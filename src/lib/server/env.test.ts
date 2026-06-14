@@ -61,6 +61,20 @@ describe('parseEnv', () => {
 		);
 	});
 
+	it('coerces ACCESS_RECORD_RETENTION_DAYS, defaults to unset, and rejects out-of-range', () => {
+		expect(
+			parseEnv({ ...validEnv, ACCESS_RECORD_RETENTION_DAYS: '90' }).ACCESS_RECORD_RETENTION_DAYS
+		).toBe(90);
+		// Unset = audit kept indefinitely; there is deliberately NO default.
+		expect(parseEnv(validEnv).ACCESS_RECORD_RETENTION_DAYS).toBeUndefined();
+		expect(() => parseEnv({ ...validEnv, ACCESS_RECORD_RETENTION_DAYS: '0' })).toThrow(
+			/ACCESS_RECORD_RETENTION_DAYS/
+		);
+		expect(() => parseEnv({ ...validEnv, ACCESS_RECORD_RETENTION_DAYS: '99999' })).toThrow(
+			/ACCESS_RECORD_RETENTION_DAYS/
+		);
+	});
+
 	it('coerces PURGE_INTERVAL_MINUTES and rejects an out-of-range value', () => {
 		expect(parseEnv({ ...validEnv, PURGE_INTERVAL_MINUTES: '15' }).PURGE_INTERVAL_MINUTES).toBe(15);
 		expect(parseEnv(validEnv).PURGE_INTERVAL_MINUTES).toBeUndefined();
