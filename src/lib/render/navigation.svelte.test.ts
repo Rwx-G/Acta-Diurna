@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ReaderNavigation, indexForFragment } from './navigation.svelte.ts';
+import { ReaderNavigation, detailIdForFragment, indexForFragment } from './navigation.svelte.ts';
 
 function nav(count: number, reducedMotion = true) {
 	return new ReaderNavigation({ sectionCount: count, reducedMotion });
@@ -71,5 +71,26 @@ describe('indexForFragment', () => {
 
 	it('falls back to 0 for an unknown fragment', () => {
 		expect(indexForFragment('#nope', ids)).toBe(0);
+	});
+});
+
+describe('detailIdForFragment', () => {
+	const detailIds = ['detail-weak-password', 'detail-open-port'];
+
+	it('returns the detail id when the fragment names a detail section', () => {
+		expect(detailIdForFragment('#detail-open-port', detailIds)).toBe('detail-open-port');
+	});
+
+	it('tolerates a missing leading hash', () => {
+		expect(detailIdForFragment('detail-weak-password', detailIds)).toBe('detail-weak-password');
+	});
+
+	it('returns null for a main-flow fragment (not a detail section)', () => {
+		expect(detailIdForFragment('#findings', detailIds)).toBeNull();
+	});
+
+	it('returns null for an empty fragment', () => {
+		expect(detailIdForFragment('', detailIds)).toBeNull();
+		expect(detailIdForFragment('#', detailIds)).toBeNull();
 	});
 });

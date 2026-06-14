@@ -100,3 +100,18 @@ export function indexForFragment(fragment: string, sectionIds: readonly string[]
 	const index = sectionIds.indexOf(id);
 	return index >= 0 ? index : 0;
 }
+
+/**
+ * The detail-section id named by a fragment (`#<sectionId>`, Epic 11), or null
+ * when the fragment is empty or names a main-flow section rather than a detail
+ * page. The reader uses this to open a detail page directly on load: a flow
+ * fragment is handled by {@link indexForFragment} (it pages the sequence), a
+ * detail fragment is revealed in place instead (it has no place in the sequence).
+ */
+export function detailIdForFragment(
+	fragment: string,
+	detailSectionIds: readonly string[]
+): string | null {
+	const id = fragment.replace(/^#/, '');
+	return id.length > 0 && detailSectionIds.includes(id) ? id : null;
+}
