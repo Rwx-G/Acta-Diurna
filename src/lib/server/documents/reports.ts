@@ -146,6 +146,28 @@ function validateOrThrow(input: unknown): DocumentV1 {
 }
 
 /**
+ * Drops author-only speaker notes from every section (Story 6.2 privacy). Speaker
+ * notes are authored for the presenter and must NEVER reach a reader, so the
+ * reader-serving chokepoint ({@link getPublishedDocument}) strips them before the
+ * document leaves the server. This is the single boundary every reader path
+ * funnels through, so no reader-facing route can ship notes - not the rendered
+ * HTML and not the hydration payload. The reader view-model already omits the
+ * field; this guarantees the raw document a reader route serializes carries none
+ * either. The draft and the stored snapshot keep their notes untouched.
+ */
+function stripSpeakerNotes(document: DocumentV1): DocumentV1 {
+	return {
+		...document,
+		sections: document.sections.map((section) => {
+			if (section.notes === undefined) return section;
+			const stripped = { ...section };
+			delete stripped.notes;
+			return stripped;
+		})
+	};
+}
+
+/**
  * Creates a draft report seeded with the smallest useful document: one section
  * holding one text paragraph the author rewrites (an authoring prompt, not
  * lorem). The starter document goes through `validateDocument` like any other
@@ -515,5 +537,6 @@ export async function getPublishedDocument(
 	// migration entry point Epic 3's reader (`/r/[token]`) consumes.
 	const result = validateStoredDocument(row.publishedDocument, migrations);
 	if (!result.ok) throw validationFailed(result.errors);
-	return result.document;
+	// Author-only speaker notes never leave the server on a reader path (Story 6.2).
+	return stripSpeakerNotes(result.document);
 }

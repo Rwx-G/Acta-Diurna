@@ -113,6 +113,10 @@
 					"annex": {
 						"type": "boolean"
 					},
+					"notes": {
+						"type": "string",
+						"maxLength": 20000
+					},
 					"blocks": {
 						"minItems": 1,
 						"maxItems": 200,

@@ -47,6 +47,22 @@ describe('toReportView', () => {
 		expect(toReportView(validFull()).hasAudiences).toBe(true);
 	});
 
+	it('never carries author-only speaker notes onto the reader view-model (Story 6.2 privacy)', () => {
+		// Speaker notes are authored for the presenter only. The reader view-model
+		// the SSR HTML renders from must not include them, so a reader (rendered
+		// HTML or any JSON the reader route serializes) cannot see them.
+		const doc = validFull();
+		const briefed: DocumentV1 = {
+			...doc,
+			sections: doc.sections.map((section, index) =>
+				index === 0 ? { ...section, notes: 'Confidential presenter cue.' } : section
+			)
+		};
+		const view = toReportView(briefed);
+		expect(view.sections[0]).not.toHaveProperty('notes');
+		expect(JSON.stringify(view)).not.toContain('Confidential presenter cue.');
+	});
+
 	it('reports no audiences when the document carries no tags', () => {
 		const doc = validFull();
 		const stripped: DocumentV1 = {

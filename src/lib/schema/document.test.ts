@@ -43,6 +43,34 @@ describe('document schema v1 - valid documents', () => {
 		}
 	});
 
+	it('accepts an optional speaker-notes string on a section, additively (Story 6.2)', () => {
+		// A section WITHOUT notes validates unchanged (the field is optional, no
+		// version bump); a section WITH notes preserves them for the presenter view.
+		const withNotes = validateDocument({
+			version: 1,
+			title: 'Briefed Report',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					notes: 'Open with the headline number.',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'All good.' }]] }]
+				}
+			]
+		});
+		expect(withNotes.ok).toBe(true);
+		if (withNotes.ok) {
+			expect(withNotes.document.sections[0].notes).toBe('Open with the headline number.');
+			expect(withNotes.document.version).toBe(1);
+		}
+		// The full fixture has no notes and still validates, proving additivity.
+		const noNotes = validateDocument(fullDocument);
+		expect(noNotes.ok).toBe(true);
+		if (noNotes.ok) {
+			expect(noNotes.document.sections.every((section) => section.notes === undefined)).toBe(true);
+		}
+	});
+
 	it('accepts static data, a binding, or both on data-bound blocks', () => {
 		const result = validateDocument(fullDocument);
 		expect(result.ok).toBe(true);

@@ -726,6 +726,41 @@ describe('getPublishedDocument', () => {
 		expect(error.type).toBe('/problems/report-not-published');
 	});
 
+	it('strips author-only speaker notes before serving a reader (Story 6.2 privacy)', async () => {
+		// A published snapshot carrying speaker notes on its section: notes are
+		// authored for the presenter only and must NEVER reach a reader. The reader
+		// chokepoint strips them, so neither the rendered HTML nor the hydration
+		// payload a reader route serializes can carry them.
+		const withNotes = validateDocument({
+			version: 1,
+			title: 'Briefed Report',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					notes: 'Open with the headline number, then pause for questions.',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'All good.' }]] }]
+				}
+			]
+		});
+		if (!withNotes.ok) throw new Error('seed document must be valid');
+		const row = seedReport({
+			status: 'published',
+			publishedDocument: withNotes.document,
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+
+		const document = await getPublishedDocument(row.id);
+
+		expect(document.sections[0].notes).toBeUndefined();
+		expect(JSON.stringify(document)).not.toContain('headline number');
+		// The stored snapshot is untouched: only the served copy is stripped.
+		const stored = dbState.rowsById.get(row.id) as ReportRow;
+		expect(stored.publishedDocument?.sections[0].notes).toBe(
+			'Open with the headline number, then pause for questions.'
+		);
+	});
+
 	it('migrates a v(N-1) published snapshot forward before serving it (FR7 reader path)', async () => {
 		// A snapshot frozen under an earlier schema version: the synthetic v0 shape
 		// (version 0, `name` instead of `title`). This is the Epic 3 reader entry

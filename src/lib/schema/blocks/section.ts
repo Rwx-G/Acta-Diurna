@@ -47,6 +47,14 @@ export const sectionSchema = z.object({
 		.max(300, 'Section title too long: 300 characters maximum.'),
 	audiences: audiencesSchema.optional(),
 	annex: z.boolean().optional(),
+	/**
+	 * Author-only speaker notes (Story 6.2). Surfaced only in the workspace
+	 * presenter view; NEVER rendered to a reader and NEVER shipped in a
+	 * reader-facing payload (the reader view-model omits it, and the reader-served
+	 * document is stripped of it at the publish-serving chokepoint). Additive and
+	 * optional, so a section without notes validates unchanged - no version bump.
+	 */
+	notes: z.string().max(20_000, 'Speaker notes too long: 20000 characters maximum.').optional(),
 	blocks: z
 		.array(blockSchema)
 		.min(1, 'A section must contain at least one block.')
