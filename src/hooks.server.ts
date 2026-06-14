@@ -15,7 +15,7 @@ import { validateAuthorSession } from '$lib/server/auth/sessions';
 import { inheritLegacyOwnership, purgeStaleNullAuthorSessions } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { runMigrations } from '$lib/server/db/migrate';
-import { serverEnv } from '$lib/server/env';
+import { serverEnv, trustsInboundForwardedHeader } from '$lib/server/env';
 import { logger } from '$lib/server/logger';
 import { runPurgeSweep } from '$lib/server/maintenance/purge';
 import { AppError, errorPageShape, problemResponse, rateLimited } from '$lib/server/problem';
@@ -35,6 +35,21 @@ export const init: ServerInit = async () => {
 	}
 	logger.level = env.LOG_LEVEL;
 	logger.info({ nodeEnv: env.NODE_ENV, port: env.PORT }, 'environment validated');
+
+	// One-shot at boot (never per-request): when ADDRESS_HEADER is set, adapter-node
+	// derives the client IP from an inbound forwarded-for header, so per-IP rate
+	// limiting is spoofable unless the fronting proxy overwrites any client-supplied
+	// X-Forwarded-For (the bundled Caddy profile does). Read straight from
+	// process.env because ADDRESS_HEADER is consumed by adapter-node, not the Zod
+	// schema. Advisory: there is no trusted-proxy assertion to check against, so this
+	// warns whenever the header is non-empty and never fails boot.
+	if (trustsInboundForwardedHeader(process.env.ADDRESS_HEADER)) {
+		logger.warn(
+			'ADDRESS_HEADER is set: the client IP is taken from an inbound forwarded-for ' +
+				'header, so per-IP rate limits are spoofable unless the fronting proxy overwrites ' +
+				'any client-supplied X-Forwarded-For (the bundled Caddy profile does).'
+		);
+	}
 
 	try {
 		await runMigrations();

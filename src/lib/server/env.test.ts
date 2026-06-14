@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isUnencryptedRemoteDbLink, parseEnv } from './env';
+import { isUnencryptedRemoteDbLink, parseEnv, trustsInboundForwardedHeader } from './env';
 
 const validEnv = {
 	DATABASE_URL: 'postgresql://acta:secret@db:5432/acta_diurna',
@@ -359,6 +359,21 @@ describe('parseEnv', () => {
 					DATABASE_URL: 'postgresql://acta:secret@db.example.com:5432/acta_diurna'
 				})
 			).toBe(false);
+		});
+	});
+
+	describe('trustsInboundForwardedHeader (B1 boot-warn predicate)', () => {
+		it('warns when ADDRESS_HEADER is set', () => {
+			expect(trustsInboundForwardedHeader('x-forwarded-for')).toBe(true);
+		});
+
+		it('is silent when ADDRESS_HEADER is unset', () => {
+			expect(trustsInboundForwardedHeader(undefined)).toBe(false);
+		});
+
+		it('is silent when ADDRESS_HEADER is empty or whitespace (the safe default)', () => {
+			expect(trustsInboundForwardedHeader('')).toBe(false);
+			expect(trustsInboundForwardedHeader('   ')).toBe(false);
 		});
 	});
 

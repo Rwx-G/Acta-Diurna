@@ -45,6 +45,21 @@ export function isUnencryptedRemoteDbLink(env: Pick<Env, 'NODE_ENV' | 'DATABASE_
 	return !declaresTls;
 }
 
+/**
+ * True when `ADDRESS_HEADER` is set, meaning adapter-node trusts an inbound
+ * forwarded-for header to derive the client IP that per-IP rate limiting keys on.
+ * `ADDRESS_HEADER` is read by adapter-node straight from `process.env` (it is not
+ * part of the Zod schema), so this predicate takes the raw value. Empty/unset is
+ * the safe default (the socket peer is used, never a client-supplied header).
+ * Advisory only: there is no trusted-proxy assertion to validate against, so a
+ * non-empty value warns whenever it is present - it is the operator's job to
+ * ensure the fronting proxy overwrites inbound `X-Forwarded-For` (the bundled
+ * Caddy profile does). The warn never fails boot.
+ */
+export function trustsInboundForwardedHeader(addressHeader: string | undefined): boolean {
+	return addressHeader !== undefined && addressHeader.trim() !== '';
+}
+
 // Lowercased domain part of an email (everything after the last '@'). Used by
 // the multi-mode refine to check INITIAL_OWNER_EMAIL sits inside
 // AUTHOR_EMAIL_DOMAIN. Validation has already confirmed the value is an email,
