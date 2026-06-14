@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import {
 	DELTA_FIRST_ISSUE_REPORT_ID,
+	DELTA_SECOND_ISSUE_DOWN_FIGURE,
 	DELTA_SECOND_ISSUE_FIGURE,
 	DELTA_SECOND_ISSUE_REPORT_ID
 } from './fixtures.ts';
@@ -43,12 +44,30 @@ test('a later issue renders the up delta with an accessible direction and signed
 	await expect(indicator.locator('.sr-only')).toHaveText('up');
 });
 
+test('a later issue renders the down delta with an accessible direction and signed figure', async ({
+	page
+}) => {
+	await page.goto(`/reports/${DELTA_SECOND_ISSUE_REPORT_ID}/view`);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+	const indicator = page.locator('.kpi-delta.kpi-delta-down');
+	await expect(indicator).toBeVisible();
+
+	// The down direction is carried by the signed figure (leading minus, not colour) and
+	// the visually-hidden word, never colour alone (NFR14).
+	await expect(indicator.locator('.figure')).toHaveText(DELTA_SECOND_ISSUE_DOWN_FIGURE);
+	await expect(indicator.locator('.sr-only')).toHaveText('down');
+});
+
 test('the rendered delta indicator passes axe-core (WCAG 2 A/AA, not colour alone)', async ({
 	page
 }) => {
 	await page.goto(`/reports/${DELTA_SECOND_ISSUE_REPORT_ID}/view`);
 	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-	await expect(page.locator('.kpi-delta')).toBeVisible();
+	// The second issue carries both an up and a down delta, so the axe pass covers both
+	// directions; wait on the up one before analysing.
+	await expect(page.locator('.kpi-delta.kpi-delta-up')).toBeVisible();
+	await expect(page.locator('.kpi-delta.kpi-delta-down')).toBeVisible();
 
 	const results = await new AxeBuilder({ page })
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

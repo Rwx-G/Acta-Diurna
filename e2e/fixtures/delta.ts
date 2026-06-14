@@ -41,7 +41,13 @@ export const DELTA_FIRST_ISSUE_DOCUMENT = {
 	]
 };
 
-/** The second issue: the same KPI id with a baked up-delta against issue 1. */
+const COST_BINDING_FIELDS = [{ name: 'cost', type: 'number' as const }];
+
+/**
+ * The second issue: the same revenue KPI id with a baked UP-delta against issue 1, plus
+ * a second cost KPI carrying a baked DOWN-delta, so the render e2e exercises both
+ * directions (and the down case in the axe pass).
+ */
 export const DELTA_SECOND_ISSUE_DOCUMENT = {
 	version: 1 as const,
 	title: 'Series Issue 2',
@@ -64,11 +70,29 @@ export const DELTA_SECOND_ISSUE_DOCUMENT = {
 						},
 						fields: REVENUE_BINDING_FIELDS
 					}
+				},
+				{
+					type: 'kpi' as const,
+					id: 'cost-kpi',
+					items: [{ label: 'Cost', value: 80_000, unit: 'USD' }],
+					binding: {
+						dataSetId: 'cost-export',
+						delta: {
+							direction: 'down' as const,
+							priorValue: 100_000,
+							absolute: -20_000,
+							relative: -0.2
+						},
+						fields: COST_BINDING_FIELDS
+					}
 				}
 			]
 		}
 	]
 };
 
-/** The signed figure the second issue's delta indicator must render. */
+/** The signed figure the second issue's UP delta indicator must render. */
 export const DELTA_SECOND_ISSUE_FIGURE = '+200,000 (+20%)';
+
+/** The signed figure the second issue's DOWN delta indicator must render. */
+export const DELTA_SECOND_ISSUE_DOWN_FIGURE = '-20,000 (-20%)';

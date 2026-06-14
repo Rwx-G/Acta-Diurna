@@ -25,17 +25,36 @@
  */
 import { computeBindingDelta, type ComparableValue, type DocumentV1 } from '$lib/schema';
 
-/** A KPI block carries its single resolved figure as the value of its first item. */
+/**
+ * A KPI block's single comparable figure: the value of its sole item. A MULTI-item KPI
+ * has no single binding-level figure (a binding-level delta would be ambiguous - which
+ * item does it annotate?), so it yields `undefined` and bakes no delta - the
+ * omit-rather-than-mislead rule. The bound-KPI delta contract is therefore
+ * single-item by construction.
+ */
 function kpiValue(block: { items?: { value: ComparableValue }[] }): ComparableValue {
-	return block.items?.[0]?.value;
+	if (block.items === undefined || block.items.length !== 1) return undefined;
+	return block.items[0].value;
 }
 
-/** Indexes every bound KPI block of a snapshot by its stable id, for id-matched lookup. */
+/**
+ * Indexes every KPI block of a snapshot by its stable id, for id-matched lookup of the
+ * prior value. ALL KPI blocks are indexed, bound or static: a predecessor's static
+ * (hand-typed) KPI carries a perfectly comparable prior figure, and the delta is
+ * defined by the value at a stable id, not by whether that predecessor block declared a
+ * binding. Only the CURRENT block's binding gates eligibility (a delta is a property of
+ * bound data on the issue being published); the predecessor side is value-only.
+ *
+ * On a duplicate block id (impossible in a validated document, but the bake is total
+ * against a hand-corrupted snapshot) the FIRST occurrence wins, matching the 9.2 diff
+ * engine's `placeBlocks` - so the two id-matching engines agree on a corrupted document
+ * rather than diverging (last-write-wins here vs first-occurrence-wins there).
+ */
 function indexKpiByIdOf(document: DocumentV1): Map<string, ComparableValue> {
 	const byId = new Map<string, ComparableValue>();
 	for (const section of document.sections) {
 		for (const block of section.blocks) {
-			if (block.type === 'kpi') byId.set(block.id, kpiValue(block));
+			if (block.type === 'kpi' && !byId.has(block.id)) byId.set(block.id, kpiValue(block));
 		}
 	}
 	return byId;
@@ -60,6 +79,11 @@ export function bakeBindingDeltas(
 	if (predecessor === null) return published;
 
 	const priorById = indexKpiByIdOf(predecessor);
+	// A predecessor with no KPI blocks at all (so no id can match) can never PRODUCE a
+	// delta. The bake site (`publishReport`) feeds the draft `document`, which the bake
+	// never stamps - so the input here carries no prior delta to DROP either. Skip the
+	// section/block rebuild and return the input unchanged.
+	if (priorById.size === 0) return published;
 
 	return {
 		...published,

@@ -37,10 +37,54 @@ function kpiDocument(
 	return result.document;
 }
 
+/**
+ * Builds a one-section document with a single bound, multi-item KPI block. A
+ * binding-level delta is ambiguous for a multi-item KPI (which item does it annotate?),
+ * so the bake omits it.
+ */
+function multiItemKpiDocument(...values: number[]): DocumentV1 {
+	const result = validateDocument({
+		version: 1,
+		title: 'Quarterly Review',
+		sections: [
+			{
+				id: 'metrics',
+				title: 'Metrics',
+				blocks: [
+					{
+						type: 'kpi',
+						id: 'revenue',
+						items: values.map((value, index) => ({ label: `Metric ${index}`, value })),
+						binding: { dataSetId: 'ds-1', fields: [{ name: 'revenue', type: 'number' }] }
+					}
+				]
+			}
+		]
+	});
+	if (!result.ok) throw new Error(`fixture invalid: ${JSON.stringify(result.errors.slice(0, 2))}`);
+	return result.document;
+}
+
 /** The baked delta on the first KPI block of a document, or undefined. */
 function bakedDelta(document: DocumentV1) {
 	const block = document.sections[0].blocks[0];
 	return block.type === 'kpi' ? block.binding?.delta : undefined;
+}
+
+/** Strips every `binding.delta` so two documents can be compared modulo the delta. */
+function withoutDeltas(document: DocumentV1): DocumentV1 {
+	return {
+		...document,
+		sections: document.sections.map((section) => ({
+			...section,
+			blocks: section.blocks.map((block) => {
+				if (block.type !== 'kpi' || block.binding?.delta === undefined) return block;
+				const binding = { ...block.binding };
+				delete binding.delta;
+				return { ...block, binding };
+			})
+		}))
+	};
 }
 
 describe('bakeBindingDeltas', () => {
@@ -120,5 +164,44 @@ describe('bakeBindingDeltas', () => {
 		const input = kpiDocument(108);
 		bakeBindingDeltas(input, kpiDocument(100));
 		expect(bakedDelta(input)).toBeUndefined();
+	});
+
+	it('omits the delta for a multi-item KPI (a binding-level delta is ambiguous there)', () => {
+		// A two-item KPI carries no single binding-level figure: a delta would silently
+		// annotate item 0 only. The bake omits it rather than baking an unlabelled,
+		// misleading delta (omit-rather-than-mislead).
+		const baked = bakeBindingDeltas(multiItemKpiDocument(108, 50), multiItemKpiDocument(100, 40));
+		expect(bakedDelta(baked)).toBeUndefined();
+	});
+
+	it('bakes against an UNBOUND predecessor KPI of the same id (the prior value is value-only)', () => {
+		// The current KPI is bound (delta-eligible); its predecessor at the same id is a
+		// static, hand-typed KPI with no binding. The prior value is comparable regardless
+		// of whether the predecessor declared a binding, so the delta bakes.
+		const baked = bakeBindingDeltas(
+			kpiDocument(108, { binding: true }),
+			kpiDocument(100, { binding: false })
+		);
+		expect(bakedDelta(baked)).toEqual({
+			direction: 'up',
+			priorValue: 100,
+			absolute: 8,
+			relative: 0.08
+		});
+	});
+
+	it('omits the delta when the predecessor KPI value is non-numeric (a string status)', () => {
+		const baked = bakeBindingDeltas(kpiDocument(108), kpiDocument('On track'));
+		expect(bakedDelta(baked)).toBeUndefined();
+	});
+
+	it('leaves the document deep-equal to the input except for the baked delta', () => {
+		// The bake is structure-preserving: it only adds/removes the optional binding delta.
+		// This is the post-condition `publishReport` trusts in place of a second full
+		// schema walk.
+		const input = kpiDocument(108);
+		const baked = bakeBindingDeltas(input, kpiDocument(100));
+		expect(bakedDelta(baked)).toBeDefined();
+		expect(withoutDeltas(baked)).toEqual(input);
 	});
 });

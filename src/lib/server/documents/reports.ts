@@ -818,15 +818,22 @@ export async function publishReport(
 	if (row.status === 'published') return toReport(row);
 
 	const validated = validateOrThrow(row.document);
-	// Story 9.4: bake the numeric delta against the predecessor's published snapshot
-	// onto each delta-eligible KPI binding, then re-validate so the frozen snapshot is
-	// a valid current-version document. The predecessor is resolved under the SAME
-	// scope (a foreign or unknown predecessor is the neutral 404, never a cross-author
-	// read), and a first issue or an unpublished predecessor bakes no delta. The result
-	// is frozen into the published snapshot, so the reader reads the delta straight off
-	// the validated document with no prior-issue data shipped.
+	// Story 9.4: bake the numeric delta against the predecessor's published snapshot onto
+	// each delta-eligible KPI binding. The predecessor is resolved under the SAME scope
+	// (a foreign or unknown predecessor is the neutral 404, never a cross-author read),
+	// and a first issue or an unpublished predecessor bakes no delta. The result is frozen
+	// into the published snapshot, so the reader reads the delta straight off the
+	// validated document with no prior-issue data shipped.
+	//
+	// No second full `validateOrThrow` on the baked result: `bakeBindingDeltas` is
+	// structure-preserving (it only adds or removes the optional, schema-valid
+	// `binding.delta`, computed by the schema-package `computeBindingDelta` which emits a
+	// finite-numbers-only `BindingDelta`) over an already-validated current-version
+	// document, so a second full schema walk would be a redundant cost on every publish.
+	// The "baked doc equals the draft except for delta fields" bake test pins the
+	// structure-preserving post-condition.
 	const predecessor = await predecessorSnapshot(row.predecessorId, scope, migrations);
-	const document = validateOrThrow(bakeBindingDeltas(validated, predecessor));
+	const document = bakeBindingDeltas(validated, predecessor);
 	const now = new Date();
 	const where =
 		expectedUpdatedAt === undefined
