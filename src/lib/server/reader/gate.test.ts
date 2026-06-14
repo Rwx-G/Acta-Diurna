@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
 	issueVerificationToken: vi.fn(),
 	consumeVerificationToken: vi.fn(),
+	peekVerificationToken: vi.fn(),
 	hasLiveVerification: vi.fn(),
 	findOrCreateIdentity: vi.fn(),
 	recordAccess: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./verification', () => ({
 	issueVerificationToken: mocks.issueVerificationToken,
 	consumeVerificationToken: mocks.consumeVerificationToken,
+	peekVerificationToken: mocks.peekVerificationToken,
 	hasLiveVerification: mocks.hasLiveVerification
 }));
 vi.mock('./identities', () => ({

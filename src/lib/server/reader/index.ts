@@ -8,10 +8,16 @@ export { normalizeEmail, isPlausibleEmail } from './email';
 export {
 	issueVerificationToken,
 	consumeVerificationToken,
+	peekVerificationToken,
 	VERIFICATION_TOKEN_TTL_MS,
 	type IssuedVerification,
 	type ConsumedVerification
 } from './verification';
 export { findOrCreateIdentity, recordAccess, getIdentityByEmail } from './identities';
-export { requestVerification, completeVerification, type CompletedVerification } from './gate';
+export {
+	requestVerification,
+	completeVerification,
+	peekVerification,
+	type CompletedVerification
+} from './gate';
 export { serveNeutralClosed } from './neutral';

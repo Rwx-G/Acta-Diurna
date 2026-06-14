@@ -5,7 +5,8 @@ import {
 	VERIFICATION_TOKEN_TTL_MS,
 	consumeVerificationToken,
 	hasLiveVerification,
-	issueVerificationToken
+	issueVerificationToken,
+	peekVerificationToken
 } from './verification';
 
 // Mock store for verification_tokens. The consume path is an
@@ -68,8 +69,9 @@ vi.mock('$lib/server/db/client', () => ({
 						limit: () => {
 							const matches = dbState.rows.filter(
 								(r) =>
-									r.shareId === decoded.shareId &&
-									r.email === decoded.email &&
+									(decoded.shareId === undefined || r.shareId === decoded.shareId) &&
+									(decoded.email === undefined || r.email === decoded.email) &&
+									(decoded.tokenHash === undefined || r.tokenHash === decoded.tokenHash) &&
 									(!decoded.requireUnconsumed || r.consumedAt === null) &&
 									(decoded.requireLiveExpiry === undefined ||
 										r.expiresAt.getTime() > decoded.requireLiveExpiry.getTime())
@@ -174,6 +176,44 @@ describe('consumeVerificationToken (single-use, TTL, binding)', () => {
 
 	it('rejects an unknown token', async () => {
 		await expect(consumeVerificationToken('never-issued', 'share-1')).resolves.toBeNull();
+	});
+});
+
+describe('peekVerificationToken (A1 prefetch-safe validity, no consume)', () => {
+	it('is true for a live token on its share and does NOT consume it (the consume still works after)', async () => {
+		const { token } = await issueVerificationToken('share-1', 'reader@example.com');
+
+		await expect(peekVerificationToken(token, 'share-1')).resolves.toBe(true);
+		// The peek left consumed_at NULL, so the real consume still succeeds.
+		expect(dbState.rows[0].consumedAt ?? null).toBeNull();
+		await expect(consumeVerificationToken(token, 'share-1')).resolves.toEqual({
+			shareId: 'share-1',
+			email: 'reader@example.com'
+		});
+	});
+
+	it('is false for a token presented for a different share (binding)', async () => {
+		const { token } = await issueVerificationToken('share-A', 'reader@example.com');
+
+		await expect(peekVerificationToken(token, 'share-B')).resolves.toBe(false);
+	});
+
+	it('is false for an already-consumed token', async () => {
+		const { token } = await issueVerificationToken('share-1', 'reader@example.com');
+		await consumeVerificationToken(token, 'share-1');
+
+		await expect(peekVerificationToken(token, 'share-1')).resolves.toBe(false);
+	});
+
+	it('is false for an expired token (15-min TTL)', async () => {
+		const { token } = await issueVerificationToken('share-1', 'reader@example.com');
+		dbState.rows[0].expiresAt = new Date(Date.now() - 1);
+
+		await expect(peekVerificationToken(token, 'share-1')).resolves.toBe(false);
+	});
+
+	it('is false for an unknown token', async () => {
+		await expect(peekVerificationToken('never-issued', 'share-1')).resolves.toBe(false);
 	});
 });
 

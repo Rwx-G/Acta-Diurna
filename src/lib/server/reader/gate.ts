@@ -14,7 +14,8 @@
 import {
 	consumeVerificationToken,
 	hasLiveVerification,
-	issueVerificationToken
+	issueVerificationToken,
+	peekVerificationToken
 } from './verification';
 import { findOrCreateIdentity, recordAccess } from './identities';
 import { magicLinkEmail } from '$lib/server/mail/templates/magic-link';
@@ -87,6 +88,20 @@ export async function requestVerification(
 	void sendMail(magicLinkEmail(normalizedEmail, url), requestId).catch((error) => {
 		logger.warn({ requestId, err: error }, 'reader verification mail send failed');
 	});
+}
+
+/**
+ * Read-only validity check for the magic-link interstitial (A1 mitigation): true
+ * when the token EXISTS for THIS share and is unconsumed/unexpired, WITHOUT
+ * consuming it. The GET landing renders the "Confirm and view report" interstitial
+ * only when this is true, so a mail-gateway scanner that GET-prefetches the link
+ * never burns the token; the reader's confirm POST runs `completeVerification` and
+ * consumes it for real. An invalid/used/expired/wrong-share token returns false and
+ * the landing shows the same neutral "request a new link" state - no oracle for
+ * which cause (NFR9).
+ */
+export async function peekVerification(rawToken: string, shareId: string): Promise<boolean> {
+	return peekVerificationToken(rawToken, shareId);
 }
 
 export interface CompletedVerification {

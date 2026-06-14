@@ -93,6 +93,36 @@ export async function hasLiveVerification(shareId: string, email: string): Promi
 }
 
 /**
+ * Reports whether a verification token is LIVE for a SPECIFIC share (exists, bound
+ * to this share, unconsumed, unexpired) WITHOUT consuming it - a read-only SELECT,
+ * the peek the POST-to-consume interstitial needs (A1 mitigation). A mail-gateway
+ * link scanner GET-prefetches the emailed link; the landing peeks (this), so a
+ * prefetch never burns the token, and the human's "Confirm and view report" POST
+ * still consumes it for real. A zero-row result (unknown, already consumed,
+ * expired, or bound to another share) returns false, all indistinguishable to the
+ * caller, by design (the same neutral "request a new link" path). The share id is
+ * part of the WHERE, mirroring the consume, so a peek for share A never reports a
+ * token bound to share B as live. This never flips `consumed_at`, so it is safe to
+ * repeat.
+ */
+export async function peekVerificationToken(rawToken: string, shareId: string): Promise<boolean> {
+	const tokenHash = hashToken(rawToken);
+	const rows = await getDb()
+		.select({ id: verificationTokens.id })
+		.from(verificationTokens)
+		.where(
+			and(
+				eq(verificationTokens.tokenHash, tokenHash),
+				eq(verificationTokens.shareId, shareId),
+				isNull(verificationTokens.consumedAt),
+				gt(verificationTokens.expiresAt, new Date())
+			)
+		)
+		.limit(1);
+	return rows.length > 0;
+}
+
+/**
  * Consumes a verification token for a SPECIFIC share, atomically marking it used
  * so a concurrent or replayed second click cannot also succeed (single-use). The
  * consume is an UPDATE guarded by `consumed_at IS NULL` + matching share + live
