@@ -160,6 +160,18 @@ export type {
 export { validateInternalLinks } from './internal-links.ts';
 export type { InternalLinkIssue } from './internal-links.ts';
 
+export { diffSnapshots, SUBSTANTIAL_DRIFT_THRESHOLD } from './series-diff.ts';
+export type {
+	BlockChange,
+	BlockDiff,
+	ComputedDiff,
+	DiffDocument,
+	NoPredecessorDiff,
+	SectionDiff,
+	SeriesDiff,
+	SubstantialDriftDiff
+} from './series-diff.ts';
+
 export {
 	documentSchemaV1,
 	getSchema,
