@@ -1243,3 +1243,13 @@ So that signing in and operating the instance are clear in both single and multi
 **Given** the whole epic
 **When** audited
 **Then** the auth-realm separation, the tenancy filtering (no IDOR), the enumeration-safety, and the no-lockout-by-misconfig guarantees are verified and test-backed
+
+## v2 epics (planned, Draft)
+
+Phase 2 closed the planned v1 roadmap. The v2 work is drafted as dedicated epic files (Status: Draft), to be refined and confirmed at kickoff:
+
+- [`epic-9.md`](epic-9.md) - **Report Series & Auto-Diff.** Link the successive issues of a skeleton lineage, diff consecutive published snapshots (structure + data + content), and surface a "what changed since last issue" view plus numeric deltas. Makes the recurring nature of a report first-class.
+- [`epic-10.md`](epic-10.md) - **In-Browser WYSIWYG Editor.** Edit the same validated document model directly in the browser, as another producer over the one validate-on-write service, with a live audience-aware preview reusing the pure renderer. The reader bundle is untouched (editor JS is workspace-only).
+- [`epic-11.md`](epic-11.md) - **Internal Links & Drill-Down Detail Pages.** Detail pages that are part of the report but reachable only via an internal link (e.g. a findings row links to its own dedicated page), hidden from the main flow and the table of contents, renderer-pure and audience-aware. "Reachable only via a link" is a navigation choice, not a confidentiality boundary (the share remains the boundary).
+
+Deprioritized at the product owner's call (the tool's value is internal readability, not export or push delivery): PDF / PPTX export and scheduled email delivery. Further v2 ideas still in vision, not yet drafted: viewer analytics, synced blocks, SQL connectors, multi-tenant spaces.

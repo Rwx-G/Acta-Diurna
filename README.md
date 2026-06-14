@@ -201,7 +201,7 @@ Validation errors are RFC 9457 problem-details with the offending block path, fi
 | v1 | Document model + hybrid renderer, block catalogue, templates + data binding, file upload + API push, REST API, MCP server, outline-first AI generation, magic-link sharing with hardening, docker compose distribution | Implemented |
 | Phase 2 | AI-native authoring (MCP + outline-first generation), the rich block catalogue (comparison matrix, UpSet, scales, callouts, code, lists, timelines and more), SMTP-gated identity & multi-author tenancy, and multi-audience reading and governance: audience levels (reader picks summary / full / technical), presenter view, access audit and retention, data freshness, theme selection | Implemented |
 | Live deploy | Live-deploy operational hardening: reverse-proxy / TLS posture, an optional reader-session TTL, the unencrypted-remote-DB note | Next |
-| v2 | In-browser WYSIWYG editor, report series with auto-diff between issues, scheduled email delivery with KPI digest, viewer analytics, synced blocks, SQL connectors, PDF / PPTX export, multi-tenant spaces | Planned |
+| v2 | Three drafted epics: [report series + auto-diff](docs/prd/epic-9.md), [in-browser WYSIWYG editor](docs/prd/epic-10.md), [internal links + drill-down detail pages](docs/prd/epic-11.md). Further vision (not yet drafted): viewer analytics, synced blocks, SQL connectors, multi-tenant spaces | Planned |
 
 ## Documentation
 
