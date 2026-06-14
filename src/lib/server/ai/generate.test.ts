@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
 import { AppError } from '$lib/server/problem';
 
-// Mock the connector seam: every LLM call goes through chatComplete. The
-// generation module never fetches, so mocking this is the whole LLM surface.
+// Mock the connector seam: every LLM call goes through chatComplete, and the AI
+// gate is asserted via assertAiEnabled at the top of each stage. The generation
+// module never fetches, so mocking these is the whole LLM surface.
 const chatComplete = vi.fn();
+const assertAiEnabled = vi.fn();
 vi.mock('./connector', () => ({
-	chatComplete: (...args: unknown[]) => chatComplete(...args)
+	chatComplete: (...args: unknown[]) => chatComplete(...args),
+	assertAiEnabled: (...args: unknown[]) => assertAiEnabled(...args)
 }));
 
 // Mock the service write path + the input readers. The generated document must
@@ -65,6 +68,10 @@ function reportRow(): { updatedAt: Date } {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	// clearAllMocks resets call history but KEEPS a mockImplementation, so a test
+	// that makes the gate throw would leak into the next; reset it to the default
+	// "enabled" no-op each time.
+	assertAiEnabled.mockReset();
 });
 
 describe('generateOutline (stage 1)', () => {
@@ -150,6 +157,25 @@ describe('generateOutline (stage 1)', () => {
 		});
 	});
 
+	it('asserts the AI gate BEFORE loading context: a disabled instance does no DB/disk work', async () => {
+		assertAiEnabled.mockImplementation(() => {
+			throw new AppError({
+				status: 503,
+				title: 'AI Generation Disabled',
+				type: '/problems/ai-generation-disabled'
+			});
+		});
+
+		await expect(
+			generateOutline({ intent: 'x', skeletonId: 'sk-1', dataSetId: 'ds-1' }, TEST_SCOPE)
+		).rejects.toMatchObject({ type: '/problems/ai-generation-disabled', status: 503 });
+
+		// The gate threw before any context read or model call.
+		expect(getSkeleton).not.toHaveBeenCalled();
+		expect(getDataSet).not.toHaveBeenCalled();
+		expect(chatComplete).not.toHaveBeenCalled();
+	});
+
 	it('reads the skeleton and data set context when ids are given', async () => {
 		getSkeleton.mockResolvedValue({
 			document: { sections: [{ title: 'S', blocks: [{ type: 'text' }] }] }
@@ -210,6 +236,29 @@ describe('fillFromOutline (stage 2)', () => {
 			)
 		).rejects.toMatchObject({ type: '/problems/ai-outline-stale', status: 409 });
 
+		expect(chatComplete).not.toHaveBeenCalled();
+		expect(updateReportDocument).not.toHaveBeenCalled();
+	});
+
+	it('asserts the AI gate BEFORE the hash check or context load when disabled', async () => {
+		assertAiEnabled.mockImplementation(() => {
+			throw new AppError({
+				status: 503,
+				title: 'AI Generation Disabled',
+				type: '/problems/ai-generation-disabled'
+			});
+		});
+
+		await expect(
+			fillFromOutline(
+				{ intent: '', outline, approvedHash: hashOutline(outline) },
+				TEST_SCOPE,
+				'report-1'
+			)
+		).rejects.toMatchObject({ type: '/problems/ai-generation-disabled', status: 503 });
+
+		expect(getSkeleton).not.toHaveBeenCalled();
+		expect(getDataSet).not.toHaveBeenCalled();
 		expect(chatComplete).not.toHaveBeenCalled();
 		expect(updateReportDocument).not.toHaveBeenCalled();
 	});

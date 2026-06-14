@@ -52,7 +52,7 @@ import { getSkeleton } from '$lib/server/skeletons/skeletons';
 import { getDataSet, readDataSetTable } from '$lib/server/ingestion';
 import type { DataSetField } from '$lib/server/db/schema';
 import { AppError } from '$lib/server/problem';
-import { chatComplete, type ChatMessage } from './connector';
+import { assertAiEnabled, chatComplete, type ChatMessage } from './connector';
 
 /** The stage a failure occurred in, surfaced to the author with a retry action. */
 export type GenerationStage = 'outline' | 'content-fill';
@@ -286,6 +286,10 @@ export async function generateOutline(
 	input: GenerationInput,
 	scope: AuthorScope
 ): Promise<Outline> {
+	// Assert the AI gate FIRST, before any DB/disk read: a disabled instance does
+	// no work and throws the SAME 503 chatComplete would. chatComplete re-asserts
+	// the gate, so this is a cheap early-out, not the only check.
+	assertAiEnabled();
 	const context = await loadContext(input, scope);
 	const messages: ChatMessage[] = [
 		{ role: 'system', content: OUTLINE_SYSTEM_PROMPT },
@@ -533,6 +537,10 @@ export async function fillFromOutline(
 	reportId?: string,
 	expectedUpdatedAt?: Date
 ): Promise<Report> {
+	// Assert the AI gate FIRST, before the hash check or any DB/disk read: a
+	// disabled instance does no work and throws the SAME 503 chatComplete would.
+	// chatComplete re-asserts the gate, so this is a cheap early-out.
+	assertAiEnabled();
 	if (hashOutline(input.outline) !== input.approvedHash) {
 		throw staleApproval();
 	}
