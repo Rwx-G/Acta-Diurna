@@ -69,11 +69,6 @@ export const init: ServerInit = async () => {
 	// traffic. A failure here means ownership is unenforceable, so it is fatal.
 	try {
 		await inheritLegacyOwnership();
-		// Series lineage backfill (story 9.1): after every report carries an owner,
-		// give every pre-9.1 (series-less) report a fresh single-issue series carrying
-		// that owner, so no report is left without a series. Idempotent and a no-op on
-		// a fully-seriesed database, so it runs every boot after ownership inheritance.
-		await backfillReportSeries();
 		// Multi-mode boot only (no-op in single mode): drop pre-flip password author
 		// sessions that carry no author id, so a single->multi flip forces a fresh
 		// magic-link sign-in instead of letting a stale session act as the initial
@@ -81,6 +76,19 @@ export const init: ServerInit = async () => {
 		await purgeStaleNullAuthorSessions();
 	} catch (error) {
 		logger.fatal({ err: error }, 'ownership inheritance failed, refusing to start');
+		throw error;
+	}
+
+	// Series lineage backfill (story 9.1): after every report carries an owner, give
+	// every pre-9.1 (series-less) report a fresh single-issue series carrying that
+	// owner, so no report is left without a series. Idempotent and a no-op on a
+	// fully-seriesed database. A distinct try/catch so a backfill failure logs as
+	// what it is, not as "ownership inheritance failed"; still fatal (the series
+	// invariant the diff/navigation reads depend on must hold before traffic).
+	try {
+		await backfillReportSeries();
+	} catch (error) {
+		logger.fatal({ err: error }, 'report series backfill failed, refusing to start');
 		throw error;
 	}
 	logger.info('ownership ready, accepting traffic');

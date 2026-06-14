@@ -78,15 +78,19 @@ export type AuthorRow = typeof authors.$inferSelect;
 // the predecessor chain on `reports.predecessor_id` (NOT published_at).
 //
 // Owner-scoped (story 9.1): a series NEVER spans authors - it belongs to exactly
-// one author and only that author's reports may join it. Added like the other
-// owning tables, with `owner_id` backfilled at boot (authors/inheritance.ts)
-// since a pre-existing report gets a fresh single-issue series. ON DELETE
-// RESTRICT: an author owning series is not deletable out from under them.
+// one author and only that author's reports may join it. Unlike the report-side
+// `owner_id` columns (added nullable then backfilled), `report_series` is born
+// with the model: every row is APP-INSERTED with an owner (the boot backfill or
+// `createSeries`), so `owner_id` is NOT NULL - a series always has an owner, never
+// a transient null. ON DELETE RESTRICT: an author owning series is not deletable
+// out from under them.
 export const reportSeries = pgTable(
 	'report_series',
 	{
 		id: uuid('id').primaryKey(),
-		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' }),
+		ownerId: uuid('owner_id')
+			.notNull()
+			.references(() => authors.id, { onDelete: 'restrict' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [index('report_series_owner_id_idx').on(table.ownerId)]

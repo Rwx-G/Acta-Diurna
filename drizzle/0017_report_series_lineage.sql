@@ -1,6 +1,6 @@
 CREATE TABLE "report_series" (
 	"id" uuid PRIMARY KEY NOT NULL,
-	"owner_id" uuid,
+	"owner_id" uuid NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

@@ -21,6 +21,7 @@ import {
 import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
 import { reportSeries, reports, type ReportRow } from '$lib/server/db/schema';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
+import { logger } from '$lib/server/logger';
 import { AppError } from '$lib/server/problem';
 
 export type ReportStatus = 'draft' | 'published';
@@ -198,17 +199,25 @@ async function getReaderRow(id: string): Promise<ReportReaderRow> {
 }
 
 /**
+ * The db handle OR a transaction handle. The create/duplicate paths run their
+ * series + report writes inside `db.transaction`, so the series/report inserts take
+ * the transaction's executor (`tx`) instead of the pooled db - the multi-statement
+ * sequence then commits atomically (a crash mid-sequence leaves no dangling series
+ * row or half-formed lineage). A standalone call passes the db itself.
+ */
+type DbExecutor = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
+
+/**
  * Mints a fresh series owned by the current author and returns its id (story
  * 9.1). A report that is created fresh (not by duplication) starts its OWN series
  * with a null predecessor, so a never-duplicated report is a one-issue series, not
  * a null - the same `ownerForInsert` the report carries, so the series is
- * owner-consistent with its first issue by construction.
+ * owner-consistent with its first issue by construction. Takes the executor so the
+ * insert joins the caller's transaction (atomic series + report).
  */
-async function createSeries(scope: AuthorScope): Promise<string> {
+async function createSeries(executor: DbExecutor, scope: AuthorScope): Promise<string> {
 	const id = uuidv7();
-	await getDb()
-		.insert(reportSeries)
-		.values({ id, ownerId: ownerForInsert(scope) });
+	await executor.insert(reportSeries).values({ id, ownerId: ownerForInsert(scope) });
 	return id;
 }
 
@@ -273,23 +282,28 @@ export async function createReport(title: string, scope: AuthorScope): Promise<R
 
 	const now = new Date();
 	// A fresh report starts its own one-issue series with a null predecessor (AC3).
-	const seriesId = await createSeries(scope);
-	const row: ReportRow = {
-		id: uuidv7(),
-		title: document.title,
-		status: 'draft',
-		schemaVersion: document.version,
-		document,
-		publishedDocument: null,
-		publishedAt: null,
-		ownerId: ownerForInsert(scope),
-		seriesId,
-		predecessorId: null,
-		issueLabel: null,
-		createdAt: now,
-		updatedAt: now
-	};
-	await getDb().insert(reports).values(row);
+	// The series + report inserts run in one transaction so a crash between them
+	// never leaves a dangling series row.
+	const row = await getDb().transaction(async (tx) => {
+		const seriesId = await createSeries(tx, scope);
+		const newRow: ReportRow = {
+			id: uuidv7(),
+			title: document.title,
+			status: 'draft',
+			schemaVersion: document.version,
+			document,
+			publishedDocument: null,
+			publishedAt: null,
+			ownerId: ownerForInsert(scope),
+			seriesId,
+			predecessorId: null,
+			issueLabel: null,
+			createdAt: now,
+			updatedAt: now
+		};
+		await tx.insert(reports).values(newRow);
+		return newRow;
+	});
 	return toReport(row);
 }
 
@@ -307,23 +321,28 @@ export async function createReportWithDocument(
 	const document = validateOrThrow(documentInput);
 	const now = new Date();
 	// A fresh report starts its own one-issue series with a null predecessor (AC3).
-	const seriesId = await createSeries(scope);
-	const row: ReportRow = {
-		id: uuidv7(),
-		title: document.title,
-		status: 'draft',
-		schemaVersion: document.version,
-		document,
-		publishedDocument: null,
-		publishedAt: null,
-		ownerId: ownerForInsert(scope),
-		seriesId,
-		predecessorId: null,
-		issueLabel: null,
-		createdAt: now,
-		updatedAt: now
-	};
-	await getDb().insert(reports).values(row);
+	// The series + report inserts run in one transaction so a crash between them
+	// never leaves a dangling series row.
+	const row = await getDb().transaction(async (tx) => {
+		const seriesId = await createSeries(tx, scope);
+		const newRow: ReportRow = {
+			id: uuidv7(),
+			title: document.title,
+			status: 'draft',
+			schemaVersion: document.version,
+			document,
+			publishedDocument: null,
+			publishedAt: null,
+			ownerId: ownerForInsert(scope),
+			seriesId,
+			predecessorId: null,
+			issueLabel: null,
+			createdAt: now,
+			updatedAt: now
+		};
+		await tx.insert(reports).values(newRow);
+		return newRow;
+	});
 	return toReport(row);
 }
 
@@ -356,32 +375,39 @@ export async function duplicateReport(id: string, scope: AuthorScope): Promise<R
 	const source = await getRow(id, scope);
 	const document = structuredClone(source.document);
 	const now = new Date();
-	// Inherit the source's series; establish one for a legacy source with none, and
-	// backfill the source onto it so the predecessor and its copy share the lineage.
-	let seriesId = source.seriesId;
-	if (seriesId === null) {
-		seriesId = await createSeries(scope);
-		await getDb().update(reports).set({ seriesId }).where(eq(reports.id, source.id));
-	}
-	const row: ReportRow = {
-		id: uuidv7(),
-		title: document.title,
-		status: 'draft',
-		schemaVersion: document.version,
-		document,
-		publishedDocument: null,
-		publishedAt: null,
-		// The copy belongs to the duplicating author, never the source's owner (in
-		// single mode they are the same implicit author; in multi mode a duplicate
-		// only ever happens on a report the author already owns, via the scoped read).
-		ownerId: ownerForInsert(scope),
-		seriesId,
-		predecessorId: source.id,
-		issueLabel: null,
-		createdAt: now,
-		updatedAt: now
-	};
-	await getDb().insert(reports).values(row);
+	// The whole lineage edge commits atomically: minting a series for a legacy source,
+	// backfilling it onto the source, and inserting the copy run in one transaction so
+	// a crash mid-sequence never leaves a dangling series row or a source/copy split
+	// across two lineages.
+	const row = await getDb().transaction(async (tx) => {
+		// Inherit the source's series; establish one for a legacy source with none, and
+		// backfill the source onto it so the predecessor and its copy share the lineage.
+		let seriesId = source.seriesId;
+		if (seriesId === null) {
+			seriesId = await createSeries(tx, scope);
+			await tx.update(reports).set({ seriesId }).where(eq(reports.id, source.id));
+		}
+		const newRow: ReportRow = {
+			id: uuidv7(),
+			title: document.title,
+			status: 'draft',
+			schemaVersion: document.version,
+			document,
+			publishedDocument: null,
+			publishedAt: null,
+			// The copy belongs to the duplicating author, never the source's owner (in
+			// single mode they are the same implicit author; in multi mode a duplicate
+			// only ever happens on a report the author already owns, via the scoped read).
+			ownerId: ownerForInsert(scope),
+			seriesId,
+			predecessorId: source.id,
+			issueLabel: null,
+			createdAt: now,
+			updatedAt: now
+		};
+		await tx.insert(reports).values(newRow);
+		return newRow;
+	});
 	return toReport(row);
 }
 
@@ -425,27 +451,49 @@ const seriesIssueProjection = {
  * fallback for a hand-edited link), then each successor is the issue pointing back
  * at the current one. A cycle or a fork (two issues sharing one predecessor) is
  * impossible by construction (the edge is only ever set by `duplicateReport` to an
- * existing issue, never re-pointed), but the walk is bounded by the issue count and
- * stops on a repeat so a corrupted edge degrades to a truncated list, never a hang.
+ * existing issue, never re-pointed). Defensively, though, a corrupted edge is
+ * handled WITHOUT silent loss: the successor index is `predecessor -> issue[]`, so a
+ * fork keeps EVERY branch (a `Map<key, issue>` would let the second sibling overwrite
+ * and silently drop the first, poisoning the 9.2 diff). Siblings are walked in the
+ * input order (the issues query orders by `created_at, id`, so the order is
+ * deterministic), a fork is `logger.warn`-ed so a corrupted edge is observable, and
+ * the walk is bounded by the issue count (the `seen` set stops a repeat) so a cycle
+ * degrades to a truncated list, never a hang. Any issue the walk never reaches is
+ * appended in input order, so no issue is ever dropped.
  */
 function orderByPredecessorChain(issues: SeriesIssue[]): SeriesIssue[] {
 	const byId = new Map(issues.map((issue) => [issue.id, issue]));
-	const successorOf = new Map<string | null, SeriesIssue>();
+	const successorsOf = new Map<string | null, SeriesIssue[]>();
 	for (const issue of issues) {
 		const key =
 			issue.predecessorId !== null && byId.has(issue.predecessorId) ? issue.predecessorId : null;
-		successorOf.set(key, issue);
+		const siblings = successorsOf.get(key);
+		if (siblings === undefined) {
+			successorsOf.set(key, [issue]);
+		} else {
+			siblings.push(issue);
+			logger.warn(
+				{ predecessorId: key, issues: siblings.map((sibling) => sibling.id) },
+				'forked report series: two issues share a predecessor; ordering keeps every branch'
+			);
+		}
 	}
 	const ordered: SeriesIssue[] = [];
 	const seen = new Set<string>();
-	let current = successorOf.get(null) ?? null;
-	while (current && !seen.has(current.id)) {
+	// Depth-first from the head(s), walking every branch of a fork in input order. A
+	// stack of the not-yet-visited successors keeps the well-formed single chain in
+	// order while still covering each branch of a corrupted fork exactly once.
+	const stack = [...(successorsOf.get(null) ?? [])].reverse();
+	while (stack.length > 0) {
+		const current = stack.pop()!;
+		if (seen.has(current.id)) continue;
 		ordered.push(current);
 		seen.add(current.id);
-		current = successorOf.get(current.id) ?? null;
+		const successors = successorsOf.get(current.id) ?? [];
+		for (let i = successors.length - 1; i >= 0; i--) stack.push(successors[i]);
 	}
-	// Any issue the chain did not reach (an orphaned edge) is appended in id order so
-	// it is never silently dropped - the walk above covers the well-formed lineage.
+	// Any issue the walk did not reach (an orphaned edge or a cycle with no null head)
+	// is appended in input order so it is never silently dropped.
 	for (const issue of issues) {
 		if (!seen.has(issue.id)) ordered.push(issue);
 	}
@@ -479,11 +527,27 @@ export async function listSeriesIssues(
 		.limit(1);
 	if (seriesRows.length === 0) throw notFound();
 
+	// Belt-and-braces: the owner predicate ANDs into the ISSUES query too, not only
+	// the series lookup above. The "series owner == issue owner" invariant holds by
+	// construction, but a foreign-owned issue (a corrupted row) must never leak just
+	// because it carries an owned series id. Single mode: the predicate is undefined,
+	// so the WHERE stays the bare `series_id` match, byte-identical to before.
+	const issueOwner = ownerFilter(scope, reports.ownerId);
+	const issuesWhere = issueOwner
+		? and(eq(reports.seriesId, seriesId), issueOwner)!
+		: eq(reports.seriesId, seriesId);
 	const issueRows = await getDb()
 		.select(seriesIssueProjection)
 		.from(reports)
-		.where(eq(reports.seriesId, seriesId))
-		.orderBy(asc(reports.createdAt), asc(reports.id));
+		.where(issuesWhere)
+		// A SQL order is deferred to the in-memory predecessor-chain walk
+		// (`orderByPredecessorChain`); `created_at, id` only fixes a DETERMINISTIC
+		// input order (fork-branch tie-break), it is never the displayed order.
+		.orderBy(asc(reports.createdAt), asc(reports.id))
+		// A series past this is pathological (a thousand-issue lineage). The cap bounds
+		// the read; the chain walk already tolerates a truncated set (an unreached issue
+		// is appended, never dropped), so truncation degrades gracefully.
+		.limit(1000);
 	const issues = issueRows.map((row) => ({
 		id: row.id,
 		title: row.title,

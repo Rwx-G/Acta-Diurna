@@ -117,11 +117,35 @@ export async function backfillReportSeries(): Promise<number> {
 		.where(isNull(reports.seriesId));
 	if (orphans.length === 0) return 0;
 
-	for (const report of orphans) {
-		const seriesId = uuidv7();
-		await db.insert(reportSeries).values({ id: seriesId, ownerId: report.ownerId });
-		await db.update(reports).set({ seriesId }).where(eq(reports.id, report.id));
+	// This runs AFTER inheritLegacyOwnership, so every report already carries an
+	// owner; a null here means the boot ordering was broken (inheritance skipped),
+	// which would violate the series-always-has-an-owner invariant the NOT NULL
+	// column enforces. Fail loudly rather than insert a bad series.
+	const ownerless = orphans.find((report) => report.ownerId === null);
+	if (ownerless !== undefined) {
+		throw new Error(
+			`report ${ownerless.id} has no owner at series backfill; ownership inheritance must run first`
+		);
 	}
+
+	// Mint one series id per orphan up front, then batch the writes instead of the
+	// O(2N) per-row INSERT-then-UPDATE round-trips (boot perf): ONE multi-row series
+	// insert, then the per-report stamps in parallel (the inheritLegacyOwnership E6
+	// pattern). Each report still gets its OWN distinct series carrying the report's
+	// owner; the `series_id IS NULL` guard above keeps the second boot a no-op.
+	const minted = orphans.map((report) => ({
+		seriesId: uuidv7(),
+		ownerId: report.ownerId!,
+		report
+	}));
+	await db
+		.insert(reportSeries)
+		.values(minted.map(({ seriesId, ownerId }) => ({ id: seriesId, ownerId })));
+	await Promise.all(
+		minted.map(({ seriesId, report }) =>
+			db.update(reports).set({ seriesId }).where(eq(reports.id, report.id))
+		)
+	);
 	logger.info({ reports: orphans.length }, 'report series backfilled for pre-9.1 reports');
 	return orphans.length;
 }
