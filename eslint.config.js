@@ -74,5 +74,20 @@ export default defineConfig(
 				}
 			]
 		}
+	},
+	{
+		// Architecture rule: the render boundary NEVER injects raw HTML. Authored
+		// values are untrusted document content (NFR14), so every renderer emits
+		// them through Svelte text/attribute interpolation, which escapes. `{@html}`
+		// would bypass that escaping and open a stored-XSS hole on the reader path.
+		// `svelte/no-at-html-tags` (svelte.configs.recommended) already errors on
+		// `{@html}` in every .svelte file; re-asserting it here scoped to the render
+		// tree, with the architecture rationale, makes the ban a deliberate boundary
+		// contract that survives any future relaxation of the global rule rather than
+		// resting on review - mirroring the $lib/server import ban above.
+		files: ['src/lib/render/**/*.svelte'],
+		rules: {
+			'svelte/no-at-html-tags': 'error'
+		}
 	}
 );
