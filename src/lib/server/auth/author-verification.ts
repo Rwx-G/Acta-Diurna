@@ -82,6 +82,32 @@ export async function hasLiveAuthorVerification(email: string): Promise<boolean>
 }
 
 /**
+ * Reports whether an author verification token is LIVE (exists, unconsumed,
+ * unexpired) WITHOUT consuming it - a read-only SELECT, the peek the POST-to-consume
+ * interstitial needs (A1 mitigation). A mail-gateway link scanner GET-prefetches the
+ * emailed link; the landing peeks (this), so a prefetch never burns the token, and
+ * the human's "Confirm sign-in" POST still consumes it for real. A zero-row result
+ * (unknown, already consumed, or expired) returns false, all indistinguishable to
+ * the caller, by design (the same neutral "request a new link" path, no enumeration
+ * of which cause). This never flips `consumed_at`, so a peek is safe to repeat.
+ */
+export async function peekAuthorVerificationToken(rawToken: string): Promise<boolean> {
+	const tokenHash = hashToken(rawToken);
+	const rows = await getDb()
+		.select({ id: authorVerificationTokens.id })
+		.from(authorVerificationTokens)
+		.where(
+			and(
+				eq(authorVerificationTokens.tokenHash, tokenHash),
+				isNull(authorVerificationTokens.consumedAt),
+				gt(authorVerificationTokens.expiresAt, new Date())
+			)
+		)
+		.limit(1);
+	return rows.length > 0;
+}
+
+/**
  * Consumes an author verification token, atomically marking it used so a concurrent
  * or replayed second click cannot also succeed (single-use). The consume is an
  * UPDATE guarded by `consumed_at IS NULL`; a zero-row result means the token was

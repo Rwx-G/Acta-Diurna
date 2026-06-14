@@ -5,7 +5,8 @@ import {
 	AUTHOR_VERIFICATION_TOKEN_TTL_MS,
 	consumeAuthorVerificationToken,
 	hasLiveAuthorVerification,
-	issueAuthorVerificationToken
+	issueAuthorVerificationToken,
+	peekAuthorVerificationToken
 } from './author-verification';
 
 // Mock store for author_verification_tokens. The consume path is an
@@ -60,7 +61,8 @@ vi.mock('$lib/server/db/client', () => ({
 						limit: () => {
 							const matches = dbState.rows.filter(
 								(r) =>
-									r.email === decoded.email &&
+									(decoded.email === undefined || r.email === decoded.email) &&
+									(decoded.tokenHash === undefined || r.tokenHash === decoded.tokenHash) &&
 									(!decoded.requireUnconsumed || r.consumedAt === null) &&
 									(decoded.requireLiveExpiry === undefined ||
 										r.expiresAt.getTime() > decoded.requireLiveExpiry.getTime())
@@ -166,6 +168,35 @@ function authorVerificationTokensHasShareBinding(): boolean {
 	// The store never writes a shareId; the row shape is email-bound only.
 	return dbState.inserted.some((row) => 'shareId' in row);
 }
+
+describe('peekAuthorVerificationToken (A1 prefetch-safe validity, no consume)', () => {
+	it('is true for a live token and does NOT consume it (the consume still works after)', async () => {
+		const { token } = await issueAuthorVerificationToken('author@example.com');
+
+		await expect(peekAuthorVerificationToken(token)).resolves.toBe(true);
+		// The peek left consumed_at NULL, so the real consume still succeeds.
+		expect(dbState.rows[0].consumedAt ?? null).toBeNull();
+		await expect(consumeAuthorVerificationToken(token)).resolves.toBe('author@example.com');
+	});
+
+	it('is false for an already-consumed token', async () => {
+		const { token } = await issueAuthorVerificationToken('author@example.com');
+		await consumeAuthorVerificationToken(token);
+
+		await expect(peekAuthorVerificationToken(token)).resolves.toBe(false);
+	});
+
+	it('is false for an expired token (15-min TTL)', async () => {
+		const { token } = await issueAuthorVerificationToken('author@example.com');
+		dbState.rows[0].expiresAt = new Date(Date.now() - 1);
+
+		await expect(peekAuthorVerificationToken(token)).resolves.toBe(false);
+	});
+
+	it('is false for an unknown token', async () => {
+		await expect(peekAuthorVerificationToken('never-issued')).resolves.toBe(false);
+	});
+});
 
 describe('hasLiveAuthorVerification (dedup-before-issue, mail-amplification guard)', () => {
 	it('is false when no token exists for the email', async () => {

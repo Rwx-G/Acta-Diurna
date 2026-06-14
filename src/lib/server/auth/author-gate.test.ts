@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
 	issueAuthorVerificationToken: vi.fn(),
 	consumeAuthorVerificationToken: vi.fn(),
+	peekAuthorVerificationToken: vi.fn(),
 	hasLiveAuthorVerification: vi.fn(),
 	isAuthorEmailInDomain: vi.fn(),
 	ensureAuthor: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./author-verification', () => ({
 	issueAuthorVerificationToken: mocks.issueAuthorVerificationToken,
 	consumeAuthorVerificationToken: mocks.consumeAuthorVerificationToken,
+	peekAuthorVerificationToken: mocks.peekAuthorVerificationToken,
 	hasLiveAuthorVerification: mocks.hasLiveAuthorVerification
 }));
 vi.mock('./author-domain', () => ({ isAuthorEmailInDomain: mocks.isAuthorEmailInDomain }));

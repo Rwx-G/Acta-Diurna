@@ -17,7 +17,8 @@ import { ensureAuthor } from '$lib/server/authors';
 import {
 	consumeAuthorVerificationToken,
 	hasLiveAuthorVerification,
-	issueAuthorVerificationToken
+	issueAuthorVerificationToken,
+	peekAuthorVerificationToken
 } from './author-verification';
 import { isAuthorEmailInDomain } from './author-domain';
 import { createAuthorSession, type CreatedSession } from './sessions';
@@ -86,6 +87,19 @@ export async function requestAuthorSignIn(
  * set the `authorRealm` hook resolves it into `locals.authorSession.authorId` and
  * `resolveAuthorScope` filters by the real author (tenancy, 8.2).
  */
+/**
+ * Read-only validity check for the magic-link interstitial (A1 mitigation): true
+ * when the token EXISTS and is unconsumed/unexpired, WITHOUT consuming it. The GET
+ * landing renders the "Confirm sign-in" interstitial only when this is true, so a
+ * mail-gateway scanner that GET-prefetches the link never burns the token; the
+ * human's confirm POST runs `completeAuthorSignIn` and consumes it for real. An
+ * invalid/used/expired token returns false and the landing shows the same neutral
+ * "request a new link" state - no oracle for which cause (NFR9).
+ */
+export async function peekAuthorSignIn(rawToken: string): Promise<boolean> {
+	return peekAuthorVerificationToken(rawToken);
+}
+
 export async function completeAuthorSignIn(rawToken: string): Promise<CreatedSession | null> {
 	const email = await consumeAuthorVerificationToken(rawToken);
 	if (!email) return null;
