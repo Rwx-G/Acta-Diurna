@@ -9,6 +9,8 @@ import pg from 'pg';
 import { reports } from '../src/lib/server/db/schema.ts';
 import { validateDocument } from '../src/lib/schema/index.ts';
 import {
+	DATA_AS_OF_FIXTURE_DOCUMENT,
+	DATA_AS_OF_FIXTURE_REPORT_ID,
 	DB_URL_FILE,
 	E2E_AUTHOR_PASSWORD,
 	FIXTURE_DOCUMENT,
@@ -16,7 +18,9 @@ import {
 	MATRIX_FIXTURE_DOCUMENT,
 	MATRIX_FIXTURE_REPORT_ID,
 	PHASE_B_FIXTURE_DOCUMENT,
-	PHASE_B_FIXTURE_REPORT_ID
+	PHASE_B_FIXTURE_REPORT_ID,
+	PRESENTER_FIXTURE_DOCUMENT,
+	PRESENTER_FIXTURE_REPORT_ID
 } from './fixtures.ts';
 
 const PORT = 4173;
@@ -32,7 +36,9 @@ async function seedFixture(databaseUrl: string): Promise<void> {
 		for (const { id, document } of [
 			{ id: FIXTURE_REPORT_ID, document: FIXTURE_DOCUMENT },
 			{ id: MATRIX_FIXTURE_REPORT_ID, document: MATRIX_FIXTURE_DOCUMENT },
-			{ id: PHASE_B_FIXTURE_REPORT_ID, document: PHASE_B_FIXTURE_DOCUMENT }
+			{ id: PHASE_B_FIXTURE_REPORT_ID, document: PHASE_B_FIXTURE_DOCUMENT },
+			{ id: PRESENTER_FIXTURE_REPORT_ID, document: PRESENTER_FIXTURE_DOCUMENT },
+			{ id: DATA_AS_OF_FIXTURE_REPORT_ID, document: DATA_AS_OF_FIXTURE_DOCUMENT }
 		]) {
 			const result = validateDocument(document);
 			if (!result.ok) {

@@ -424,3 +424,134 @@ export const FIXTURE_SECTION_IDS = [
 	'incident-analysis',
 	'methodology'
 ] as const;
+
+/**
+ * A fourth seeded report carrying author-only speaker notes (Story 6.2, FR29) for
+ * the presenter-view e2e. The shared full fixture has no notes, so the presenter
+ * console (current section + speaker notes + next-section preview) and the
+ * notes-never-leak privacy guard need a published report that actually carries
+ * them. Three regular sections each get a distinct, easily-searched notes string,
+ * plus one `annex` section so the meeting-mode toggle (hide annex) has something to
+ * drop. Owner-scoped like every fixture (single mode stores ownerId null); the
+ * presenter route is owner-scoped and the seeded author owns it. Published so the
+ * presenter loads the snapshot and the reader path can serve it via a share.
+ */
+export const PRESENTER_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000004';
+
+/** The speaker-notes strings, asserted present in the presenter and absent from the reader. */
+export const PRESENTER_NOTES = {
+	intro: 'PRESENTER-NOTE-INTRO open with the headline incident count.',
+	findings: 'PRESENTER-NOTE-FINDINGS walk the table top to bottom, pause on critical.',
+	annex: 'PRESENTER-NOTE-ANNEX only if asked about methodology.'
+} as const;
+
+export const PRESENTER_FIXTURE_DOCUMENT = {
+	version: 1 as const,
+	title: 'Briefing With Speaker Notes',
+	sections: [
+		{
+			id: 'intro',
+			title: 'Introduction',
+			notes: PRESENTER_NOTES.intro,
+			blocks: [
+				{
+					type: 'text' as const,
+					id: 'intro-text',
+					paragraphs: [[{ text: 'Quarter overview and headline figures.' }]]
+				}
+			]
+		},
+		{
+			id: 'findings',
+			title: 'Findings',
+			notes: PRESENTER_NOTES.findings,
+			blocks: [
+				{
+					type: 'text' as const,
+					id: 'findings-text',
+					paragraphs: [[{ text: 'Three findings, one critical, all remediated.' }]]
+				}
+			]
+		},
+		{
+			id: 'methodology',
+			title: 'Methodology',
+			annex: true,
+			notes: PRESENTER_NOTES.annex,
+			blocks: [
+				{
+					type: 'text' as const,
+					id: 'methodology-text',
+					paragraphs: [[{ text: 'Counts sourced from the SIEM export.' }]]
+				}
+			]
+		}
+	]
+};
+
+/**
+ * A fifth seeded report for the data-as-of caption e2e (Story 6.4, FR16). The
+ * `binding.dataAsOf` stamp is baked onto the document server-side at bind/rebind
+ * time, so the caption reads straight off the validated document - seeding it
+ * directly is the deterministic, minimal route (no upload/inject round-trip). The
+ * table block carries an explicit `dataAsOf` (a fixed UTC instant, so the formatted
+ * "Data as of 15 Mar 2026" caption is byte-stable regardless of machine locale or
+ * clock); the kpi block is bound but carries NO `dataAsOf`, so its block renders no
+ * caption at all (omitted, never a placeholder). Published so the seeded author can
+ * open it; rendered via the author `/view`.
+ */
+export const DATA_AS_OF_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000005';
+
+/** The explicit binding timestamp and the caption it must format to. */
+export const DATA_AS_OF_ISO = '2026-03-15T00:00:00.000Z';
+export const DATA_AS_OF_CAPTION = 'Data as of 15 Mar 2026';
+
+export const DATA_AS_OF_FIXTURE_DOCUMENT = {
+	version: 1 as const,
+	title: 'Data Freshness Fixture',
+	sections: [
+		{
+			id: 'stamped',
+			title: 'Stamped block',
+			blocks: [
+				{
+					type: 'table' as const,
+					id: 'stamped-table',
+					columns: [
+						{ key: 'metric', label: 'Metric' },
+						{ key: 'value', label: 'Value' }
+					],
+					rows: [
+						{ metric: 'Incidents', value: 42 },
+						{ metric: 'Open findings', value: 7 }
+					],
+					binding: {
+						dataSetId: 'incident-export',
+						dataAsOf: DATA_AS_OF_ISO,
+						fields: [
+							{ name: 'metric', type: 'string' as const },
+							{ name: 'value', type: 'number' as const }
+						]
+					}
+				}
+			]
+		},
+		{
+			id: 'unstamped',
+			title: 'Unstamped block',
+			blocks: [
+				{
+					type: 'kpi' as const,
+					id: 'unstamped-kpi',
+					items: [{ label: 'Coverage', value: 96, unit: '%' }],
+					binding: {
+						fields: [
+							{ name: 'label', type: 'string' as const },
+							{ name: 'value', type: 'number' as const }
+						]
+					}
+				}
+			]
+		}
+	]
+};
