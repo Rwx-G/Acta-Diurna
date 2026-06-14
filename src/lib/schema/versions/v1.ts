@@ -3,6 +3,7 @@ import { idSchema } from '../blocks/shared.ts';
 import { sectionSchema } from '../blocks/section.ts';
 import { scalesSchema, validateScaleReferences } from '../scales.ts';
 import { validateInternalLinks } from '../internal-links.ts';
+import { validateSectionIds } from '../section-ids.ts';
 
 /** Document schema, version 1. The published contract (FR31, architecture D3). */
 export const documentSchemaV1 = z
@@ -27,6 +28,21 @@ export const documentSchemaV1 = z
 		// `validateScaleReferences` and the dangling refs surface here as FR2
 		// problem-details errors at save/API time.
 		for (const issue of validateScaleReferences(document)) {
+			ctx.addIssue({
+				code: 'custom',
+				message: issue.message,
+				path: issue.path,
+				params: { hint: issue.hint }
+			});
+		}
+		// Section-id uniqueness pass (Epic 11 follow-up): a section id is the
+		// primitive behind the `:target` detail reveal, deep-link resolution, and
+		// presenter notes-by-id pairing, so a duplicate id silently misdirects a
+		// drill-down or mis-pairs notes. Emitted before the internal-link pass so a
+		// duplicate-id error reads clearly even when a `linkTo` also targets the
+		// duplicated id (the internal link still resolves - the target exists - so
+		// the duplicate-id issue is the one that names the real problem).
+		for (const issue of validateSectionIds(document)) {
 			ctx.addIssue({
 				code: 'custom',
 				message: issue.message,
