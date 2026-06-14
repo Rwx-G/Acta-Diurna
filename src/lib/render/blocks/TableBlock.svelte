@@ -3,6 +3,7 @@
 	import { resolveScaleRef } from '$lib/schema';
 	import Badge from './Badge.svelte';
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
+	import DataAsOf from './DataAsOf.svelte';
 
 	// `scales`/`theme` are threaded for conditional column formatting (Epic 7,
 	// Story 7.5): a column declaring a `scaleRef` renders its cells as scale-driven
@@ -47,35 +48,38 @@
 {#if rows.length === 0}
 	<BlockPlaceholder />
 {:else}
-	<div class="table-scroll">
-		<table class:sticky={stickyHeader}>
-			<thead>
-				<tr>
-					{#each block.columns as column (column.key)}
-						<th scope="col">{column.label}</th>
-					{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each rows as row, rowIndex (rowIndex)}
+	<div class="data-block">
+		<div class="table-scroll">
+			<table class:sticky={stickyHeader}>
+				<thead>
 					<tr>
 						{#each block.columns as column (column.key)}
-							{@const scale = columnScale(column.scaleRef)}
-							{#if scale}
-								{@const key = badgeKey(row[column.key])}
-								<td class="badge-cell">
-									{#if key !== undefined}
-										<Badge {scale} entryKey={key} {theme} />
-									{/if}
-								</td>
-							{:else}
-								<td class:numeric={isNumeric(row[column.key])}>{display(row[column.key])}</td>
-							{/if}
+							<th scope="col">{column.label}</th>
 						{/each}
 					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each rows as row, rowIndex (rowIndex)}
+						<tr>
+							{#each block.columns as column (column.key)}
+								{@const scale = columnScale(column.scaleRef)}
+								{#if scale}
+									{@const key = badgeKey(row[column.key])}
+									<td class="badge-cell">
+										{#if key !== undefined}
+											<Badge {scale} entryKey={key} {theme} />
+										{/if}
+									</td>
+								{:else}
+									<td class:numeric={isNumeric(row[column.key])}>{display(row[column.key])}</td>
+								{/if}
+							{/each}
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<DataAsOf dataAsOf={block.binding?.dataAsOf} />
 	</div>
 {/if}
 

@@ -101,4 +101,33 @@ describe('ChartBlock render', () => {
 		);
 		expect(container.textContent).toContain('<b>series</b>');
 	});
+
+	it('shows the FR16 data-as-of caption when the binding carries a timestamp (Story 6.4)', () => {
+		const { container } = render(ChartBlock, {
+			block: block({
+				binding: {
+					dataSetId: 'ds-1',
+					dataAsOf: '2026-06-08T09:30:00.000Z',
+					fields: [{ name: 'week', type: 'date' }]
+				}
+			})
+		});
+		expect(container.querySelector('.data-as-of')?.textContent?.trim()).toBe(
+			'Data as of 8 Jun 2026'
+		);
+	});
+
+	it('omits the data-as-of caption when the block is not data-bound (static series)', () => {
+		const { container } = render(ChartBlock, { block: block() });
+		expect(container.querySelector('.data-as-of')).toBeNull();
+	});
+
+	it('omits the data-as-of caption when the binding carries no timestamp', () => {
+		const { container } = render(ChartBlock, {
+			block: block({
+				binding: { dataSetId: 'ds-1', fields: [{ name: 'week', type: 'date' }] }
+			})
+		});
+		expect(container.querySelector('.data-as-of')).toBeNull();
+	});
 });

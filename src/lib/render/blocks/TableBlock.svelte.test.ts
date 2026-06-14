@@ -32,7 +32,7 @@ function formattedTable(overrides: Partial<TableBlockType> = {}): TableBlockType
 	};
 }
 
-function plainTable(): TableBlockType {
+function plainTable(overrides: Partial<TableBlockType> = {}): TableBlockType {
 	return {
 		type: 'table',
 		id: 'plain',
@@ -40,7 +40,8 @@ function plainTable(): TableBlockType {
 			{ key: 'name', label: 'Name' },
 			{ key: 'count', label: 'Count' }
 		],
-		rows: [{ name: 'Alpha', count: 3 }]
+		rows: [{ name: 'Alpha', count: 3 }],
+		...overrides
 	};
 }
 
@@ -118,5 +119,34 @@ describe('TableBlock additivity (existing table unchanged)', () => {
 		const withScales = render(TableBlock, { block: plainTable(), scales }).container.innerHTML;
 		const withoutScales = render(TableBlock, { block: plainTable() }).container.innerHTML;
 		expect(withScales).toBe(withoutScales);
+	});
+
+	it('shows the FR16 data-as-of caption when the binding carries a timestamp (Story 6.4)', () => {
+		const { container } = render(TableBlock, {
+			block: plainTable({
+				binding: {
+					dataSetId: 'ds-1',
+					dataAsOf: '2026-06-08T09:30:00.000Z',
+					fields: [{ name: 'name', type: 'string' }]
+				}
+			})
+		});
+		expect(container.querySelector('.data-as-of')?.textContent?.trim()).toBe(
+			'Data as of 8 Jun 2026'
+		);
+	});
+
+	it('omits the data-as-of caption when the table is not data-bound (static rows)', () => {
+		const { container } = render(TableBlock, { block: plainTable() });
+		expect(container.querySelector('.data-as-of')).toBeNull();
+	});
+
+	it('omits the data-as-of caption when the binding carries no timestamp', () => {
+		const { container } = render(TableBlock, {
+			block: plainTable({
+				binding: { dataSetId: 'ds-1', fields: [{ name: 'name', type: 'string' }] }
+			})
+		});
+		expect(container.querySelector('.data-as-of')).toBeNull();
 	});
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { KpiBlock } from '$lib/schema';
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
+	import DataAsOf from './DataAsOf.svelte';
 
 	let { block }: { block: KpiBlock } = $props();
 
@@ -15,23 +16,27 @@
 {#if items.length === 0}
 	<BlockPlaceholder />
 {:else}
-	<dl class="kpi-row" style="--kpi-count: {Math.min(items.length, 4)}">
-		{#each items as item, index (index)}
-			<div class="kpi">
-				<dt>{item.label}</dt>
-				<dd>
-					<span class="value">{item.value}</span>{#if item.unit}<span class="unit">{item.unit}</span
-						>{/if}
-					{#if item.trend}
-						<span class="trend trend-{item.trend}">
-							<span aria-hidden="true">{TREND_GLYPH[item.trend]}</span>
-							<span class="sr-only">{TREND_LABEL[item.trend]}</span>
-						</span>
-					{/if}
-				</dd>
-			</div>
-		{/each}
-	</dl>
+	<div class="data-block">
+		<dl class="kpi-row" style="--kpi-count: {Math.min(items.length, 4)}">
+			{#each items as item, index (index)}
+				<div class="kpi">
+					<dt>{item.label}</dt>
+					<dd>
+						<span class="value">{item.value}</span>{#if item.unit}<span class="unit"
+								>{item.unit}</span
+							>{/if}
+						{#if item.trend}
+							<span class="trend trend-{item.trend}">
+								<span aria-hidden="true">{TREND_GLYPH[item.trend]}</span>
+								<span class="sr-only">{TREND_LABEL[item.trend]}</span>
+							</span>
+						{/if}
+					</dd>
+				</div>
+			{/each}
+		</dl>
+		<DataAsOf dataAsOf={block.binding?.dataAsOf} />
+	</div>
 {/if}
 
 <style>
