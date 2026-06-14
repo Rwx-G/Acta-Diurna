@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { audiencesAttr, DEFAULT_AUDIENCE, type Audience } from '$lib/schema';
+	import {
+		AUDIENCES,
+		audiencesAttr,
+		DEFAULT_AUDIENCE,
+		isVisibleAtLevel,
+		type Audience
+	} from '$lib/schema';
 	import { resolveTheme } from './theme/index.ts';
 	import { ReaderNavigation, indexForFragment } from './navigation.svelte.ts';
 	import type { ReportView } from './document-view.ts';
@@ -173,9 +179,20 @@
 		const roomy = window.matchMedia('(min-width: 768px) and (min-height: 480px)').matches;
 		effectiveMode = mode === 'slide' && roomy ? 'slide' : 'scroll';
 
-		// Deep-link: jump to the section named in the URL fragment on load.
+		// Deep-link: jump to the section named in the URL fragment on load. When the
+		// target section is audience-tagged out of the current level it is hidden by
+		// CSS (display: none) and has no layout box to scroll to, so a shared link to
+		// a technical-only section would land nowhere. Promote the level to one that
+		// reveals the section first, then scroll - a deep link expresses intent to
+		// read that section, regardless of the reader's default level.
 		const initial = indexForFragment(window.location.hash, sectionIds);
 		if (initial > 0) {
+			const targetAudiences = view.sections[initial].audiences;
+			if (view.hasAudiences && !isVisibleAtLevel(targetAudiences, activeLevel)) {
+				activeLevel =
+					AUDIENCES.find((candidate) => isVisibleAtLevel(targetAudiences, candidate)) ??
+					activeLevel;
+			}
 			nav.current = initial;
 			requestAnimationFrame(() => scrollToSection(initial, false));
 		}
