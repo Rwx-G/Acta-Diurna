@@ -42,7 +42,7 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { type DocumentV1Input } from '$lib/schema';
+import { assertNever, type DocumentV1Input } from '$lib/schema';
 import type { AuthorScope } from '$lib/server/authors';
 import {
 	createReportWithDocument,
@@ -400,104 +400,124 @@ function slugId(prefix: string, ...parts: number[]): string {
 	return `${prefix}-${parts.join('-')}`;
 }
 
+/** The assembled-block literal types, narrowed per outline type so each helper
+ *  returns its OWN block shape rather than the whole union (no `as never`). */
+type AssembledBlock = DocumentV1Input['sections'][number]['blocks'][number];
+type KpiBlock = Extract<AssembledBlock, { type: 'kpi' }>;
+type TableBlock = Extract<AssembledBlock, { type: 'table' }>;
+type ChartBlock = Extract<AssembledBlock, { type: 'chart' }>;
+type TextBlock = Extract<AssembledBlock, { type: 'text' }>;
+
+// These collection fields are optional on the input block types (`| undefined`),
+// so the element types are extracted through `NonNullable` before indexing.
+type KpiItem = NonNullable<KpiBlock['items']>[number];
+type TableColumn = NonNullable<TableBlock['columns']>[number];
+type TableRow = NonNullable<TableBlock['rows']>[number];
+type ChartSeries = NonNullable<ChartBlock['series']>[number];
+type ChartPoint = NonNullable<ChartSeries['points']>[number];
+type TextParagraph = NonNullable<TextBlock['paragraphs']>[number];
+type TextRun = TextParagraph[number];
+
 /**
- * Assembles a candidate block from one model block object against the outline's
- * intended type. The model's `type` is ignored in favor of the OUTLINE's type
- * (the author approved the shape); content fields are read defensively and a
- * block that cannot yield valid content falls back to a one-line text block so
- * the document stays well-formed and `validateDocument` is the only gate.
+ * Assembles a kpi block from the model output, or null when no item yields a
+ * label + value (the dispatcher then falls back to a text block). Returns the
+ * SPECIFIC kpi literal, so a shape drift is a compile error here, not silenced.
  */
-function assembleBlock(
-	outlineType: GeneratableBlockType,
-	modelBlock: Record<string, unknown>,
-	sectionIndex: number,
-	blockIndex: number
-): DocumentV1Input['sections'][number]['blocks'][number] {
-	const id = slugId('block', sectionIndex + 1, blockIndex + 1);
+function assembleKpiBlock(id: string, modelBlock: Record<string, unknown>): KpiBlock | null {
+	const items = asArray(modelBlock.items)
+		.map((rawItem): KpiItem | null => {
+			const item = asRecord(rawItem);
+			const label = clampText(item.label, 300);
+			const value = typeof item.value === 'number' ? item.value : clampText(item.value, 300);
+			if (!label || value === '') return null;
+			const result: KpiItem = { label, value };
+			const unit = clampText(item.unit, 300);
+			if (unit) result.unit = unit;
+			if (item.trend === 'up' || item.trend === 'down' || item.trend === 'flat') {
+				result.trend = item.trend;
+			}
+			return result;
+		})
+		.filter((item): item is KpiItem => item !== null);
+	return items.length > 0 ? { type: 'kpi', id, items } : null;
+}
 
-	if (outlineType === 'kpi') {
-		const items = asArray(modelBlock.items)
-			.map((rawItem) => {
-				const item = asRecord(rawItem);
-				const label = clampText(item.label, 300);
-				const value = typeof item.value === 'number' ? item.value : clampText(item.value, 300);
-				if (!label || value === '') return null;
-				const result: Record<string, unknown> = { label, value };
-				const unit = clampText(item.unit, 300);
-				if (unit) result.unit = unit;
-				if (item.trend === 'up' || item.trend === 'down' || item.trend === 'flat') {
-					result.trend = item.trend;
-				}
-				return result;
-			})
-			.filter((item): item is Record<string, unknown> => item !== null);
-		if (items.length > 0) return { type: 'kpi', id, items } as never;
-	}
+/**
+ * Assembles a table block from the model output, or null when no column has a
+ * key (the dispatcher then falls back to a text block). Rows are projected onto
+ * the recovered column keys; missing cells clamp to an empty string.
+ */
+function assembleTableBlock(id: string, modelBlock: Record<string, unknown>): TableBlock | null {
+	const columns = asArray(modelBlock.columns)
+		.map((rawColumn): TableColumn | null => {
+			const column = asRecord(rawColumn);
+			const key = clampText(column.key, 300);
+			const label = clampText(column.label, 300) || key;
+			return key ? { key, label } : null;
+		})
+		.filter((column): column is TableColumn => column !== null);
+	if (columns.length === 0) return null;
 
-	if (outlineType === 'table') {
-		const columns = asArray(modelBlock.columns)
-			.map((rawColumn) => {
-				const column = asRecord(rawColumn);
-				const key = clampText(column.key, 300);
-				const label = clampText(column.label, 300) || key;
-				return key ? { key, label } : null;
-			})
-			.filter((column): column is { key: string; label: string } => column !== null);
-		if (columns.length > 0) {
-			const keys = new Set(columns.map((column) => column.key));
-			const rows = asArray(modelBlock.rows)
+	const keys = new Set(columns.map((column) => column.key));
+	const rows = asArray(modelBlock.rows)
+		.slice(0, 10_000)
+		.map((rawRow): TableRow => {
+			const row = asRecord(rawRow);
+			const cells: TableRow = {};
+			for (const key of keys) {
+				const cell = row[key];
+				cells[key] = typeof cell === 'number' ? cell : clampText(cell, 5000);
+			}
+			return cells;
+		});
+	return { type: 'table', id, columns, rows };
+}
+
+/**
+ * Assembles a chart block from the model output, or null when no series yields a
+ * named series with at least one finite point (the dispatcher then falls back to
+ * a text block). An unrecognized chart kind clamps to `bar`.
+ */
+function assembleChartBlock(id: string, modelBlock: Record<string, unknown>): ChartBlock | null {
+	const kind = modelBlock.kind;
+	const chartKind: ChartBlock['kind'] =
+		kind === 'line' || kind === 'bar' || kind === 'area' || kind === 'pie' ? kind : 'bar';
+	const series = asArray(modelBlock.series)
+		.map((rawSeries): ChartSeries | null => {
+			const seriesRecord = asRecord(rawSeries);
+			const name = clampText(seriesRecord.name, 300);
+			if (!name) return null;
+			const points = asArray(seriesRecord.points)
 				.slice(0, 10_000)
-				.map((rawRow) => {
-					const row = asRecord(rawRow);
-					const cells: Record<string, string | number> = {};
-					for (const key of keys) {
-						const cell = row[key];
-						cells[key] = typeof cell === 'number' ? cell : clampText(cell, 5000);
-					}
-					return cells;
-				});
-			return { type: 'table', id, columns, rows } as never;
-		}
-	}
+				.map((rawPoint): ChartPoint | null => {
+					const point = asRecord(rawPoint);
+					const x = typeof point.x === 'number' ? point.x : clampText(point.x, 300);
+					const y = typeof point.y === 'number' ? point.y : Number(point.y);
+					return Number.isFinite(y) ? { x, y } : null;
+				})
+				.filter((point): point is ChartPoint => point !== null);
+			return points.length > 0 ? { name, points } : null;
+		})
+		.filter((item): item is ChartSeries => item !== null);
+	return series.length > 0 ? { type: 'chart', id, kind: chartKind, series } : null;
+}
 
-	if (outlineType === 'chart') {
-		const kind = modelBlock.kind;
-		const chartKind =
-			kind === 'line' || kind === 'bar' || kind === 'area' || kind === 'pie' ? kind : 'bar';
-		const series = asArray(modelBlock.series)
-			.map((rawSeries) => {
-				const seriesRecord = asRecord(rawSeries);
-				const name = clampText(seriesRecord.name, 300);
-				if (!name) return null;
-				const points = asArray(seriesRecord.points)
-					.slice(0, 10_000)
-					.map((rawPoint) => {
-						const point = asRecord(rawPoint);
-						const x = typeof point.x === 'number' ? point.x : clampText(point.x, 300);
-						const y = typeof point.y === 'number' ? point.y : Number(point.y);
-						return Number.isFinite(y) ? { x, y } : null;
-					})
-					.filter((point): point is { x: string | number; y: number } => point !== null);
-				return points.length > 0 ? { name, points } : null;
-			})
-			.filter(
-				(item): item is { name: string; points: { x: string | number; y: number }[] } =>
-					item !== null
-			);
-		if (series.length > 0) return { type: 'chart', id, kind: chartKind, series } as never;
-	}
-
-	// Default and text fallback: a text block from the model's paragraphs, or the
-	// block intent as a single paragraph when no usable text was returned.
+/**
+ * Assembles a text block from the model's paragraphs, or a single
+ * "Content to be written." paragraph when none are usable. Always succeeds, so
+ * it is the universal fallback when a typed branch yields no valid content - the
+ * document stays well-formed and `validateDocument` is the only gate.
+ */
+function assembleTextBlock(id: string, modelBlock: Record<string, unknown>): TextBlock {
 	const paragraphs = asArray(modelBlock.paragraphs)
-		.map((rawParagraph) => {
+		.map((rawParagraph): TextParagraph | null => {
 			// A paragraph may be a string or an array of run strings/objects.
 			if (typeof rawParagraph === 'string') {
 				const text = clampText(rawParagraph, 5000);
 				return text ? [{ text }] : null;
 			}
 			const runs = asArray(rawParagraph)
-				.map((rawRun) => {
+				.map((rawRun): TextRun | null => {
 					if (typeof rawRun === 'string') {
 						const text = clampText(rawRun, 5000);
 						return text ? { text } : null;
@@ -505,14 +525,46 @@ function assembleBlock(
 					const text = clampText(asRecord(rawRun).text, 5000);
 					return text ? { text } : null;
 				})
-				.filter((run): run is { text: string } => run !== null);
+				.filter((run): run is TextRun => run !== null);
 			return runs.length > 0 ? runs : null;
 		})
-		.filter((paragraph): paragraph is { text: string }[] => paragraph !== null);
+		.filter((paragraph): paragraph is TextParagraph => paragraph !== null);
 
-	const safeParagraphs =
+	const safeParagraphs: TextBlock['paragraphs'] =
 		paragraphs.length > 0 ? paragraphs : [[{ text: 'Content to be written.' }]];
-	return { type: 'text', id, paragraphs: safeParagraphs } as never;
+	return { type: 'text', id, paragraphs: safeParagraphs };
+}
+
+/**
+ * Assembles a candidate block from one model block object against the outline's
+ * intended type. The model's `type` is ignored in favor of the OUTLINE's type
+ * (the author approved the shape); each branch dispatches to a typed per-type
+ * helper that reads the content defensively and returns its SPECIFIC block
+ * literal. A typed branch that cannot yield valid content (null) falls back to a
+ * text block so the document stays well-formed and `validateDocument` is the
+ * only gate. The `assertNever` makes a new `GeneratableBlockType` a compile error
+ * here until it is given a branch, never silently unhandled.
+ */
+function assembleBlock(
+	outlineType: GeneratableBlockType,
+	modelBlock: Record<string, unknown>,
+	sectionIndex: number,
+	blockIndex: number
+): AssembledBlock {
+	const id = slugId('block', sectionIndex + 1, blockIndex + 1);
+
+	switch (outlineType) {
+		case 'kpi':
+			return assembleKpiBlock(id, modelBlock) ?? assembleTextBlock(id, modelBlock);
+		case 'table':
+			return assembleTableBlock(id, modelBlock) ?? assembleTextBlock(id, modelBlock);
+		case 'chart':
+			return assembleChartBlock(id, modelBlock) ?? assembleTextBlock(id, modelBlock);
+		case 'text':
+			return assembleTextBlock(id, modelBlock);
+		default:
+			return assertNever(outlineType);
+	}
 }
 
 /** Assembles a candidate DocumentV1Input from the model fill output against the
