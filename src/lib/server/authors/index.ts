@@ -10,7 +10,8 @@ export {
 	ensureImplicitAuthor,
 	implicitAuthorId,
 	authorDisplayEmail,
-	__resetImplicitAuthorCache
+	__resetImplicitAuthorCache,
+	__resetDisplayEmailCache
 } from './identity.ts';
 export { ownerFilter, ownerForInsert } from './scope.ts';
 export type { AuthorScope } from './scope.ts';

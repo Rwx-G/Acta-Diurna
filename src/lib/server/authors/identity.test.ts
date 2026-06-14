@@ -1,6 +1,7 @@
 import { Column, Param } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+	__resetDisplayEmailCache,
 	__resetImplicitAuthorCache,
 	SINGLE_AUTHOR_EMAIL,
 	authorDisplayEmail,
@@ -19,7 +20,8 @@ vi.mock('$lib/server/env', () => ({
 const dbState = vi.hoisted(() => ({
 	rowsByEmail: new Map<string, { id: string }>(),
 	rowsById: new Map<string, { email: string }>(),
-	inserted: [] as Record<string, unknown>[]
+	inserted: [] as Record<string, unknown>[],
+	idLookups: 0
 }));
 
 function decodeEqColumnValue(filter: unknown): { column: string; value: unknown } {
@@ -38,6 +40,7 @@ vi.mock('$lib/server/db/client', () => ({
 					limit: () => {
 						const { column, value } = decodeEqColumnValue(filter);
 						if (column === 'id') {
+							dbState.idLookups += 1;
 							const row = dbState.rowsById.get(String(value));
 							return Promise.resolve(row ? [row] : []);
 						}
@@ -62,8 +65,10 @@ beforeEach(() => {
 	dbState.rowsByEmail.clear();
 	dbState.rowsById.clear();
 	dbState.inserted = [];
+	dbState.idLookups = 0;
 	envState.initialOwnerEmail = undefined;
 	__resetImplicitAuthorCache();
+	__resetDisplayEmailCache();
 });
 
 describe('implicitAuthorEmail', () => {
@@ -107,6 +112,29 @@ describe('authorDisplayEmail', () => {
 
 	it('returns null for an unknown id', async () => {
 		await expect(authorDisplayEmail('01970000-0000-7000-8000-0000000000ff')).resolves.toBeNull();
+	});
+
+	it('caches the email per author id: a repeated lookup hits the cache, not the DB (E8)', async () => {
+		const id = await ensureAuthor('author@example.com');
+
+		const first = await authorDisplayEmail(id);
+		const second = await authorDisplayEmail(id);
+		const third = await authorDisplayEmail(id);
+
+		expect(first).toBe('author@example.com');
+		expect(second).toBe('author@example.com');
+		expect(third).toBe('author@example.com');
+		// Only the first call queried the DB; the rest were Map hits.
+		expect(dbState.idLookups).toBe(1);
+	});
+
+	it('caches the resolved null (implicit author / unknown id) too', async () => {
+		const unknownId = '01970000-0000-7000-8000-0000000000ff';
+
+		await expect(authorDisplayEmail(unknownId)).resolves.toBeNull();
+		await expect(authorDisplayEmail(unknownId)).resolves.toBeNull();
+
+		expect(dbState.idLookups).toBe(1);
 	});
 });
 

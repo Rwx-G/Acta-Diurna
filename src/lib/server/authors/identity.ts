@@ -91,15 +91,32 @@ export function ensureImplicitAuthor(): Promise<string> {
  * author's email) and what stays null in single mode (the password author is
  * anonymous - no identity is shown).
  */
+const displayEmailCache = new Map<string, string | null>();
+
 export async function authorDisplayEmail(id: string): Promise<string | null> {
+	// An author's email is IMMUTABLE in v1 (no rename), so the display value is
+	// stable for the life of the process. The workspace layout loads it on EVERY
+	// multi-mode request; cache it per author id (mirroring the implicitAuthorId
+	// memoization) so the steady state is a Map hit, not a DB read per page load
+	// (E8). The cached value includes the resolved null (unknown id or the implicit
+	// author's hidden sentinel), so those are not re-queried either.
+	const cached = displayEmailCache.get(id);
+	if (cached !== undefined) return cached;
+
 	const rows = await getDb()
 		.select({ email: authors.email })
 		.from(authors)
 		.where(eq(authors.id, id))
 		.limit(1);
 	const email = rows[0]?.email;
-	if (email === undefined || email === SINGLE_AUTHOR_EMAIL) return null;
-	return email;
+	const display = email === undefined || email === SINGLE_AUTHOR_EMAIL ? null : email;
+	displayEmailCache.set(id, display);
+	return display;
+}
+
+/** Test support only: drops the cached display emails so a fresh resolution runs. */
+export function __resetDisplayEmailCache(): void {
+	displayEmailCache.clear();
 }
 
 let implicitAuthorIdCache: string | undefined;
