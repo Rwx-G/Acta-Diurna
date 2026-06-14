@@ -1,0 +1,122 @@
+import { expect, test, type Browser } from '@playwright/test';
+import { E2E_MULTI_BASE_URL, FIXTURE_REPORT_ID, MULTI_AUTHORS } from './fixtures.ts';
+import { clearMailbox, expectNoMail, getLatestMagicLink } from './mailpit.ts';
+import { actorContext } from './multi-auth.ts';
+
+// Multi-mode reader verification + destination whitelist (Epic 8, stories 8.4/8.5),
+// end to end. In multi mode a share is NOT a bare consultation link: the reader must
+// verify by email (a magic link), and READER_EMAIL_DOMAINS gates which reader
+// domains may. The single-mode harness serves shares directly (consultation) and
+// cannot reach this flow; here it runs for real against Mailpit.
+//
+// Setup: the seeded published fixture report is owned by INITIAL_OWNER (it inherited
+// the null-owner row at boot). The owner signs in by magic link and creates an OPEN
+// share on it (open so the per-share recipient list is not the gate - the whitelist
+// is). Then:
+//   - an in-whitelist reader (`@reader.example.com`) gets a magic link, clicks it,
+//     and reads the report (no bare consultation - the verify card gates first);
+//   - an off-whitelist reader (`@outsider.test`) is refused behind the same neutral
+//     confirmation, with NO mail sent (READER_EMAIL_DOMAINS).
+
+const sharePostUrl = `${E2E_MULTI_BASE_URL}/reports/${FIXTURE_REPORT_ID}/share?/create-share`;
+
+/**
+ * Creates an OPEN share on the fixture report as the signed-in owner and returns the
+ * `/r/<token>` reader URL. Posts the share-create action through the page's request
+ * context with an explicit Origin (the same CSRF concession the single-mode specs
+ * use over plain HTTP); `mode=open` makes the whitelist - not a recipient list - the
+ * only reader-email gate.
+ */
+async function createOpenShare(browser: Browser): Promise<string> {
+	// The owner inherited the seeded fixture report at boot; restore their saved
+	// session (signed in once in multi-auth.setup.ts) rather than signing in again.
+	const context = await actorContext(browser, { storageState: MULTI_AUTHORS.owner.state });
+	const page = await context.newPage();
+	try {
+		const response = await page.request.post(sharePostUrl, {
+			headers: {
+				origin: E2E_MULTI_BASE_URL,
+				'content-type': 'application/x-www-form-urlencoded'
+			},
+			form: { mode: 'open' },
+			failOnStatusCode: false
+		});
+		// A SvelteKit form action over the request API returns its result as JSON.
+		const result = (await response.json()) as {
+			type?: string;
+			data?: string;
+		};
+		expect(result.type, 'share creation should succeed').toBe('success');
+		// The action's `data` is SvelteKit's devalue-encoded form payload; the reader
+		// URL is the one `/r/<token>` string in it.
+		const shareUrl = result.data?.match(/https?:\/\/[^\s"\\]+\/r\/[A-Za-z0-9_-]{43}/)?.[0];
+		expect(shareUrl, 'share URL present in the action result').toBeTruthy();
+		return shareUrl!;
+	} finally {
+		await context.close();
+	}
+}
+
+test('multi mode gates a share behind reader verification, not a bare consultation link', async ({
+	browser
+}) => {
+	await clearMailbox();
+	const shareUrl = await createOpenShare(browser);
+	const inWhitelistReader = 'dana@reader.example.com';
+
+	const readerContext = await actorContext(browser);
+	const readerPage = await readerContext.newPage();
+	try {
+		// Opening the share does NOT serve the report directly: the verify card gates
+		// it (multi mode), unlike the single-mode consultation path.
+		await readerPage.goto(shareUrl);
+		await expect(
+			readerPage.getByRole('heading', { name: /enter your email to read this report/i })
+		).toBeVisible();
+		await expect(readerPage.getByRole('application')).toHaveCount(0);
+
+		// An in-whitelist reader submits their email and gets the neutral confirmation.
+		await clearMailbox();
+		await readerPage.getByRole('textbox', { name: 'Your email' }).fill(inWhitelistReader);
+		await readerPage.getByRole('button', { name: 'Send my link' }).click();
+		await expect(readerPage.getByRole('heading', { name: /check your email/i })).toBeVisible();
+
+		// Mailpit captured the reader magic link; clicking it opens a reader session
+		// and serves the report.
+		const magicLink = await getLatestMagicLink(inWhitelistReader);
+		await readerPage.goto(magicLink);
+		await expect(readerPage.getByRole('application')).toBeVisible();
+	} finally {
+		await readerContext.close();
+	}
+});
+
+test('an off-whitelist reader email is refused: no mail, neutral confirmation', async ({
+	browser
+}) => {
+	await clearMailbox();
+	const shareUrl = await createOpenShare(browser);
+	const offWhitelistReader = 'eve@outsider.test';
+
+	const readerContext = await actorContext(browser);
+	const readerPage = await readerContext.newPage();
+	try {
+		await readerPage.goto(shareUrl);
+		await expect(
+			readerPage.getByRole('heading', { name: /enter your email to read this report/i })
+		).toBeVisible();
+
+		await clearMailbox();
+		await readerPage.getByRole('textbox', { name: 'Your email' }).fill(offWhitelistReader);
+		await readerPage.getByRole('button', { name: 'Send my link' }).click();
+
+		// Same neutral confirmation as an in-whitelist reader (NFR9).
+		await expect(readerPage.getByRole('heading', { name: /check your email/i })).toBeVisible();
+
+		// But no link is ever issued or mailed - READER_EMAIL_DOMAINS short-circuits
+		// inside requestVerification before any token or send.
+		await expectNoMail(offWhitelistReader);
+	} finally {
+		await readerContext.close();
+	}
+});
