@@ -60,6 +60,77 @@ describe('Report (render integration)', () => {
 		expect(container.querySelector('.report.embedded')).not.toBeNull();
 	});
 
+	it('shows the level switcher and defaults to full when the document has tags', async () => {
+		const { container } = render(Report, { view: toReportView(validFull()) });
+		expect(container.querySelector('.level-switcher')).not.toBeNull();
+		// Default reading level is full (FR28); the root carries it so the CSS rules
+		// hide blocks excluded from that level.
+		expect(container.querySelector('.report[data-level="full"]')).not.toBeNull();
+		// A real, labelled radio group.
+		expect(container.querySelector('.level-switcher input[type="radio"]')).not.toBeNull();
+	});
+
+	it('hides the level switcher and omits data-level when the document has no tags', async () => {
+		const doc = validFull();
+		const stripped: DocumentV1 = {
+			...doc,
+			sections: doc.sections.map((section) => ({
+				...section,
+				audiences: undefined,
+				blocks: section.blocks.map((block) => ({ ...block, audiences: undefined }))
+			}))
+		};
+		const { container } = render(Report, { view: toReportView(stripped) });
+		expect(container.querySelector('.level-switcher')).toBeNull();
+		expect(container.querySelector('.report[data-level]')).toBeNull();
+	});
+
+	it('renders every level’s content SSR and toggles visibility by data attribute', async () => {
+		const { container } = render(Report, { view: toReportView(validFull()) });
+		// Tagged elements carry data-audiences so the CSS can hide them per level;
+		// untagged blocks carry none and stay visible at every level.
+		const tagged = container.querySelectorAll('[data-audiences]');
+		expect(tagged.length).toBeGreaterThan(0);
+		// A block tagged for only "summary" exists in the fixture and is rendered
+		// in the DOM (content is SSR at every level, only visibility toggles).
+		const summaryOnly = container.querySelector('[data-audiences="summary"]');
+		expect(summaryOnly).not.toBeNull();
+	});
+
+	it('removes a level-excluded block from layout (display:none) at the active level', async () => {
+		const { container } = render(Report, { view: toReportView(validFull()) });
+		// Default level is full. A summary-only block is excluded from full, so the
+		// CSS rule collapses it - display:none removes it from layout and the a11y
+		// tree, not merely visually.
+		const summaryOnly = container.querySelector<HTMLElement>('[data-audiences="summary"]');
+		expect(summaryOnly).not.toBeNull();
+		expect(getComputedStyle(summaryOnly!).display).toBe('none');
+	});
+
+	it('offers the per-level preview control in embedded mode (author preview)', async () => {
+		const { container } = render(Report, {
+			view: toReportView(validFull()),
+			embedded: true
+		});
+		// The author preview reuses the same switcher and the same data-level
+		// mechanism as the reader, so author and reader cannot drift (AC3).
+		expect(container.querySelector('.preview-levels .level-switcher')).not.toBeNull();
+		expect(container.querySelector('.report[data-level="full"]')).not.toBeNull();
+	});
+
+	it('renders the embedded preview filtered to the requested level', async () => {
+		const { container } = render(Report, {
+			view: toReportView(validFull()),
+			embedded: true,
+			level: 'technical'
+		});
+		// At technical, a summary-only block is excluded.
+		const summaryOnly = container.querySelector<HTMLElement>('[data-audiences="summary"]');
+		expect(summaryOnly).not.toBeNull();
+		expect(getComputedStyle(summaryOnly!).display).toBe('none');
+		expect(container.querySelector('.report[data-level="technical"]')).not.toBeNull();
+	});
+
 	it('renders a transiently-invalid block as a notice without throwing', async () => {
 		const snapshot = {
 			version: 1,

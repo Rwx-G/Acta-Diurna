@@ -4,6 +4,7 @@
 		ComparisonMatrixBlock as ComparisonMatrixBlockType,
 		Scales
 	} from '$lib/schema';
+	import { audiencesAttr } from '$lib/schema';
 	import type { BlockView } from '../document-view.ts';
 	import CalloutBlock from './CalloutBlock.svelte';
 	import CardGridBlock from './CardGridBlock.svelte';
@@ -65,7 +66,7 @@
 	void HANDLED_BLOCK_TYPES;
 </script>
 
-<div class="block" id={view.anchorId}>
+<div class="block" id={view.anchorId} data-audiences={audiencesAttr(view.audiences)}>
 	{#if view.block === null}
 		<p class="invalid" role="status">
 			{view.invalidNotice ?? 'This block is not valid yet. Fix it in the editor.'}

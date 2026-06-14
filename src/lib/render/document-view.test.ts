@@ -34,6 +34,31 @@ describe('toReportView', () => {
 		const first = view.sections[0].blocks[0];
 		expect(first.anchorId).toBe('executive-summary--headline-indicators');
 	});
+
+	it('threads section and block audience tags onto the view (Story 6.1)', () => {
+		const view = toReportView(validFull());
+		// The fixture's first section is audience-tagged; the renderer reads the
+		// tags through this view to drive the level switcher and visibility CSS.
+		expect(view.sections[0].audiences).toEqual(['summary', 'full']);
+		expect(view.sections[0].blocks[0].audiences).toEqual(['summary']);
+	});
+
+	it('flags a tagged document as carrying audiences', () => {
+		expect(toReportView(validFull()).hasAudiences).toBe(true);
+	});
+
+	it('reports no audiences when the document carries no tags', () => {
+		const doc = validFull();
+		const stripped: DocumentV1 = {
+			...doc,
+			sections: doc.sections.map((section) => ({
+				...section,
+				audiences: undefined,
+				blocks: section.blocks.map((block) => ({ ...block, audiences: undefined }))
+			}))
+		};
+		expect(toReportView(stripped).hasAudiences).toBe(false);
+	});
 });
 
 describe('toPreviewView (transiently-invalid tolerance)', () => {
@@ -57,6 +82,47 @@ describe('toPreviewView (transiently-invalid tolerance)', () => {
 		const result = validateDocument(fullDocument);
 		if (!result.ok) throw new Error('fixture should be valid');
 		expect(toPreviewView(fullDocument)).toEqual(toReportView(result.document));
+	});
+
+	it('threads audience tags and the hasAudiences flag through the preview', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Tagged draft',
+			sections: [
+				{
+					id: 'sec-1',
+					title: 'Section one',
+					audiences: ['summary', 'full'],
+					blocks: [
+						{
+							type: 'text',
+							id: 'deep',
+							audiences: ['technical'],
+							paragraphs: [[{ text: 'Technical detail.' }]]
+						}
+					]
+				}
+			]
+		};
+		const view = toPreviewView(snapshot);
+		expect(view.hasAudiences).toBe(true);
+		expect(view.sections[0].audiences).toEqual(['summary', 'full']);
+		expect(view.sections[0].blocks[0].audiences).toEqual(['technical']);
+	});
+
+	it('reports no audiences for an untagged draft', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Plain draft',
+			sections: [
+				{
+					id: 'sec-1',
+					title: 'Section one',
+					blocks: [{ type: 'text', id: 'ok', paragraphs: [[{ text: 'Plain.' }]] }]
+				}
+			]
+		};
+		expect(toPreviewView(snapshot).hasAudiences).toBe(false);
 	});
 
 	it('renders valid blocks and flags only the invalid one', () => {

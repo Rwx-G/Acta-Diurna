@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { audiencesAttr, DEFAULT_AUDIENCE, type Audience } from '$lib/schema';
 	import { resolveTheme } from './theme/index.ts';
 	import { ReaderNavigation, indexForFragment } from './navigation.svelte.ts';
 	import type { ReportView } from './document-view.ts';
 	import Cover from './Cover.svelte';
+	import LevelSwitcher from './LevelSwitcher.svelte';
 	import ProgressRail from './ProgressRail.svelte';
 	import SectionSlide from './SectionSlide.svelte';
 	import Toc from './Toc.svelte';
@@ -19,9 +21,19 @@
 		mode?: 'slide' | 'scroll';
 		/** Workspace preview embeds the renderer without the fixed chrome. */
 		embedded?: boolean;
+		/**
+		 * Audience level to render (Story 6.1). Defaults to `full` (FR28). The
+		 * reader and the workspace per-level preview both drive the SAME control:
+		 * the level sets `data-level` on the report root and CSS hides blocks whose
+		 * `data-audiences` excludes it - content stays SSR, only visibility toggles.
+		 */
+		level?: Audience;
 	}
 
-	let { view, mode = 'slide', embedded = false }: Props = $props();
+	let { view, mode = 'slide', embedded = false, level = DEFAULT_AUDIENCE }: Props = $props();
+
+	// svelte-ignore state_referenced_locally
+	let activeLevel = $state<Audience>(level);
 
 	const theme = $derived(resolveTheme(view.theme));
 	const sectionIds = $derived(view.sections.map((s) => s.id));
@@ -194,10 +206,19 @@
 	aria-label={embedded ? undefined : `${view.title} - interactive report`}
 	data-theme={theme === 'default' ? undefined : theme}
 	data-mode={effectiveMode}
+	data-level={view.hasAudiences ? activeLevel : undefined}
 	bind:this={container}
 	ontouchstart={embedded ? undefined : handleTouchStart}
 	ontouchend={embedded ? undefined : handleTouchEnd}
 >
+	{#if embedded && view.hasAudiences}
+		<!-- Workspace per-level preview control (AC3): drives the same data-level
+		     mechanism the reader uses, so author and reader cannot drift. -->
+		<div class="preview-levels">
+			<LevelSwitcher level={activeLevel} onchange={(next) => (activeLevel = next)} />
+		</div>
+	{/if}
+
 	{#if !embedded}
 		<ProgressRail progress={nav.progress} idle={nav.idle && !nav.tocOpen} />
 
@@ -211,6 +232,9 @@
 			>
 				<span aria-hidden="true">☰</span>
 			</button>
+			{#if view.hasAudiences}
+				<LevelSwitcher level={activeLevel} onchange={(next) => (activeLevel = next)} />
+			{/if}
 		</div>
 
 		<Toc
@@ -236,7 +260,11 @@
 		onclick={embedded ? undefined : handleEdgeTap}
 	>
 		{#each view.sections as section, index (section.id)}
-			<div bind:this={sectionEls[index]} class="section-host">
+			<div
+				bind:this={sectionEls[index]}
+				class="section-host"
+				data-audiences={audiencesAttr(section.audiences)}
+			>
 				<SectionSlide
 					{section}
 					{index}
@@ -289,7 +317,29 @@
 		top: var(--space-4);
 		left: var(--space-4);
 		z-index: 31;
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
 		transition: opacity 0.4s ease;
+	}
+
+	.preview-levels {
+		display: flex;
+		justify-content: flex-end;
+		margin-bottom: var(--space-3);
+	}
+
+	/* Audience-level visibility (Story 6.1). When `data-level` is set (only when
+	   the document carries tags), an element whose `data-audiences` does not list
+	   the active level is removed - `display: none` takes it out of the layout AND
+	   the accessibility tree, so a screen reader at "summary" never reaches
+	   "technical" content. Untagged elements carry no `data-audiences`, so no rule
+	   matches them and they stay visible at every level (FR28). With no JS the root
+	   carries no `data-level`, so every block renders (the default `full` view). */
+	.report[data-level='summary'] :global([data-audiences]:not([data-audiences~='summary'])),
+	.report[data-level='full'] :global([data-audiences]:not([data-audiences~='full'])),
+	.report[data-level='technical'] :global([data-audiences]:not([data-audiences~='technical'])) {
+		display: none;
 	}
 
 	.chrome.idle {

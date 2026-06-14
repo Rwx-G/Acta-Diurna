@@ -14,8 +14,10 @@
  */
 import {
 	blockSchema,
+	hasAudienceTags,
 	scalesSchema,
 	sectionSchema,
+	type Audience,
 	type Block,
 	type ComparisonMatrixBlock,
 	type DocumentV1,
@@ -28,6 +30,12 @@ export interface BlockView {
 	block: Block | null;
 	/** Stable anchor id (section id + block id). */
 	anchorId: string;
+	/**
+	 * Audience tags carried by this block (Story 6.1). Undefined or empty means
+	 * the block belongs to every level; the reader switcher and the workspace
+	 * per-level preview read this through the shared `isVisibleAtLevel` predicate.
+	 */
+	audiences?: readonly Audience[];
 	/** Author-facing notice when invalid (preview only); absent when valid. */
 	invalidNotice?: string;
 }
@@ -36,6 +44,8 @@ export interface SectionView {
 	id: string;
 	title: string;
 	annex: boolean;
+	/** Section-level audience tags (Story 6.1); see {@link BlockView.audiences}. */
+	audiences?: readonly Audience[];
 	blocks: BlockView[];
 	/** True when the section frame itself (id/title) failed - preview only. */
 	invalid: boolean;
@@ -68,6 +78,12 @@ export interface ReportView {
 	matrixBlocks: Map<string, ComparisonMatrixBlock>;
 	sections: SectionView[];
 	toc: TocEntry[];
+	/**
+	 * True when any section or block carries an audience tag (Story 6.1). Drives
+	 * the reader level switcher: hidden when false, so a document with no tags
+	 * renders identically for everyone (AC2).
+	 */
+	hasAudiences: boolean;
 }
 
 /** Indexes every comparison-matrix block in a section list by its id. */
@@ -104,10 +120,12 @@ export function toReportView(document: DocumentV1): ReportView {
 		id: section.id,
 		title: section.title,
 		annex: section.annex ?? false,
+		audiences: section.audiences,
 		invalid: false,
 		blocks: section.blocks.map((block) => ({
 			block,
-			anchorId: blockAnchor(section.id, block)
+			anchorId: blockAnchor(section.id, block),
+			audiences: block.audiences
 		}))
 	}));
 	return {
@@ -116,7 +134,8 @@ export function toReportView(document: DocumentV1): ReportView {
 		scales: document.scales,
 		matrixBlocks: collectMatrixBlocks(document.sections),
 		sections,
-		toc: tocFrom(sections)
+		toc: tocFrom(sections),
+		hasAudiences: hasAudienceTags(document.sections)
 	};
 }
 
@@ -178,10 +197,12 @@ export function toPreviewView(snapshot: unknown): ReportView {
 				id: section.id,
 				title: section.title,
 				annex: section.annex ?? false,
+				audiences: section.audiences,
 				invalid: false,
 				blocks: section.blocks.map((block) => ({
 					block,
-					anchorId: blockAnchor(section.id, block)
+					anchorId: blockAnchor(section.id, block),
+					audiences: block.audiences
 				}))
 			};
 		}
@@ -193,7 +214,7 @@ export function toPreviewView(snapshot: unknown): ReportView {
 			const blockResult = blockSchema.safeParse(rawBlock);
 			const anchorId = blockAnchor(id, (rawBlock ?? {}) as { id?: unknown });
 			if (blockResult.success) {
-				return { block: blockResult.data, anchorId };
+				return { block: blockResult.data, anchorId, audiences: blockResult.data.audiences };
 			}
 			return {
 				block: null,
@@ -229,7 +250,15 @@ export function toPreviewView(snapshot: unknown): ReportView {
 	);
 	const matrixBlocks = collectMatrixBlocks([{ blocks: validBlocks }]);
 
-	return { title, theme, scales, matrixBlocks, sections, toc: tocFrom(sections) };
+	return {
+		title,
+		theme,
+		scales,
+		matrixBlocks,
+		sections,
+		toc: tocFrom(sections),
+		hasAudiences: hasAudienceTags(sections)
+	};
 }
 
 interface ZodLikeIssue {
