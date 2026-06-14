@@ -24,7 +24,7 @@ const SCHEMA_FILE = join(SERVER_ROOT, 'db', 'schema.ts');
 
 /**
  * The ONE sanctioned bypass surface (relative to src/lib/server). The reader path
- * `getRowUnscoped` in documents/reports.ts reads a published report by id with NO
+ * `getReaderRow` in documents/reports.ts reads a published report by id with NO
  * owner predicate ON PURPOSE: a verified reader is gated by the share, not by
  * authorship, so it must reach the owning author's report. That file ALSO uses
  * `ownerFilter` on every AUTHOR surface, so it would pass the guard anyway; it is
@@ -36,7 +36,7 @@ const SCHEMA_FILE = join(SERVER_ROOT, 'db', 'schema.ts');
  */
 const SANCTIONED_UNSCOPED: Record<string, string> = {
 	'documents/reports.ts':
-		'getRowUnscoped serves the reader path (share-gated, not author-gated); the file still owner-scopes every author surface.',
+		'getReaderRow serves the reader path (share-gated, not author-gated); the file still owner-scopes every author surface.',
 	'authors/inheritance.ts':
 		'Boot-time backfill that assigns every owner-less legacy row to the implicit author (WHERE owner_id IS NULL); it is a SYSTEM operation that runs once before traffic, deliberately across all rows, not a tenant request.',
 	'maintenance/purge.ts':

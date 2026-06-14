@@ -110,29 +110,80 @@ function validationFailed(errors: ValidationErrorDetail[]): AppError {
 	});
 }
 
+/**
+ * The owner-scoped id-lookup WHERE (story 8.2). In multi mode the owner predicate
+ * ANDs into the lookup so a cross-author id misses and raises the SAME 404 - no
+ * existence oracle. In single mode `ownerFilter` is undefined and the WHERE is the
+ * bare id match, byte-identical to the pre-8.2 query. Shared by every scoped read
+ * regardless of which projection it pulls.
+ */
+function scopedWhere(id: string, scope: AuthorScope): SQL {
+	const owner = ownerFilter(scope, reports.ownerId);
+	return owner ? and(eq(reports.id, id), owner)! : eq(reports.id, id);
+}
+
+/**
+ * Loads the FULL report row by id (both JSONB document columns), for the paths
+ * that genuinely read the draft `document` or return a full {@link Report}
+ * ({@link getReport}, {@link duplicateReport}, the update/publish paths). The
+ * status-only and reader paths use the narrow projections below so they never
+ * pull both heavy JSONB columns (3.x performance audit, E1).
+ */
 async function getRow(id: string, scope: AuthorScope): Promise<ReportRow> {
 	// Boundary check: a malformed id is a 404, not a postgres cast error.
 	if (!UUID_PATTERN.test(id)) throw notFound();
-	// Tenancy filter (story 8.2): in multi mode the owner predicate ANDs into the
-	// lookup so a cross-author id misses and raises the SAME 404 - no existence
-	// oracle. In single mode `ownerFilter` is undefined and the WHERE is the bare
-	// id match, byte-identical to the pre-8.2 query.
-	const owner = ownerFilter(scope, reports.ownerId);
-	const where = owner ? and(eq(reports.id, id), owner) : eq(reports.id, id);
-	const rows = await getDb().select().from(reports).where(where).limit(1);
+	const rows = await getDb().select().from(reports).where(scopedWhere(id, scope)).limit(1);
 	if (rows.length === 0) throw notFound();
 	return rows[0];
 }
 
+/** Status/metadata projection: what a status-only check needs, no JSONB document column. */
+type ReportMetaRow = { id: string; status: string };
+
+const metaProjection = { id: reports.id, status: reports.status };
+
 /**
- * Loads a report row by id with NO owner scoping - the reader path
- * ({@link getPublishedDocument}) only. A reader is gated by the share, not by
- * authorship, so it must reach the owning author's report. Author surfaces never
- * use this; they go through {@link getRow} with a scope.
+ * Loads only the metadata a status/ownership check needs - id and status - with
+ * NEITHER heavy JSONB column. Used by the listability/status paths
+ * ({@link deleteDraft}) so a status check never transfers the draft document or
+ * the published snapshot (3.x performance audit, E1). Owner-scoped like
+ * {@link getRow}: a cross-author id is the same 404.
  */
-async function getRowUnscoped(id: string): Promise<ReportRow> {
+async function getMetaRow(id: string, scope: AuthorScope): Promise<ReportMetaRow> {
 	if (!UUID_PATTERN.test(id)) throw notFound();
-	const rows = await getDb().select().from(reports).where(eq(reports.id, id)).limit(1);
+	const rows = await getDb()
+		.select(metaProjection)
+		.from(reports)
+		.where(scopedWhere(id, scope))
+		.limit(1);
+	if (rows.length === 0) throw notFound();
+	return rows[0];
+}
+
+/** Reader projection: the published snapshot, status, and id - the only columns the reader serves. */
+type ReportReaderRow = { id: string; status: string; publishedDocument: DocumentV1 | null };
+
+const readerProjection = {
+	id: reports.id,
+	status: reports.status,
+	publishedDocument: reports.publishedDocument
+};
+
+/**
+ * Loads the READER projection by id with NO owner scoping - the reader path
+ * ({@link getPublishedDocument}) only. A reader is gated by the share, not by
+ * authorship, so it must reach the owning author's report. Pulls only the
+ * published snapshot, status, and id (NOT the draft `document` the reader never
+ * serves), so a reader read never transfers the editable draft (3.x performance
+ * audit, E1). Author surfaces never use this; they go through {@link getRow}.
+ */
+async function getReaderRow(id: string): Promise<ReportReaderRow> {
+	if (!UUID_PATTERN.test(id)) throw notFound();
+	const rows = await getDb()
+		.select(readerProjection)
+		.from(reports)
+		.where(eq(reports.id, id))
+		.limit(1);
 	if (rows.length === 0) throw notFound();
 	return rows[0];
 }
@@ -413,7 +464,9 @@ export async function updateReportTitle(
 
 /** Deletes a draft; published reports refuse with 409 (no cascade exists yet). */
 export async function deleteDraft(id: string, scope: AuthorScope): Promise<void> {
-	const row = await getRow(id, scope);
+	// Status-only check: the metadata projection avoids pulling either JSONB
+	// document column just to gate the delete (E1).
+	const row = await getMetaRow(id, scope);
 	if (row.status === 'published') {
 		throw publishedConflict('Published reports cannot be deleted.');
 	}
@@ -529,7 +582,7 @@ export async function getPublishedDocument(
 	// reader does not act as an author, so this read is NOT owner-scoped - the
 	// share is the access gate, and a published report is the same content for every
 	// authorized reader regardless of which author owns it.
-	const row = await getRowUnscoped(id);
+	const row = await getReaderRow(id);
 	if (row.status !== 'published' || row.publishedDocument === null) throw notShareable();
 	// The snapshot was validated at publish time, yet it is migrated-then-validated
 	// again here on every read. This is the FR7 version-tolerance path, not dead

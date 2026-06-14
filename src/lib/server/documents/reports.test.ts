@@ -604,6 +604,16 @@ describe('deleteDraft', () => {
 		expect(dbState.deleteFilters).toHaveLength(0);
 		expect(dbState.rowsById.has(row.id)).toBe(true);
 	});
+
+	it('reads only the status/metadata projection for the gate, never the JSONB columns (E1)', async () => {
+		const row = seedReport();
+
+		await deleteDraft(row.id, TEST_SCOPE);
+
+		expect(dbState.selectProjections).toEqual([['id', 'status']]);
+		expect(dbState.selectProjections[0]).not.toContain('document');
+		expect(dbState.selectProjections[0]).not.toContain('published_document');
+	});
 });
 
 describe('publishReport', () => {
@@ -767,6 +777,23 @@ describe('getPublishedDocument', () => {
 		const error = await expectAppError(getPublishedDocument(row.id), 409);
 
 		expect(error.type).toBe('/problems/report-not-published');
+	});
+
+	it('reads only the reader projection (status + published snapshot), never the draft document (E1)', async () => {
+		const row = seedReport({
+			status: 'published',
+			publishedDocument: seedDocument(),
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+		dbState.selectProjections = [];
+
+		const document = await getPublishedDocument(row.id);
+
+		// The single read pulls only id/status/published_document - never the draft.
+		expect(dbState.selectProjections).toEqual([['id', 'status', 'published_document']]);
+		expect(dbState.selectProjections[0]).not.toContain('document');
+		// The caller still receives the snapshot it serves.
+		expect(document.title).toBe('Quarterly Review');
 	});
 
 	it('strips author-only speaker notes before serving a reader (Story 6.2 privacy)', async () => {
