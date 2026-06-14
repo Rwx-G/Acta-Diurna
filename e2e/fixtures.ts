@@ -18,6 +18,11 @@ export {
 	DATA_AS_OF_CAPTION
 } from './fixtures/data-as-of.ts';
 export { DETAIL_FIXTURE_DOCUMENT } from './fixtures/detail.ts';
+export {
+	DELTA_FIRST_ISSUE_DOCUMENT,
+	DELTA_SECOND_ISSUE_DOCUMENT,
+	DELTA_SECOND_ISSUE_FIGURE
+} from './fixtures/delta.ts';
 
 export const E2E_PORT = 4173;
 export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
@@ -146,3 +151,7 @@ export const DATA_AS_OF_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-00000000000
 
 /** The Epic 11 drill-down fixture report id (document in `fixtures/detail.ts`). */
 export const DETAIL_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000007';
+
+/** The Story 9.4 delta fixture: the first issue (no delta) and the second (baked up-delta). */
+export const DELTA_FIRST_ISSUE_REPORT_ID = '0197b300-0000-7000-8000-000000000008';
+export const DELTA_SECOND_ISSUE_REPORT_ID = '0197b300-0000-7000-8000-000000000009';
