@@ -52,6 +52,7 @@ import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
 import { generateOutline, fillFromOutline, hashOutline } from '$lib/server/ai/generate';
+import { aiGenerationLimiter } from '$lib/server/auth/rate-limit';
 import { buildMcpServer, MCP_SERVER_NAME } from './server';
 
 const generateOutlineMock = vi.mocked(generateOutline);
@@ -93,6 +94,8 @@ let client: Client;
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	// A fresh generation bucket per test so the cost brake never bleeds across cases.
+	(aiGenerationLimiter as unknown as { buckets: Map<string, unknown> }).buckets.clear();
 	listReportsMock.mockResolvedValue([]);
 	listSkeletonsMock.mockResolvedValue([]);
 
@@ -338,6 +341,27 @@ describe('buildMcpServer', () => {
 			VALID_REPORT_ID,
 			undefined
 		);
+	});
+
+	it('rate-limits generate_outline through the SDK once the per-author bucket drains (429, no LLM call)', async () => {
+		const outline = {
+			title: 'Weekly Ops',
+			sections: [{ title: 'Overview', intent: '', blocks: [{ type: 'text', intent: 'x' }] }]
+		};
+		generateOutlineMock.mockResolvedValue(outline as never);
+		hashOutlineMock.mockReturnValue('h');
+
+		for (let i = 0; i < 10; i += 1) {
+			await client.callTool({ name: 'generate_outline', arguments: { intent: 'x' } });
+		}
+		const callsBefore = generateOutlineMock.mock.calls.length;
+
+		const limited = await client.callTool({ name: 'generate_outline', arguments: { intent: 'x' } });
+
+		expect(limited.isError).toBe(true);
+		const content = limited.content as { type: string; text: string }[];
+		expect((JSON.parse(content[0].text) as { status: number }).status).toBe(429);
+		expect(generateOutlineMock.mock.calls.length).toBe(callsBefore);
 	});
 
 	it('rejects a malformed push_data_set reportId at the boundary (no service call)', async () => {

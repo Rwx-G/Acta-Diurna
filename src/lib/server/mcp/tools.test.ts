@@ -51,6 +51,7 @@ import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
 import { fillFromOutline, generateOutline, hashOutline } from '$lib/server/ai/generate';
+import { aiGenerationLimiter } from '$lib/server/auth/rate-limit';
 import {
 	createReportTool,
 	deleteReportTool,
@@ -99,6 +100,8 @@ function payload(result: McpToolResult): unknown {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	// A fresh generation bucket per test so the cost brake never bleeds across cases.
+	(aiGenerationLimiter as unknown as { buckets: Map<string, unknown> }).buckets.clear();
 });
 
 describe('get_schema tool', () => {
@@ -630,5 +633,54 @@ describe('generate_outline / generate_report tools', () => {
 		const problem = payload(result) as { status: number; errors: unknown[] };
 		expect(problem.status).toBe(422);
 		expect(problem.errors).toHaveLength(1);
+	});
+
+	it('generate_outline returns the 429 problem and makes no LLM call once the bucket drains', async () => {
+		generateOutlineMock.mockResolvedValue(OUTLINE as never);
+		hashOutlineMock.mockReturnValue('h');
+
+		// Drain the per-author bucket (capacity 10), then the 11th call is throttled.
+		for (let i = 0; i < 10; i += 1) {
+			await generateOutlineTool({ intent: 'x' }, TEST_SCOPE);
+		}
+		const callsBefore = generateOutlineMock.mock.calls.length;
+
+		const limited = await generateOutlineTool({ intent: 'x' }, TEST_SCOPE);
+
+		expect(limited.isError).toBe(true);
+		const problem = payload(limited) as { status: number };
+		expect(problem.status).toBe(429);
+		// The throttled call never reached the generation service (no LLM call).
+		expect(generateOutlineMock.mock.calls.length).toBe(callsBefore);
+	});
+
+	it('generate_report returns the 429 problem and makes no LLM call once the bucket drains', async () => {
+		fillFromOutlineMock.mockResolvedValue(REPORT);
+
+		for (let i = 0; i < 10; i += 1) {
+			await fillOutlineTool({ outline: OUTLINE, outlineHash: 'h' }, TEST_SCOPE);
+		}
+		const callsBefore = fillFromOutlineMock.mock.calls.length;
+
+		const limited = await fillOutlineTool({ outline: OUTLINE, outlineHash: 'h' }, TEST_SCOPE);
+
+		expect(limited.isError).toBe(true);
+		expect((payload(limited) as { status: number }).status).toBe(429);
+		expect(fillFromOutlineMock.mock.calls.length).toBe(callsBefore);
+	});
+
+	it('shares one per-author bucket across generate_outline and generate_report', async () => {
+		generateOutlineMock.mockResolvedValue(OUTLINE as never);
+		hashOutlineMock.mockReturnValue('h');
+		fillFromOutlineMock.mockResolvedValue(REPORT);
+
+		// Mixed draw against the same key (scope.authorId): 10 tokens total, then deny.
+		for (let i = 0; i < 5; i += 1) {
+			await generateOutlineTool({ intent: 'x' }, TEST_SCOPE);
+			await fillOutlineTool({ outline: OUTLINE, outlineHash: 'h' }, TEST_SCOPE);
+		}
+
+		const limited = await generateOutlineTool({ intent: 'x' }, TEST_SCOPE);
+		expect((payload(limited) as { status: number }).status).toBe(429);
 	});
 });

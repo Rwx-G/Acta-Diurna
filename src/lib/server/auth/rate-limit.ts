@@ -291,6 +291,19 @@ export const aiGenerationLimiter: TokenBucketLimiter = new TokenBucketLimiter(
 	AI_GENERATION_REFILL_TOKENS_PER_SECOND
 );
 
+/**
+ * The `aiGenerationLimiter` key for the MCP generation tools. MCP delegates under
+ * an `AuthorScope` (no token id reaches the tool), so it is keyed by the author:
+ * one author's MCP generation burst is capped across all their PATs - arguably
+ * tighter than the REST per-token key, and one author never starves another. The
+ * `:/api/generate` suffix mirrors the REST key so both surfaces share one bucket
+ * shape; a single logical call still costs exactly one token on whichever surface
+ * issued it (no double-charge across surfaces).
+ */
+export function mcpGenerationRateKey(authorId: string): string {
+	return `${authorId}:/api/generate`;
+}
+
 /** Test-send burst before the limiter engages (story 3.1 QA): a small batch so
  * an operator can probe a couple of addresses, then a slow drip. */
 const TEST_SEND_BUCKET_CAPACITY = 5;

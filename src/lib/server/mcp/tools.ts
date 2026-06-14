@@ -36,7 +36,8 @@ import {
 	hashOutline,
 	type Outline
 } from '$lib/server/ai/generate';
-import { AppError } from '$lib/server/problem';
+import { AppError, rateLimited } from '$lib/server/problem';
+import { aiGenerationLimiter, mcpGenerationRateKey } from '$lib/server/auth/rate-limit';
 import { getPublishedSchema } from '$lib/server/schema/published';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 
@@ -253,6 +254,12 @@ export function pushDataSetTool(
  * is a value the agent holds (not server-redeemable state), so the content-hash
  * binding is sufficient on a single principal - no cross-principal substitution
  * surface, no server-minted nonce needed.
+ *
+ * COST/DoS brake: each stage issues a metered LLM call, so both tools consume the
+ * SAME `aiGenerationLimiter` the REST generate routes use BEFORE any `chatComplete`,
+ * keyed per AUTHOR (`mcpGenerationRateKey(scope.authorId)`; MCP carries no token id).
+ * On deny they return the standard 429 problem via the tool error channel and make
+ * no LLM call.
  */
 
 /**
@@ -266,6 +273,10 @@ export function generateOutlineTool(
 	scope: AuthorScope
 ): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
+		const decision = aiGenerationLimiter.consume(mcpGenerationRateKey(scope.authorId));
+		if (!decision.allowed) {
+			throw rateLimited(decision.retryAfterSeconds);
+		}
 		const outline = await generateOutline(
 			{
 				intent: input.intent,
@@ -299,8 +310,12 @@ export function fillOutlineTool(
 	},
 	scope: AuthorScope
 ): Promise<McpToolResult> {
-	return withProblemMapping(async () =>
-		jsonResult(
+	return withProblemMapping(async () => {
+		const decision = aiGenerationLimiter.consume(mcpGenerationRateKey(scope.authorId));
+		if (!decision.allowed) {
+			throw rateLimited(decision.retryAfterSeconds);
+		}
+		return jsonResult(
 			await fillFromOutline(
 				{
 					intent: '',
@@ -313,6 +328,6 @@ export function fillOutlineTool(
 				input.reportId,
 				toExpectedDate(input.expectedUpdatedAt)
 			)
-		)
-	);
+		);
+	});
 }
