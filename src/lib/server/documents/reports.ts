@@ -10,6 +10,7 @@ import {
 import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import {
+	applyOwnerScopedFilters,
 	cursorPredicate,
 	decodeCursor,
 	pageSize,
@@ -302,13 +303,10 @@ function selectReportSummaries(
 		status: reports.status,
 		updatedAt: reports.updatedAt
 	};
-	const predicates: SQL[] = [];
-	if (owner) predicates.push(owner);
-	if (keyset) predicates.push(keyset);
-	let query = getDb().select(projection).from(reports).$dynamic();
-	if (predicates.length > 0) {
-		query = query.where(predicates.length === 1 ? predicates[0] : and(...predicates));
-	}
+	const query = applyOwnerScopedFilters(getDb().select(projection).from(reports).$dynamic(), [
+		owner,
+		keyset
+	]);
 	return query.orderBy(desc(reports.updatedAt), desc(reports.id)).limit(limit + 1);
 }
 

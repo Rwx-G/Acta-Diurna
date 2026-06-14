@@ -82,7 +82,38 @@ vi.mock('$lib/server/db/client', () => ({
 		select: () => ({
 			from: (table: unknown) => {
 				const store = storeFor(getTableName(table as never));
+				// `$dynamic()` returns a query whose `where` is chainable (returns the
+				// same dynamic query) and whose `orderBy` is terminal, mirroring how the
+				// shared `applyOwnerScopedFilters` helper conditionally ANDs an owner
+				// predicate in before the order/limit. A filtered `where` still keeps the
+				// id-lookup behaviour the getSkeleton path relies on.
+				const filteredQuery = (rows: Record<string, unknown>[]) => ({
+					orderBy: (order: SQL) => {
+						dbState.orderBys.push(decodeOrderBy(order));
+						return Promise.resolve(rows);
+					},
+					limit: () => Promise.resolve(rows)
+				});
+				const dynamicQuery = {
+					where: (filter: SQL) => {
+						const decoded = decodeEqFilter(filter);
+						const rows =
+							decoded.column === 'id'
+								? (() => {
+										const row = store.get(String(decoded.value));
+										return row ? [row] : [];
+									})()
+								: [...store.values()];
+						return filteredQuery(rows);
+					},
+					orderBy: (order: SQL) => {
+						dbState.orderBys.push(decodeOrderBy(order));
+						return Promise.resolve([...store.values()]);
+					},
+					limit: () => Promise.resolve([...store.values()])
+				};
 				return {
+					$dynamic: () => dynamicQuery,
 					where: (filter: SQL) => {
 						const decoded = decodeEqFilter(filter);
 						return {

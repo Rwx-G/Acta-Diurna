@@ -15,10 +15,11 @@
  * reports. Retention (`purgeAccessRecords`, purge.ts) bounds how long these rows
  * are kept; this query only reads them.
  */
-import { and, desc, eq, type SQL } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { ownerFilter, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import {
+	applyOwnerScopedFilters,
 	cursorPredicate,
 	decodeCursor,
 	pageSize,
@@ -84,37 +85,33 @@ export async function listAccessRecords(
 	if (filter.readerId !== undefined && !UUID_PATTERN.test(filter.readerId)) return EMPTY_PAGE;
 
 	const limit = pageSize(page.limit);
-	const predicates: SQL[] = [];
 	const owner = ownerFilter(scope, reports.ownerId);
-	if (owner) predicates.push(owner);
-	if (filter.reportId !== undefined) predicates.push(eq(accessRecords.reportId, filter.reportId));
-	if (filter.readerId !== undefined) {
-		predicates.push(eq(accessRecords.readerIdentityId, filter.readerId));
-	}
+	const reportFilter =
+		filter.reportId !== undefined ? eq(accessRecords.reportId, filter.reportId) : undefined;
+	const readerFilter =
+		filter.readerId !== undefined ? eq(accessRecords.readerIdentityId, filter.readerId) : undefined;
 	const keyset = cursorPredicate(
 		decodeCursor(page.cursor),
 		accessRecords.accessedAt,
 		accessRecords.id
 	);
-	if (keyset) predicates.push(keyset);
 
-	let query = getDb()
-		.select({
-			id: accessRecords.id,
-			reportId: accessRecords.reportId,
-			reportTitle: reports.title,
-			readerIdentityId: accessRecords.readerIdentityId,
-			readerEmail: readerIdentities.email,
-			accessedAt: accessRecords.accessedAt
-		})
-		.from(accessRecords)
-		.innerJoin(reports, eq(accessRecords.reportId, reports.id))
-		.innerJoin(readerIdentities, eq(accessRecords.readerIdentityId, readerIdentities.id))
-		.$dynamic();
-
-	if (predicates.length > 0) {
-		query = query.where(predicates.length === 1 ? predicates[0] : and(...predicates));
-	}
+	const query = applyOwnerScopedFilters(
+		getDb()
+			.select({
+				id: accessRecords.id,
+				reportId: accessRecords.reportId,
+				reportTitle: reports.title,
+				readerIdentityId: accessRecords.readerIdentityId,
+				readerEmail: readerIdentities.email,
+				accessedAt: accessRecords.accessedAt
+			})
+			.from(accessRecords)
+			.innerJoin(reports, eq(accessRecords.reportId, reports.id))
+			.innerJoin(readerIdentities, eq(accessRecords.readerIdentityId, readerIdentities.id))
+			.$dynamic(),
+		[owner, reportFilter, readerFilter, keyset]
+	);
 
 	// Tiebreak on id (a time-ordered UUIDv7) so two accesses sharing a timestamp
 	// order deterministically and the cursor never straddles them. Fetch limit + 1
@@ -131,17 +128,8 @@ export async function listOwnedReportOptions(
 ): Promise<{ id: string; title: string }[]> {
 	const owner = ownerFilter(scope, reports.ownerId);
 	const projection = { id: reports.id, title: reports.title };
-	if (!owner) {
-		return getDb()
-			.select(projection)
-			.from(reports)
-			.orderBy(desc(reports.updatedAt))
-			.limit(MAX_ACCESS_RECORDS_LISTED);
-	}
-	return getDb()
-		.select(projection)
-		.from(reports)
-		.where(owner)
-		.orderBy(desc(reports.updatedAt))
-		.limit(MAX_ACCESS_RECORDS_LISTED);
+	const query = applyOwnerScopedFilters(getDb().select(projection).from(reports).$dynamic(), [
+		owner
+	]);
+	return query.orderBy(desc(reports.updatedAt)).limit(MAX_ACCESS_RECORDS_LISTED);
 }

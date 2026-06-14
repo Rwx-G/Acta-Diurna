@@ -25,7 +25,7 @@
  * audit view, the REST list) can then offer "load older" instead of dropping data.
  */
 import { and, eq, lt, or, type SQL } from 'drizzle-orm';
-import type { PgColumn } from 'drizzle-orm/pg-core';
+import type { PgColumn, PgSelect } from 'drizzle-orm/pg-core';
 import { UUID_PATTERN } from './ids.ts';
 
 /** The default page size when a caller passes no `limit` (matches the prior list caps' intent: a bounded page). */
@@ -108,6 +108,30 @@ export function cursorPredicate(
 		lt(timestampColumn, position.timestamp),
 		and(eq(timestampColumn, position.timestamp), lt(idColumn, position.id))
 	);
+}
+
+/**
+ * ANDs the present predicates into a `$dynamic()` select's WHERE, or leaves the
+ * query untouched when none are present. This is the ONE place the "conditionally
+ * filter an owning list by an owner predicate (and a keyset cursor)" branch lives
+ * (story 8.2 / full-audit C2): every owner-scoped list service drops its
+ * `ownerFilter(...)` and `cursorPredicate(...)` (each `SQL | undefined`) into the
+ * array and calls this, instead of re-implementing the same no-predicate /
+ * one-predicate / `and(...)` cascade.
+ *
+ * Crucially, when the array is empty (single mode, no cursor - the owner filter
+ * is undefined and there is no keyset) the query is returned with NO `.where()`
+ * call, so its SQL stays BYTE-IDENTICAL to the pre-8.2 unfiltered chain. A single
+ * predicate is applied bare (no needless `and(x)` wrapper); two or more are
+ * `and(...)`-combined.
+ */
+export function applyOwnerScopedFilters<T extends PgSelect>(
+	query: T,
+	predicates: ReadonlyArray<SQL | undefined>
+): T {
+	const present = predicates.filter((predicate): predicate is SQL => predicate !== undefined);
+	if (present.length === 0) return query;
+	return query.where(present.length === 1 ? present[0] : and(...present)) as T;
 }
 
 /**

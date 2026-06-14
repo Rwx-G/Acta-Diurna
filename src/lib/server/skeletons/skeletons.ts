@@ -14,6 +14,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
 import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
+import { applyOwnerScopedFilters } from '$lib/server/db/cursor';
 import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
 import { skeletons, type SkeletonRow } from '$lib/server/db/schema';
 import { createReportWithDocument, type Report } from '$lib/server/documents/reports';
@@ -124,8 +125,8 @@ export async function saveSkeleton(structureInput: unknown, scope: AuthorScope):
  *  in multi mode another author's skeletons are invisible. */
 export async function listSkeletons(scope: AuthorScope): Promise<SkeletonSummary[]> {
 	const owner = ownerFilter(scope, skeletons.ownerId);
-	const base = getDb().select().from(skeletons);
-	const rows = await (owner ? base.where(owner) : base).orderBy(desc(skeletons.updatedAt));
+	const query = applyOwnerScopedFilters(getDb().select().from(skeletons).$dynamic(), [owner]);
+	const rows = await query.orderBy(desc(skeletons.updatedAt));
 	return rows.map((row) => ({ id: row.id, name: row.name, updatedAt: row.updatedAt }));
 }
 

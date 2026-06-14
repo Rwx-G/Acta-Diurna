@@ -88,8 +88,21 @@ vi.mock('$lib/server/db/client', () => ({
 		}),
 		select: () => ({
 			from: () => ({
-				// getSkeleton -> where(...).limit(1); listSkeletons (multi) -> where(owner)
-				// .orderBy(...). A bare orderBy (single-mode list) is not reached here.
+				// getSkeleton -> where(...).limit(1); listSkeletons (multi) ->
+				// $dynamic().where(owner).orderBy(...) through the shared owner-scope
+				// helper. A bare orderBy (single-mode list) is not reached here.
+				$dynamic: () => ({
+					where: (filter: SQL) => {
+						const filtered = matches(skeletonStore.rows, decodeEqFilters(filter));
+						return {
+							orderBy: () => Promise.resolve(filtered),
+							limit: (count: number) => Promise.resolve(filtered.slice(0, count))
+						};
+					},
+					orderBy: () => Promise.resolve([...skeletonStore.rows.values()]),
+					limit: (count: number) =>
+						Promise.resolve([...skeletonStore.rows.values()].slice(0, count))
+				}),
 				where: (filter: SQL) => {
 					const filtered = matches(skeletonStore.rows, decodeEqFilters(filter));
 					return {
