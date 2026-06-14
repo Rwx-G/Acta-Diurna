@@ -20,6 +20,7 @@ import {
 	listReportsTool,
 	listSkeletonsTool,
 	publishReportTool,
+	pushDataSetTool,
 	unpublishReportTool,
 	updateReportTool
 } from '$lib/server/mcp/tools';
@@ -43,7 +44,7 @@ const expectedUpdatedAtArg = z
 	.describe('Optimistic-concurrency token: the ISO 8601 updatedAt you last saw.');
 
 export const MCP_SERVER_NAME = 'acta-diurna';
-export const MCP_SERVER_VERSION = '0.6.0';
+export const MCP_SERVER_VERSION = '0.7.0';
 
 /**
  * Builds a fresh `McpServer` with the discovery (read) + authoring (write) tool
@@ -60,8 +61,9 @@ export function buildMcpServer(scope: AuthorScope): McpServer {
 				'Authoring surface for an Acta Diurna instance. Fetch the document JSON Schema ' +
 				'and examples (get_schema), list skeletons and reports and read a single report ' +
 				'to orient, then author with create_report / update_report / publish_report / ' +
-				'unpublish_report / delete_report. The same service layer, validation, and ' +
-				'problem-details errors apply as the REST API.'
+				'unpublish_report / delete_report. Push CSV or JSON data onto a draft report and ' +
+				'auto-rebind its blocks with push_data_set. The same service layer, validation, ' +
+				'and problem-details errors apply as the REST API.'
 		}
 	);
 
@@ -208,6 +210,46 @@ export function buildMcpServer(scope: AuthorScope): McpServer {
 			}
 		},
 		({ id }) => deleteReportTool(id, scope)
+	);
+
+	// Data-push tool (deferred Epic 5 follow-up): the FR13/14/15 parity of the REST
+	// POST /api/v1/data-sets. Delegates to the EXACT ingestion + binding services
+	// the REST push calls (AR5 parity). The file arrives as a `content` string (MCP
+	// is JSON-RPC, not a raw-body transport); the service validates and parses it,
+	// so an unparseable body / published target / unknown report surfaces the same
+	// problem-details the REST push returns.
+	server.registerTool(
+		'push_data_set',
+		{
+			title: 'Push a data set',
+			description:
+				'Pushes CSV or JSON data through the same ingestion + binding pipeline the workspace ' +
+				'upload and the REST data-set push use. With a `reportId` the matching draft report ' +
+				'auto-rebinds and the result carries the per-block binding diagnostics + summary; ' +
+				'without one the data set is stored unbound. The data goes in `content` as text; ' +
+				'`format` declares how to parse it. A published target is a conflict error; an ' +
+				'unparseable body is a validation error result.',
+			inputSchema: {
+				content: z.string().describe('The data file contents as text (CSV or JSON).'),
+				format: z
+					.enum(['csv', 'json'])
+					.describe('How to parse `content`: `csv` or `json` (matches the REST push).'),
+				reportId: z
+					.string()
+					.uuid()
+					.optional()
+					.describe('Target draft report to bind the data onto (UUID); omit to store unbound.'),
+				filename: z
+					.string()
+					.optional()
+					.describe('A label for the data set (metadata only; stored bytes use a UUID name).')
+			},
+			// Not idempotent: each call mints a new data set (a fresh id) and re-runs the
+			// rebind. Not destructive: it adds a data set and re-resolves bound blocks,
+			// it does not delete anything.
+			annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }
+		},
+		(input) => pushDataSetTool(input, scope)
 	);
 
 	return server;

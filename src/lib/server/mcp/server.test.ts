@@ -18,6 +18,11 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
+vi.mock('$lib/server/ingestion', () => ({
+	ingestBytes: vi.fn(),
+	rebindReport: vi.fn()
+}));
+
 vi.mock('$lib/server/mode', () => ({
 	operatingMode: () => 'single',
 	isMultiAuthor: () => false
@@ -39,6 +44,7 @@ import {
 } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
+import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
 import { buildMcpServer, MCP_SERVER_NAME } from './server';
 
 const VALID_REPORT_ID = '01970000-0000-7000-8000-000000000001';
@@ -53,17 +59,21 @@ const updateReportTitleMock = vi.mocked(updateReportTitle);
 const publishReportMock = vi.mocked(publishReport);
 const unpublishToDraftMock = vi.mocked(unpublishToDraft);
 const deleteDraftMock = vi.mocked(deleteDraft);
+const ingestBytesMock = vi.mocked(ingestBytes);
+const rebindReportMock = vi.mocked(rebindReport);
 
 const REPORT = { id: VALID_REPORT_ID, title: 'Q2', status: 'draft' } as Report;
 
 const READ_TOOLS = ['get_schema', 'list_skeletons', 'list_reports', 'get_report'];
-// Story 5.2: the authoring (write) tools registered on the same server.
+// Story 5.2 + the data-push follow-up: the authoring (write) tools registered on
+// the same server.
 const WRITE_TOOLS = [
 	'create_report',
 	'update_report',
 	'publish_report',
 	'unpublish_report',
-	'delete_report'
+	'delete_report',
+	'push_data_set'
 ];
 
 let client: Client;
@@ -239,6 +249,47 @@ describe('buildMcpServer', () => {
 		});
 		expect(result.isError).toBe(true);
 		expect(deleteDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('push_data_set ingests then auto-rebinds when a reportId is given', async () => {
+		const dataSet = {
+			id: '01970000-0000-7000-8000-0000000000d5',
+			reportId: VALID_REPORT_ID,
+			sourceFormat: 'csv'
+		} as unknown as DataSet;
+		ingestBytesMock.mockResolvedValue(dataSet);
+		rebindReportMock.mockResolvedValue({
+			report: REPORT as unknown as Awaited<ReturnType<typeof rebindReport>>['report'],
+			diagnostics: [],
+			summary: { total: 0, bound: 0, drifted: 0, unresolved: 0, allGreen: true },
+			rebound: []
+		});
+
+		const result = await client.callTool({
+			name: 'push_data_set',
+			arguments: { content: 'severity\nCritical', format: 'csv', reportId: VALID_REPORT_ID }
+		});
+
+		expect(result.isError).toBeFalsy();
+		expect(ingestBytesMock).toHaveBeenCalledOnce();
+		expect(ingestBytesMock.mock.calls[0][0].scope).toEqual(TEST_SCOPE);
+		expect(rebindReportMock).toHaveBeenCalledExactlyOnceWith(
+			VALID_REPORT_ID,
+			dataSet.id,
+			TEST_SCOPE
+		);
+		const content = result.content as { type: string; text: string }[];
+		const body = JSON.parse(content[0].text) as { summary: { allGreen: boolean } };
+		expect(body.summary.allGreen).toBe(true);
+	});
+
+	it('rejects a malformed push_data_set reportId at the boundary (no service call)', async () => {
+		const result = await client.callTool({
+			name: 'push_data_set',
+			arguments: { content: 'a\n1', format: 'csv', reportId: 'not-a-uuid' }
+		});
+		expect(result.isError).toBe(true);
+		expect(ingestBytesMock).not.toHaveBeenCalled();
 	});
 
 	it('carries a 422 invalid-document error with errors[] from create_report (FR2 parity)', async () => {

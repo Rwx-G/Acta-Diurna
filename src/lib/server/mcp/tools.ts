@@ -29,6 +29,7 @@ import {
 } from '$lib/server/documents/reports';
 import { composeReportUpdate, type ReportUpdate } from '$lib/server/documents/update-composition';
 import { DEFAULT_REPORT_TITLE } from '$lib/server/documents/defaults';
+import { ingestBytes, rebindReport, type SourceFormat } from '$lib/server/ingestion';
 import { AppError } from '$lib/server/problem';
 import { getPublishedSchema } from '$lib/server/schema/published';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
@@ -183,5 +184,51 @@ export function deleteReportTool(id: string, scope: AuthorScope): Promise<McpToo
 	return withProblemMapping(async () => {
 		await deleteDraft(id, scope);
 		return jsonResult({ id, deleted: true });
+	});
+}
+
+/*
+ * Data-push tool (deferred Epic 5 follow-up, the FR13/14/15 parity of
+ * `POST /api/v1/data-sets`). A THIN delegation to the EXACT ingestion + binding
+ * services the REST push and the upload form call: store the data set under the
+ * caller's scope, then with a `reportId` auto-rebind the target draft and return
+ * the same per-block diagnostics + summary the REST push returns. No reparse, no
+ * Drizzle, no binding logic here - the services own all of it. The only transport
+ * difference from REST is the body: MCP is JSON-RPC, so the file arrives as a
+ * `content` STRING (the agent's CSV/JSON text) instead of raw request bytes; it
+ * is UTF-8 encoded into the bytes `ingestBytes` takes. The `format` is an explicit
+ * argument (there is no Content-Type header on a tool call), restricted to the two
+ * the REST push parses; an unparseable body is the service 422, a published target
+ * the service 409, a foreign/unknown `reportId` the scoped 404.
+ */
+export function pushDataSetTool(
+	input: {
+		content: string;
+		format: SourceFormat;
+		reportId?: string;
+		filename?: string;
+	},
+	scope: AuthorScope
+): Promise<McpToolResult> {
+	return withProblemMapping(async () => {
+		const bytes = new TextEncoder().encode(input.content);
+		const reportId = input.reportId ?? null;
+		const dataSet = await ingestBytes({
+			bytes,
+			format: input.format,
+			filename: input.filename ?? `mcp-push.${input.format}`,
+			scope,
+			reportId
+		});
+		if (reportId === null) {
+			return jsonResult({ dataSet });
+		}
+		const result = await rebindReport(reportId, dataSet.id, scope);
+		return jsonResult({
+			dataSet,
+			diagnostics: result.diagnostics,
+			summary: result.summary,
+			rebound: result.rebound
+		});
 	});
 }

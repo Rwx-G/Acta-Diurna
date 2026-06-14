@@ -172,3 +172,105 @@ test('MCP write tools author a report end-to-end with a real PAT', async ({ page
 		await transport.close();
 	}
 });
+
+// The data-push follow-up (the FR13/14/15 parity of POST /api/v1/data-sets as an
+// MCP tool): drive push_data_set end-to-end with a REAL MCP client against the live
+// server + DB. Create a draft report carrying a table block whose binding maps a
+// "severity" column, push the matching CSV over the tool, and assert the data set
+// is created, the block rebinds green (diagnostics + summary), and get_report shows
+// the bound rows. PAT-gated like every other tool.
+test('MCP push_data_set ingests and auto-rebinds a report with a real PAT', async ({
+	page
+}, testInfo) => {
+	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
+
+	// Mint a PAT via the settings UI (shown once).
+	await page.goto('/settings');
+	await page.getByLabel('Token name').fill('e2e mcp push');
+	await page.getByRole('button', { name: 'Create token' }).click();
+	const tokenCode = page.locator('.created-url');
+	await expect(tokenCode).toBeVisible();
+	const rawToken = (await tokenCode.textContent())!.trim();
+
+	const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
+		requestInit: { headers: { authorization: `Bearer ${rawToken}` } }
+	});
+	const client = new Client({ name: 'e2e-push', version: '0.0.0' });
+	await client.connect(transport);
+
+	const parse = (result: Awaited<ReturnType<typeof client.callTool>>) => {
+		const content = result.content as { type: string; text: string }[];
+		return JSON.parse(content[0].text) as Record<string, unknown>;
+	};
+
+	try {
+		// push_data_set is registered and discoverable as a write tool.
+		const { tools } = await client.listTools();
+		const pushTool = tools.find((t) => t.name === 'push_data_set');
+		expect(pushTool).toBeDefined();
+		expect(pushTool!.annotations?.readOnlyHint).toBe(false);
+
+		// Create a draft report with one table block whose binding already maps the
+		// "severity" field to a column slot, so the push auto-rebinds it (FR14).
+		const created = await client.callTool({
+			name: 'create_report',
+			arguments: {
+				document: {
+					version: 1,
+					title: `MCP Data Push ${Date.now()}`,
+					sections: [
+						{
+							id: 'metrics',
+							title: 'Metrics',
+							blocks: [
+								{
+									type: 'table',
+									id: 'severity-table',
+									columns: [{ key: 'placeholder', label: 'Placeholder' }],
+									binding: {
+										fields: [{ name: 'severity', type: 'string', slot: { role: 'column' } }]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		expect(created.isError).toBeFalsy();
+		const id = (parse(created) as { id: string }).id;
+
+		// Push the matching CSV over the tool: the auto-rebind resolves the "severity"
+		// column and the result carries the per-block diagnostics + summary (FR15).
+		const pushed = await client.callTool({
+			name: 'push_data_set',
+			arguments: { content: 'severity\nCritical\nHigh', format: 'csv', reportId: id }
+		});
+		expect(pushed.isError).toBeFalsy();
+		const pushBody = parse(pushed) as {
+			dataSet: { id: string; sourceFormat: string };
+			diagnostics: { blockId: string; state: string }[];
+			summary: { total: number; allGreen: boolean };
+		};
+		expect(pushBody.dataSet.sourceFormat).toBe('csv');
+		expect(pushBody.diagnostics.some((d) => d.blockId === 'severity-table')).toBe(true);
+		expect(pushBody.summary.allGreen).toBe(true);
+
+		// get_report shows the report now carrying the bound pushed rows.
+		const fetched = await client.callTool({ name: 'get_report', arguments: { id } });
+		const fetchedText = JSON.stringify(parse(fetched));
+		expect(fetchedText).toContain('Critical');
+		expect(fetchedText).toContain(pushBody.dataSet.id);
+
+		// Pushing onto a PUBLISHED report is a clean 409 (binding targets a draft).
+		await client.callTool({ name: 'publish_report', arguments: { id } });
+		const onPublished = await client.callTool({
+			name: 'push_data_set',
+			arguments: { content: 'severity\nCritical', format: 'csv', reportId: id }
+		});
+		expect(onPublished.isError).toBe(true);
+		expect((parse(onPublished) as { status: number }).status).toBe(409);
+	} finally {
+		await transport.close();
+	}
+});

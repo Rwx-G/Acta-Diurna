@@ -17,6 +17,11 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
+vi.mock('$lib/server/ingestion', () => ({
+	ingestBytes: vi.fn(),
+	rebindReport: vi.fn()
+}));
+
 vi.mock('$lib/server/mode', () => ({
 	operatingMode: () => 'single',
 	isMultiAuthor: () => false
@@ -38,6 +43,7 @@ import {
 } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
+import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
 import {
 	createReportTool,
 	deleteReportTool,
@@ -46,6 +52,7 @@ import {
 	listReportsTool,
 	listSkeletonsTool,
 	publishReportTool,
+	pushDataSetTool,
 	unpublishReportTool,
 	updateReportTool,
 	type McpToolResult
@@ -62,6 +69,8 @@ const updateReportTitleMock = vi.mocked(updateReportTitle);
 const publishReportMock = vi.mocked(publishReport);
 const unpublishToDraftMock = vi.mocked(unpublishToDraft);
 const deleteDraftMock = vi.mocked(deleteDraft);
+const ingestBytesMock = vi.mocked(ingestBytes);
+const rebindReportMock = vi.mocked(rebindReport);
 
 const REPORT = {
 	id: '01970000-0000-7000-8000-000000000001',
@@ -400,5 +409,110 @@ describe('delete_report tool', () => {
 		const problem = payload(result) as { status: number; type: string };
 		expect(problem.status).toBe(409);
 		expect(problem.type).toBe('/problems/report-published');
+	});
+});
+
+describe('push_data_set tool', () => {
+	const DATA_SET = {
+		id: '01970000-0000-7000-8000-0000000000d5',
+		reportId: null,
+		sourceFormat: 'csv'
+	} as unknown as DataSet;
+
+	it('ingests the content as UTF-8 bytes under the caller scope, unbound when no reportId', async () => {
+		ingestBytesMock.mockResolvedValue(DATA_SET);
+
+		const result = await pushDataSetTool(
+			{ content: 'severity\nCritical', format: 'csv' },
+			TEST_SCOPE
+		);
+
+		expect(ingestBytesMock).toHaveBeenCalledOnce();
+		const call = ingestBytesMock.mock.calls[0][0];
+		expect(new TextDecoder().decode(call.bytes)).toBe('severity\nCritical');
+		expect(call.format).toBe('csv');
+		expect(call.scope).toBe(TEST_SCOPE);
+		expect(call.reportId).toBeNull();
+		expect(rebindReportMock).not.toHaveBeenCalled();
+		expect(result.isError).toBeUndefined();
+		expect(payload(result)).toEqual({ dataSet: DATA_SET });
+	});
+
+	it('auto-rebinds the target report and returns diagnostics + summary when reportId is given', async () => {
+		ingestBytesMock.mockResolvedValue(DATA_SET);
+		const diagnostics = [{ blockId: 'severity-table', state: 'bound' }] as unknown as Awaited<
+			ReturnType<typeof rebindReport>
+		>['diagnostics'];
+		const summary = { total: 1, allGreen: true } as unknown as Awaited<
+			ReturnType<typeof rebindReport>
+		>['summary'];
+		rebindReportMock.mockResolvedValue({
+			report: REPORT as unknown as Awaited<ReturnType<typeof rebindReport>>['report'],
+			diagnostics,
+			summary,
+			rebound: ['severity-table']
+		});
+
+		const result = await pushDataSetTool(
+			{ content: 'severity\nCritical', format: 'csv', reportId: REPORT.id },
+			TEST_SCOPE
+		);
+
+		expect(ingestBytesMock.mock.calls[0][0].reportId).toBe(REPORT.id);
+		expect(rebindReportMock).toHaveBeenCalledExactlyOnceWith(REPORT.id, DATA_SET.id, TEST_SCOPE);
+		const body = payload(result) as { diagnostics: unknown[]; summary: unknown; rebound: string[] };
+		expect(body.diagnostics).toEqual(diagnostics);
+		expect(body.summary).toEqual(summary);
+		expect(body.rebound).toEqual(['severity-table']);
+	});
+
+	it('passes the supplied filename through, else defaults to mcp-push.<format>', async () => {
+		ingestBytesMock.mockResolvedValue(DATA_SET);
+
+		await pushDataSetTool(
+			{ content: '[]', format: 'json', filename: 'incidents.json' },
+			TEST_SCOPE
+		);
+		expect(ingestBytesMock.mock.calls[0][0].filename).toBe('incidents.json');
+
+		await pushDataSetTool({ content: '[]', format: 'json' }, TEST_SCOPE);
+		expect(ingestBytesMock.mock.calls[1][0].filename).toBe('mcp-push.json');
+	});
+
+	it('carries the service 422 unparseable error into an isError tool result', async () => {
+		ingestBytesMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'File could not be parsed',
+				type: '/problems/unparseable-file'
+			})
+		);
+
+		const result = await pushDataSetTool({ content: 'not,csv\n"', format: 'csv' }, TEST_SCOPE);
+
+		expect(result.isError).toBe(true);
+		const problem = payload(result) as { status: number; type: string };
+		expect(problem.status).toBe(422);
+		expect(problem.type).toBe('/problems/unparseable-file');
+		expect(rebindReportMock).not.toHaveBeenCalled();
+	});
+
+	it('surfaces the service 409 when the target report is published', async () => {
+		ingestBytesMock.mockResolvedValue({ ...DATA_SET, reportId: REPORT.id });
+		rebindReportMock.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Report is published',
+				type: '/problems/report-published'
+			})
+		);
+
+		const result = await pushDataSetTool(
+			{ content: 'a\n1', format: 'csv', reportId: REPORT.id },
+			TEST_SCOPE
+		);
+
+		expect(result.isError).toBe(true);
+		expect((payload(result) as { status: number }).status).toBe(409);
 	});
 });
