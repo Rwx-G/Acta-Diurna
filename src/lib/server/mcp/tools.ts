@@ -30,6 +30,12 @@ import {
 import { composeReportUpdate, type ReportUpdate } from '$lib/server/documents/update-composition';
 import { DEFAULT_REPORT_TITLE } from '$lib/server/documents/defaults';
 import { ingestBytes, rebindReport, type SourceFormat } from '$lib/server/ingestion';
+import {
+	fillFromOutline,
+	generateOutline,
+	hashOutline,
+	type Outline
+} from '$lib/server/ai/generate';
 import { AppError } from '$lib/server/problem';
 import { getPublishedSchema } from '$lib/server/schema/published';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
@@ -231,4 +237,82 @@ export function pushDataSetTool(
 			rebound: result.rebound
 		});
 	});
+}
+
+/*
+ * Outline-first generation tools (item 18, the FR32 parity of the workspace
+ * generate actions). Epic 5 shipped outline-first generation as a workspace-only
+ * flow; these expose the SAME two-stage service (`generateOutline` then
+ * `fillFromOutline`) over MCP, owner-scoped through the same `AuthorScope`. Both
+ * AI gates are enforced INSIDE the service: every call goes through `chatComplete`,
+ * which asserts configured AND opted-in before any outbound request, so a disabled
+ * instance is the `/problems/ai-generation-disabled` 503 carried into the tool
+ * error channel - no call, no tool result leak. The approval-hash binding is the
+ * service's: `fillFromOutline` re-hashes the posted outline and rejects a mismatch
+ * (409) before any LLM call. The same PAT identity drives both stages and the hash
+ * is a value the agent holds (not server-redeemable state), so the content-hash
+ * binding is sufficient on a single principal - no cross-principal substitution
+ * surface, no server-minted nonce needed.
+ */
+
+/**
+ * `generate_outline` -> stage 1: a bounded, reviewable outline plus its content
+ * hash (`{ outline, outlineHash }`). The agent approves the outline and posts it
+ * back with the hash to `generate_report`. A disabled instance is the 503, an
+ * unparseable model outline the staged 502 - both as problem-details tool errors.
+ */
+export function generateOutlineTool(
+	input: { intent: string; skeletonId?: string; dataSetId?: string },
+	scope: AuthorScope
+): Promise<McpToolResult> {
+	return withProblemMapping(async () => {
+		const outline = await generateOutline(
+			{
+				intent: input.intent,
+				skeletonId: input.skeletonId ?? null,
+				dataSetId: input.dataSetId ?? null
+			},
+			scope
+		);
+		return jsonResult({ outline, outlineHash: hashOutline(outline) });
+	});
+}
+
+/**
+ * `generate_report` -> stage 2: fills the APPROVED outline into a draft and writes
+ * it through the EXACT owner-scoped validate-on-write the REST surface uses. With a
+ * `reportId` it replaces that draft's document (a published report / stale
+ * `expectedUpdatedAt` is a 409); without one it seeds a fresh draft. A mismatched
+ * `outlineHash` is the 409 stale-approval error BEFORE any LLM call; an invalid
+ * model document is the validator's 422 with `errors[]` and the draft is untouched.
+ * The `outline` arg is permissive (the service re-bounds it and `validateDocument`
+ * is the final gate), mirroring the permissive `document` arg on the write tools.
+ */
+export function fillOutlineTool(
+	input: {
+		outline: Record<string, unknown>;
+		outlineHash: string;
+		reportId?: string;
+		skeletonId?: string;
+		dataSetId?: string;
+		expectedUpdatedAt?: string;
+	},
+	scope: AuthorScope
+): Promise<McpToolResult> {
+	return withProblemMapping(async () =>
+		jsonResult(
+			await fillFromOutline(
+				{
+					intent: '',
+					outline: input.outline as unknown as Outline,
+					approvedHash: input.outlineHash,
+					skeletonId: input.skeletonId ?? null,
+					dataSetId: input.dataSetId ?? null
+				},
+				scope,
+				input.reportId,
+				toExpectedDate(input.expectedUpdatedAt)
+			)
+		)
+	);
 }

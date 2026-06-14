@@ -15,6 +15,8 @@ import type { AuthorScope } from '$lib/server/authors';
 import {
 	createReportTool,
 	deleteReportTool,
+	fillOutlineTool,
+	generateOutlineTool,
 	getReportTool,
 	getSchemaTool,
 	listReportsTool,
@@ -44,7 +46,16 @@ const expectedUpdatedAtArg = z
 	.describe('Optimistic-concurrency token: the ISO 8601 updatedAt you last saw.');
 
 export const MCP_SERVER_NAME = 'acta-diurna';
-export const MCP_SERVER_VERSION = '0.7.0';
+export const MCP_SERVER_VERSION = '0.8.0';
+
+// A permissive outline shape: the generation service re-bounds the outline when it
+// assembles the document and `validateDocument` is the final gate, so the tool
+// boundary only asserts "a JSON object" (like `documentArg`) and lets the service
+// own the shape. The outline is whatever `generate_outline` returned, posted back
+// for the fill.
+const outlineArg = z
+	.record(z.string(), z.unknown())
+	.describe('The approved outline object as returned by generate_outline.');
 
 /**
  * Builds a fresh `McpServer` with the discovery (read) + authoring (write) tool
@@ -62,8 +73,11 @@ export function buildMcpServer(scope: AuthorScope): McpServer {
 				'and examples (get_schema), list skeletons and reports and read a single report ' +
 				'to orient, then author with create_report / update_report / publish_report / ' +
 				'unpublish_report / delete_report. Push CSV or JSON data onto a draft report and ' +
-				'auto-rebind its blocks with push_data_set. The same service layer, validation, ' +
-				'and problem-details errors apply as the REST API.'
+				'auto-rebind its blocks with push_data_set. To author with AI, call generate_outline ' +
+				'to get a proposed outline plus its hash, review and (if needed) edit it, then call ' +
+				'generate_report with the approved outline and that hash to fill a schema-valid draft ' +
+				'(AI generation must be configured and enabled on the instance). The same service ' +
+				'layer, validation, and problem-details errors apply as the REST API.'
 		}
 	);
 
@@ -250,6 +264,73 @@ export function buildMcpServer(scope: AuthorScope): McpServer {
 			annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }
 		},
 		(input) => pushDataSetTool(input, scope)
+	);
+
+	// Outline-first generation tools (item 18: the FR32 parity of the workspace
+	// generate flow, which Epic 5 kept workspace-only). Both delegate to the EXACT
+	// two-stage generation service the workspace drives; both AI gates are asserted
+	// inside the service (a disabled instance is the 503 tool error, no call). The
+	// fill is bound to the approved outline by its hash (a mismatch is the 409 before
+	// any LLM call) and writes through the same owner-scoped validate-on-write.
+	server.registerTool(
+		'generate_outline',
+		{
+			title: 'Generate a report outline',
+			description:
+				'Stage 1 of outline-first generation: from an `intent` (optionally grounded on a ' +
+				'`skeletonId` and/or `dataSetId`), the model proposes a bounded outline (sections + ' +
+				'per-block intents). Returns { outline, outlineHash }; review the outline, then pass ' +
+				'it back with its hash to generate_report. Requires AI generation configured and ' +
+				'enabled (otherwise a disabled error). Writes nothing.',
+			inputSchema: {
+				intent: z.string().describe('What the report should cover (the narrative to follow).'),
+				skeletonId: z
+					.string()
+					.uuid()
+					.optional()
+					.describe('Optional skeleton to ground the outline structure on (UUID).'),
+				dataSetId: z
+					.string()
+					.uuid()
+					.optional()
+					.describe('Optional data set whose fields ground the outline (UUID).')
+			},
+			// Not idempotent: a fresh model call each time. Read-only in that it writes
+			// no report, but it issues a metered LLM call, so not annotated readOnly.
+			annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }
+		},
+		(input) => generateOutlineTool(input, scope)
+	);
+
+	server.registerTool(
+		'generate_report',
+		{
+			title: 'Fill an approved outline into a report',
+			description:
+				'Stage 2 of outline-first generation: fills the APPROVED `outline` (with its ' +
+				'`outlineHash` from generate_outline) into a schema-valid draft. With a `reportId` it ' +
+				'replaces that draft (a published report or stale `expectedUpdatedAt` is a conflict); ' +
+				'without one it seeds a fresh draft. A mismatched `outlineHash` (the outline was edited ' +
+				'after approval) is a conflict BEFORE any LLM call; an invalid model document carries ' +
+				'the actionable errors[] and the draft is untouched. Requires AI generation enabled.',
+			inputSchema: {
+				outline: outlineArg,
+				outlineHash: z
+					.string()
+					.describe('The hash generate_outline returned for the approved outline.'),
+				reportId: z
+					.string()
+					.uuid()
+					.optional()
+					.describe('Target draft report to fill (UUID); omit to seed a fresh draft.'),
+				skeletonId: z.string().uuid().optional().describe('Optional grounding skeleton (UUID).'),
+				dataSetId: z.string().uuid().optional().describe('Optional grounding data set (UUID).'),
+				expectedUpdatedAt: expectedUpdatedAtArg.optional()
+			},
+			// Not idempotent: each call issues a fresh LLM fill and writes a document.
+			annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }
+		},
+		(input) => fillOutlineTool(input, scope)
 	);
 
 	return server;

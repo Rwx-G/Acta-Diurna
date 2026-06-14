@@ -22,6 +22,12 @@ vi.mock('$lib/server/ingestion', () => ({
 	rebindReport: vi.fn()
 }));
 
+vi.mock('$lib/server/ai/generate', () => ({
+	generateOutline: vi.fn(),
+	fillFromOutline: vi.fn(),
+	hashOutline: vi.fn()
+}));
+
 vi.mock('$lib/server/mode', () => ({
 	operatingMode: () => 'single',
 	isMultiAuthor: () => false
@@ -44,9 +50,12 @@ import {
 import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
+import { fillFromOutline, generateOutline, hashOutline } from '$lib/server/ai/generate';
 import {
 	createReportTool,
 	deleteReportTool,
+	fillOutlineTool,
+	generateOutlineTool,
 	getReportTool,
 	getSchemaTool,
 	listReportsTool,
@@ -58,6 +67,10 @@ import {
 	type McpToolResult
 } from './tools';
 import { DEFAULT_REPORT_TITLE } from '$lib/server/documents/defaults';
+
+const generateOutlineMock = vi.mocked(generateOutline);
+const fillFromOutlineMock = vi.mocked(fillFromOutline);
+const hashOutlineMock = vi.mocked(hashOutline);
 
 const listReportsMock = vi.mocked(listReports);
 const getReportMock = vi.mocked(getReport);
@@ -514,5 +527,108 @@ describe('push_data_set tool', () => {
 
 		expect(result.isError).toBe(true);
 		expect((payload(result) as { status: number }).status).toBe(409);
+	});
+});
+
+describe('generate_outline / generate_report tools', () => {
+	const OUTLINE = {
+		title: 'Weekly Ops',
+		sections: [
+			{ title: 'Overview', intent: 'Set the scene', blocks: [{ type: 'text', intent: 'x' }] }
+		]
+	};
+
+	it('generate_outline returns { outline, outlineHash } owner-scoped', async () => {
+		generateOutlineMock.mockResolvedValue(OUTLINE as never);
+		hashOutlineMock.mockReturnValue('hash-abc');
+
+		const result = await generateOutlineTool({ intent: 'A weekly ops review' }, TEST_SCOPE);
+
+		expect(result.isError).toBeFalsy();
+		expect(payload(result)).toEqual({ outline: OUTLINE, outlineHash: 'hash-abc' });
+		expect(generateOutlineMock).toHaveBeenCalledExactlyOnceWith(
+			{ intent: 'A weekly ops review', skeletonId: null, dataSetId: null },
+			TEST_SCOPE
+		);
+	});
+
+	it('generate_outline carries the disabled 503 as a problem-details tool error (gate-closed)', async () => {
+		generateOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 503,
+				title: 'AI Generation Disabled',
+				type: '/problems/ai-generation-disabled'
+			})
+		);
+
+		const result = await generateOutlineTool({ intent: 'x' }, TEST_SCOPE);
+
+		expect(result.isError).toBe(true);
+		expect((payload(result) as { type: string }).type).toBe('/problems/ai-generation-disabled');
+	});
+
+	it('generate_report fills an approved outline owner-scoped (happy path)', async () => {
+		fillFromOutlineMock.mockResolvedValue(REPORT);
+
+		const result = await fillOutlineTool(
+			{ outline: OUTLINE, outlineHash: 'hash-abc', reportId: REPORT.id },
+			TEST_SCOPE
+		);
+
+		expect(result.isError).toBeFalsy();
+		expect((payload(result) as { id: string }).id).toBe(REPORT.id);
+		expect(fillFromOutlineMock).toHaveBeenCalledExactlyOnceWith(
+			{
+				intent: '',
+				outline: OUTLINE,
+				approvedHash: 'hash-abc',
+				skeletonId: null,
+				dataSetId: null
+			},
+			TEST_SCOPE,
+			REPORT.id,
+			undefined
+		);
+	});
+
+	it('generate_report seeds a fresh draft when no reportId is given', async () => {
+		fillFromOutlineMock.mockResolvedValue(REPORT);
+
+		await fillOutlineTool({ outline: OUTLINE, outlineHash: 'h' }, TEST_SCOPE);
+
+		expect(fillFromOutlineMock.mock.calls[0][2]).toBeUndefined();
+	});
+
+	it('generate_report carries the stale-approval 409 (hash mismatch) as a problem-details tool error', async () => {
+		fillFromOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Outline approval is stale',
+				type: '/problems/ai-outline-stale'
+			})
+		);
+
+		const result = await fillOutlineTool({ outline: OUTLINE, outlineHash: 'wrong' }, TEST_SCOPE);
+
+		expect(result.isError).toBe(true);
+		expect((payload(result) as { type: string }).type).toBe('/problems/ai-outline-stale');
+	});
+
+	it('generate_report carries the validator 422 with errors[] (no bypass)', async () => {
+		fillFromOutlineMock.mockRejectedValue(
+			new AppError({
+				status: 422,
+				title: 'Document validation failed',
+				type: '/problems/document-validation',
+				errors: [{ path: 'sections[0].title', message: 'required', hint: 'Name it.' }]
+			})
+		);
+
+		const result = await fillOutlineTool({ outline: OUTLINE, outlineHash: 'h' }, TEST_SCOPE);
+
+		expect(result.isError).toBe(true);
+		const problem = payload(result) as { status: number; errors: unknown[] };
+		expect(problem.status).toBe(422);
+		expect(problem.errors).toHaveLength(1);
 	});
 });

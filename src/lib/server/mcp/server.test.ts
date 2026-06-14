@@ -23,6 +23,12 @@ vi.mock('$lib/server/ingestion', () => ({
 	rebindReport: vi.fn()
 }));
 
+vi.mock('$lib/server/ai/generate', () => ({
+	generateOutline: vi.fn(),
+	fillFromOutline: vi.fn(),
+	hashOutline: vi.fn()
+}));
+
 vi.mock('$lib/server/mode', () => ({
 	operatingMode: () => 'single',
 	isMultiAuthor: () => false
@@ -45,7 +51,12 @@ import {
 import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
+import { generateOutline, fillFromOutline, hashOutline } from '$lib/server/ai/generate';
 import { buildMcpServer, MCP_SERVER_NAME } from './server';
+
+const generateOutlineMock = vi.mocked(generateOutline);
+const fillFromOutlineMock = vi.mocked(fillFromOutline);
+const hashOutlineMock = vi.mocked(hashOutline);
 
 const VALID_REPORT_ID = '01970000-0000-7000-8000-000000000001';
 
@@ -73,7 +84,9 @@ const WRITE_TOOLS = [
 	'publish_report',
 	'unpublish_report',
 	'delete_report',
-	'push_data_set'
+	'push_data_set',
+	'generate_outline',
+	'generate_report'
 ];
 
 let client: Client;
@@ -281,6 +294,50 @@ describe('buildMcpServer', () => {
 		const content = result.content as { type: string; text: string }[];
 		const body = JSON.parse(content[0].text) as { summary: { allGreen: boolean } };
 		expect(body.summary.allGreen).toBe(true);
+	});
+
+	it('generate_outline drives the service through the SDK and returns { outline, outlineHash }', async () => {
+		const outline = {
+			title: 'Weekly Ops',
+			sections: [{ title: 'Overview', intent: '', blocks: [{ type: 'text', intent: 'x' }] }]
+		};
+		generateOutlineMock.mockResolvedValue(outline as never);
+		hashOutlineMock.mockReturnValue('hash-abc');
+
+		const result = await client.callTool({
+			name: 'generate_outline',
+			arguments: { intent: 'A weekly ops review' }
+		});
+
+		expect(result.isError).toBeFalsy();
+		const content = result.content as { type: string; text: string }[];
+		const body = JSON.parse(content[0].text) as { outline: unknown; outlineHash: string };
+		expect(body.outlineHash).toBe('hash-abc');
+		expect(generateOutlineMock).toHaveBeenCalledExactlyOnceWith(
+			{ intent: 'A weekly ops review', skeletonId: null, dataSetId: null },
+			TEST_SCOPE
+		);
+	});
+
+	it('generate_report fills an approved outline through the SDK, owner-scoped', async () => {
+		fillFromOutlineMock.mockResolvedValue(REPORT);
+		const outline = {
+			title: 'Weekly Ops',
+			sections: [{ title: 'Overview', intent: '', blocks: [{ type: 'text', intent: 'x' }] }]
+		};
+
+		const result = await client.callTool({
+			name: 'generate_report',
+			arguments: { outline, outlineHash: 'hash-abc', reportId: VALID_REPORT_ID }
+		});
+
+		expect(result.isError).toBeFalsy();
+		expect(fillFromOutlineMock).toHaveBeenCalledExactlyOnceWith(
+			{ intent: '', outline, approvedHash: 'hash-abc', skeletonId: null, dataSetId: null },
+			TEST_SCOPE,
+			VALID_REPORT_ID,
+			undefined
+		);
 	});
 
 	it('rejects a malformed push_data_set reportId at the boundary (no service call)', async () => {
