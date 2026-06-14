@@ -21,7 +21,13 @@ export {
 } from './blocks/shared.ts';
 export type { Audience, Binding, BindingField, BindingSlot } from './blocks/shared.ts';
 
-export { audiencesAttr, DEFAULT_AUDIENCE, hasAudienceTags, isVisibleAtLevel } from './audience.ts';
+export {
+	audiencesAttr,
+	DEFAULT_AUDIENCE,
+	hasAudienceTags,
+	isVisibleAtLevel,
+	levelRevealingDetail
+} from './audience.ts';
 
 export { inlineRunSchema, paragraphSchema, textBlockSchema } from './blocks/text.ts';
 export type { InlineRun, Paragraph, TextBlock } from './blocks/text.ts';

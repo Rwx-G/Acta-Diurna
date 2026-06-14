@@ -142,6 +142,39 @@ describe('Report (render integration)', () => {
 		expect(container.querySelector('.report[data-level="technical"]')).not.toBeNull();
 	});
 
+	it('carries data-audiences on a tagged detail host so the audience CSS reaches into it (Story 11.4)', async () => {
+		const doc: DocumentV1 = {
+			version: 1,
+			title: 'Drill-down',
+			sections: [
+				{
+					id: 'intro',
+					title: 'Intro',
+					blocks: [{ type: 'text', id: 't', paragraphs: [[{ text: 'Hi' }]] }]
+				},
+				{
+					id: 'tech-detail',
+					title: 'Technical detail',
+					kind: 'detail',
+					audiences: ['technical'],
+					blocks: [{ type: 'text', id: 'b', paragraphs: [[{ text: 'Deep' }]] }]
+				}
+			]
+		};
+		const { container } = render(Report, { view: toReportView(doc) });
+		// The detail host is rendered out of the main flow but carries the section's
+		// audience tag, so the global audience CSS hides it at the wrong level exactly
+		// as it hides a flow host - content stays SSR, only visibility toggles.
+		const host = container.querySelector<HTMLElement>('.detail-host[data-audiences="technical"]');
+		expect(host).not.toBeNull();
+		// Detail-only tags still surface the switcher (AC3).
+		expect(container.querySelector('.level-switcher')).not.toBeNull();
+		// At the default full level, a technical-only detail host is removed from
+		// layout by the audience CSS (it is revealed by :target + level promotion at
+		// read time; here we assert the audience rule reaches the detail host).
+		expect(getComputedStyle(host!).display).toBe('none');
+	});
+
 	it('renders a transiently-invalid block as a notice without throwing', async () => {
 		const snapshot = {
 			version: 1,

@@ -5,11 +5,12 @@
 		audiencesAttr,
 		DEFAULT_AUDIENCE,
 		isVisibleAtLevel,
+		levelRevealingDetail,
 		type Audience
 	} from '$lib/schema';
 	import { resolveTheme } from './theme/index.ts';
 	import { ReaderNavigation, indexForFragment, detailIdForFragment } from './navigation.svelte.ts';
-	import type { ReportView } from './document-view.ts';
+	import type { ReportView, SectionView } from './document-view.ts';
 	import Cover from './Cover.svelte';
 	import LevelSwitcher from './LevelSwitcher.svelte';
 	import ProgressRail from './ProgressRail.svelte';
@@ -98,6 +99,18 @@
 		}
 	}
 
+	// Promote the level so a detail page lands on its CONTENT, not just its frame
+	// (Story 11.4). A detail target may be hidden by a SECTION tag (the whole host
+	// is `display: none` by the audience CSS, which out-specifies the `:target`
+	// reveal) OR by BLOCK tags (the host shows but its only blocks are excluded, an
+	// empty box). `levelRevealingDetail` accounts for both, so the shared link and
+	// the in-report drill-down never dead-end on a hidden target. Shared by the
+	// load-time deep link and the click-time activation, so flow and detail use one
+	// rule. No-op when the document carries no tags (no switcher, no promotion).
+	function promoteLevelForDetail(section: SectionView) {
+		if (view.hasAudiences) activeLevel = levelRevealingDetail(section, activeLevel);
+	}
+
 	// Move focus into a detail page so a screen-reader / keyboard user lands on its
 	// content, not back at the top of the document (NFR15). The detail section is
 	// programmatically focusable (tabindex -1 via the host); focusing its heading
@@ -125,27 +138,36 @@
 		if (!targetId || !detail) return false;
 		const origin = anchor.closest<HTMLElement>('[data-section-id]')?.dataset.sectionId;
 		if (origin) detailOrigin = origin;
-		promoteLevelFor(detail.audiences);
+		promoteLevelForDetail(detail);
 		focusDetail(targetId);
 		return true;
 	}
 
-	// Back from a detail page (Epic 11): the anchor's `href="#origin"` already does
-	// the navigation natively (the no-JS path), so this only restores focus to the
-	// origin section for keyboard/screen-reader users and clears the recorded origin.
-	function handleBack() {
+	// Back from a detail page (Epic 11): drive the navigation explicitly rather than
+	// leaning on the anchor's native `#origin` jump. Clearing `detailOrigin` flips
+	// the reactive `href` from the recorded origin to the first-flow fallback, which
+	// can race the browser's default navigation and land the reader on the cover
+	// instead of the origin. Preventing the default and setting the hash from the
+	// captured origin makes "back" deterministic. The no-JS path keeps the native
+	// anchor jump (no handler runs), so it still reaches a flow section by anchor.
+	function handleBack(event: MouseEvent) {
+		event.preventDefault();
 		const origin = backTarget;
 		detailOrigin = null;
-		if (origin)
-			requestAnimationFrame(() => {
-				const index = sectionIds.indexOf(origin);
-				if (index >= 0) nav.current = index;
-				const section = document.getElementById(origin);
-				section?.scrollIntoView({ block: 'start' });
-				// The origin section is focusable in slide mode (tabindex 0); focusing it
-				// returns the keyboard/screen-reader user to where they drilled down from.
-				section?.focus?.();
-			});
+		if (!origin) return;
+		// Setting `location.hash` (not `replaceState`) re-evaluates `:target`, so the
+		// detail overlay closes and the origin section becomes the target - the reveal
+		// is CSS `:target`-driven, and only a real hash change updates it.
+		window.location.hash = origin;
+		requestAnimationFrame(() => {
+			const index = sectionIds.indexOf(origin);
+			if (index >= 0) nav.current = index;
+			const section = document.getElementById(origin);
+			section?.scrollIntoView({ block: 'start' });
+			// The origin section is focusable in slide mode (tabindex 0); focusing it
+			// returns the keyboard/screen-reader user to where they drilled down from.
+			section?.focus?.();
+		});
 	}
 
 	// One pointer handler on the reading surface: an internal-link click drills into
@@ -272,7 +294,7 @@
 			// detail deep links share one mechanism. No origin was recorded (a fresh
 			// load), so "back" falls back to the first flow section.
 			const detail = view.detailSections.find((section) => section.id === detailId);
-			promoteLevelFor(detail?.audiences);
+			if (detail) promoteLevelForDetail(detail);
 			focusDetail(detailId);
 		} else {
 			const initial = indexForFragment(window.location.hash, sectionIds);
@@ -476,7 +498,10 @@
 	   on the detail page alone (it is a there-and-back drill-down, not an inline
 	   expansion). The detail overlay is fixed and covers the chrome and rail; hiding
 	   the flow hosts removes them from the layout and the accessibility tree too. The
-	   flow stays in the DOM; only this presentation hides it. */
+	   flow stays in the DOM; only this presentation hides it. The reading level
+	   chosen on the flow carries onto the detail page (the `data-level` root attribute
+	   governs detail blocks too, Story 11.4 AC1); a deep link or a drill-down into a
+	   detail hidden at the reader's level promotes the level before revealing it. */
 	.sections:has(.detail-host :global(:target)) .section-host:not(.detail-host) {
 		display: none;
 	}
