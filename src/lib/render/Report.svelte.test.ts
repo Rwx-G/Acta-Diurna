@@ -38,14 +38,25 @@ describe('Report (render integration)', () => {
 	});
 
 	it('applies a theme via data-theme when the document names a built-in', async () => {
-		const view = toReportView(validFull());
-		view.theme = 'midnight';
-		const { container } = render(Report, { view });
-		expect(container.querySelector('[data-theme="midnight"]')).not.toBeNull();
+		for (const theme of ['midnight', 'aurora', 'meridian'] as const) {
+			const view = toReportView(validFull());
+			view.theme = theme;
+			const { container } = render(Report, { view });
+			expect(container.querySelector(`[data-theme="${theme}"]`)).not.toBeNull();
+		}
 	});
 
-	it('omits data-theme for the default theme', async () => {
-		const { container } = render(Report, { view: toReportView(validFull()) });
+	it('omits data-theme for the default theme (no selection)', async () => {
+		const view = toReportView(validFull());
+		view.theme = undefined;
+		const { container } = render(Report, { view });
+		expect(container.querySelector('[data-theme]')).toBeNull();
+	});
+
+	it('falls back to the default (no data-theme) for an unknown theme (AC3)', async () => {
+		const view = toReportView(validFull());
+		view.theme = 'removed-theme';
+		const { container } = render(Report, { view });
 		expect(container.querySelector('[data-theme]')).toBeNull();
 	});
 

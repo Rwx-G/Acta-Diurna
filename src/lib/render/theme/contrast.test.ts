@@ -8,8 +8,10 @@ import {
 	relativeLuminance
 } from './contrast.ts';
 import {
+	AURORA_THEME,
 	CATEGORICAL_PALETTES,
 	DEFAULT_THEME,
+	MERIDIAN_THEME,
 	MIDNIGHT_THEME,
 	THEME_PALETTES,
 	TONE_PALETTES,
@@ -134,8 +136,15 @@ function assertReportContentAAA(name: string, theme: ThemePalette): void {
 describe('report theme contrast (AAA)', () => {
 	assertReportContentAAA('default', DEFAULT_THEME);
 	assertReportContentAAA('midnight', MIDNIGHT_THEME);
+	assertReportContentAAA('aurora', AURORA_THEME);
+	assertReportContentAAA('meridian', MERIDIAN_THEME);
 
-	it('exposes both built-in themes (FR39 additivity surface)', () => {
-		expect(Object.keys(THEME_PALETTES).sort()).toEqual(['default', 'midnight']);
+	it('exposes every built-in theme (FR39 additivity surface)', () => {
+		expect(Object.keys(THEME_PALETTES).sort()).toEqual([
+			'aurora',
+			'default',
+			'meridian',
+			'midnight'
+		]);
 	});
 });

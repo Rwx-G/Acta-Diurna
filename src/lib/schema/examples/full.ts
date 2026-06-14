@@ -6,6 +6,10 @@ import type { DocumentV1Input } from '../versions/v1.ts';
  * without `dataSetId`), a block carrying both static data and a binding, and
  * document-level categorical scales (Epic 7): a severity scale (ordinal, mixed
  * explicit/default colours) and a sources scale (nominal, all default colours).
+ *
+ * `theme: 'aurora'` selects the "Cool Aurora" built-in theme (Story 6.5), so the
+ * fixture also exercises a non-default theme end to end (the reader axe e2e runs
+ * on it; the matrix and Phase B fixtures stay on the default theme).
  */
 export const fullDocument: DocumentV1Input = {
 	version: 1,

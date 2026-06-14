@@ -8,10 +8,12 @@
  *
  * Theme model (FR39): a theme is a block of semantic-token overrides under a
  * `[data-theme]` selector. The default theme lives on `:root` so an untyped
- * document renders with zero author work; `midnight` below proves additivity -
- * a second theme is reachable with no component change. Renderers read ONLY
- * the semantic tokens (--report-*), never the raw palette, so a new theme is a
- * token block, never a code change.
+ * document renders with zero author work; `midnight`, `aurora` and `meridian`
+ * below prove additivity - each is reachable with no component change (Story
+ * 6.5). Renderers read ONLY the semantic tokens (--report-*), never the raw
+ * palette, so a new theme is a token block, never a code change. The known
+ * theme names live in one registry (`lib/render/theme/index.ts`) the schema,
+ * the workspace picker and the renderer all share.
  */
 @import './lib/fonts.css';
 
@@ -192,6 +194,74 @@
 	/* An ink veil is invisible on an already-dark page; use a light-text wash so
 	   the backdrop still reads as dimmed behind the TOC panel. */
 	--report-scrim: color-mix(in srgb, #f3efe4 22%, transparent);
+}
+
+/*
+ * Third built-in theme "Cool Aurora" (Story 6.5): a glacial, analytical
+ * identity - cool paper, slate-teal ink, a deep teal accent. Like every theme
+ * it overrides ONLY the semantic --report-* tokens; the accent is darkened so
+ * it holds AAA (7:1) as inline/link text on the cool paper (asserted in the
+ * contrast tests, twins in palette.ts).
+ */
+[data-theme='aurora'] {
+	--report-bg: #eef3f4;
+	--report-surface: #ffffff;
+	--report-text: #15232b;
+	--report-text-muted: #3f5560; /* 7.0:1 on bg, AAA */
+	--report-heading: #10242e;
+	--report-accent: #08526a; /* 7.7:1 on bg, AAA */
+	--report-accent-fill: #08526a;
+	--report-accent-contrast: #eef3f4;
+	--report-rule: color-mix(in srgb, #15232b 12%, transparent);
+	--report-rule-strong: color-mix(in srgb, #15232b 25%, transparent);
+	--report-chart-1: #08526a;
+	--report-chart-2: #1f6a52;
+	--report-chart-3: #7a3a86;
+	--report-chart-4: #8a5a13;
+	--report-chart-5: #345b8c;
+	--report-chart-6: #9a2f57;
+	--report-trend-up: #1f6a52; /* 5.8:1 on bg */
+	--report-trend-down: #a23b3b; /* 5.8:1 on bg */
+	--report-tone-info: #1c5a8e; /* 6.5:1 on bg */
+	--report-tone-success: #1f6a52; /* 5.8:1 on bg */
+	--report-tone-warning: #8a5a13; /* 5.3:1 on bg */
+	--report-tone-danger: #a23b3b; /* 5.8:1 on bg */
+	--report-tone-neutral: #3f5560; /* 7.0:1 on bg */
+	--report-scrim: color-mix(in srgb, #15232b 55%, transparent);
+}
+
+/*
+ * Fourth built-in theme "Warm Meridian" (Story 6.5): a warm editorial identity
+ * - cream paper, sepia ink, a terracotta accent. Overrides ONLY the semantic
+ * --report-* tokens; the accent is darkened so it holds AAA (7:1) as inline/link
+ * text on the warm cream paper (asserted in the contrast tests, twins in
+ * palette.ts).
+ */
+[data-theme='meridian'] {
+	--report-bg: #faf4ec;
+	--report-surface: #fffdf8;
+	--report-text: #2a2018;
+	--report-text-muted: #5a4636; /* 8.1:1 on bg, AAA */
+	--report-heading: #241a12;
+	--report-accent: #922d13; /* 7.4:1 on bg, AAA */
+	--report-accent-fill: #922d13;
+	--report-accent-contrast: #faf4ec;
+	--report-rule: color-mix(in srgb, #2a2018 12%, transparent);
+	--report-rule-strong: color-mix(in srgb, #2a2018 25%, transparent);
+	--report-chart-1: #922d13;
+	--report-chart-2: #2f6b4a;
+	--report-chart-3: #1c4a7e;
+	--report-chart-4: #7a5a13;
+	--report-chart-5: #6a4a86;
+	--report-chart-6: #8a2f3a;
+	--report-trend-up: #2f6b4a; /* 5.8:1 on bg */
+	--report-trend-down: #a23b3b; /* 6.0:1 on bg */
+	--report-tone-info: #1c5a8e; /* 6.6:1 on bg */
+	--report-tone-success: #2f6b4a; /* 5.8:1 on bg */
+	--report-tone-warning: #7a5a13; /* 5.8:1 on bg */
+	--report-tone-danger: #a23b3b; /* 6.0:1 on bg */
+	--report-tone-neutral: #5a4636; /* 8.1:1 on bg */
+	--report-scrim: color-mix(in srgb, #2a2018 55%, transparent);
 }
 
 body {

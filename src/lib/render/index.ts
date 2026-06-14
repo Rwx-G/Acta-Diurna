@@ -10,10 +10,13 @@ export { toReportView, toPreviewView } from './document-view.ts';
 export type { ReportView, SectionView, BlockView, TocEntry } from './document-view.ts';
 export {
 	resolveTheme,
+	isKnownTheme,
+	themeFallbackWarning,
 	BUILT_IN_THEMES,
+	THEME_OPTIONS,
 	THEME_PALETTES,
 	contrastRatio,
 	AAA_CONTRAST,
 	AA_CONTRAST
 } from './theme/index.ts';
-export type { ThemeName, ThemePalette } from './theme/index.ts';
+export type { ThemeName, ThemePalette, ThemeOption, ThemeFallbackWarning } from './theme/index.ts';
