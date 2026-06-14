@@ -188,8 +188,10 @@ REST endpoints are served under `/api/v1` and authenticate with an `Authorizatio
 | `POST` | `/api/v1/reports/:id/publish` | PAT | Publish (freeze a reader snapshot) |
 | `POST` | `/api/v1/reports/:id/unpublish` | PAT | Unpublish to keep editing |
 | `POST` | `/api/v1/reports/:id/duplicate` | PAT | Duplicate into a fresh draft |
+| `POST` | `/api/v1/reports/generate/outline` | PAT | Outline-first generation, stage 1: propose an outline + its approval hash (AI gated) |
+| `POST` | `/api/v1/reports/generate/fill` | PAT | Outline-first generation, stage 2: fill the approved outline into a draft (AI gated) |
 | `POST` | `/api/v1/data-sets` | PAT | Push CSV / JSON data onto a report and rebind |
-| `POST` | `/api/mcp` | PAT | MCP server (Streamable HTTP): discovery + authoring tools (incl. `push_data_set` for CSV / JSON data) |
+| `POST` | `/api/mcp` | PAT | MCP server (Streamable HTTP): discovery + authoring tools (incl. `push_data_set` for data and `generate_outline` / `generate_report` for AI generation) |
 
 Validation errors are RFC 9457 problem-details with the offending block path, field, and a fix hint - identical whether the write came from the workspace, the REST API, or an MCP agent.
 
