@@ -135,6 +135,109 @@ describe('document schema v1 - valid documents', () => {
 		}
 	});
 
+	it('accepts a linkTo on an inline run, a table row, and a matrix finding (Epic 11)', () => {
+		// Each carrier gains an additive, optional `linkTo` (a section id). The target
+		// section exists, so the cross-reference pass passes.
+		const result = validateDocument({
+			version: 1,
+			title: 'Drill-down report',
+			scales: [
+				{ key: 'severity', label: 'Severity', entries: [{ key: 'high', label: 'High' }] },
+				{ key: 'sources', label: 'Sources', entries: [{ key: 'siem', label: 'SIEM' }] }
+			],
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [
+						{
+							type: 'text',
+							id: 'intro',
+							paragraphs: [[{ text: 'See ' }, { text: 'the finding', linkTo: 'finding-detail' }]]
+						},
+						{
+							type: 'table',
+							id: 'rows',
+							columns: [{ key: 'name', label: 'Name' }],
+							rows: [{ name: 'Row A' }, { name: 'Row B' }],
+							rowLinks: ['finding-detail', null]
+						},
+						{
+							type: 'comparison-matrix',
+							id: 'matrix',
+							severityScale: 'severity',
+							sourceScale: 'sources',
+							findings: [
+								{
+									category: 'Access',
+									label: 'Weak policy',
+									severity: 'high',
+									sources: { siem: { state: 'found' } },
+									treatment: { before: 'a', after: 'b', status: 'action' },
+									linkTo: 'finding-detail'
+								}
+							]
+						}
+					]
+				},
+				{
+					id: 'finding-detail',
+					title: 'Finding detail',
+					kind: 'detail',
+					blocks: [{ type: 'text', id: 'evidence', paragraphs: [[{ text: 'Evidence.' }]] }]
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			const [text, table, matrix] = result.document.sections[0].blocks;
+			if (text.type === 'text') {
+				expect(text.paragraphs[0][1].linkTo).toBe('finding-detail');
+			} else {
+				expect.fail('expected a text block');
+			}
+			if (table.type === 'table') {
+				expect(table.rowLinks).toEqual(['finding-detail', null]);
+			} else {
+				expect.fail('expected a table block');
+			}
+			if (matrix.type === 'comparison-matrix') {
+				expect(matrix.findings[0].linkTo).toBe('finding-detail');
+			} else {
+				expect.fail('expected a comparison-matrix block');
+			}
+		}
+	});
+
+	it('rejects an inline run carrying both linkTo and an external link (Epic 11, FR2 parity)', () => {
+		const result = validateDocument({
+			version: 1,
+			title: 'Conflicting link',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [
+						{
+							type: 'text',
+							id: 'intro',
+							paragraphs: [
+								[{ text: 'both', linkTo: 'overview', link: { href: 'https://example.com' } }]
+							]
+						}
+					]
+				}
+			]
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('linkTo'));
+			expect(issue?.path).toBe('sections[0].blocks[0].paragraphs[0][0].linkTo');
+			expect(issue?.message).toContain('mutually exclusive');
+			expect(issue?.hint).toBeTruthy();
+		}
+	});
+
 	it('accepts static data, a binding, or both on data-bound blocks', () => {
 		const result = validateDocument(fullDocument);
 		expect(result.ok).toBe(true);

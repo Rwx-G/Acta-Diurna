@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { idSchema } from '../blocks/shared.ts';
 import { sectionSchema } from '../blocks/section.ts';
 import { scalesSchema, validateScaleReferences } from '../scales.ts';
+import { validateInternalLinks } from '../internal-links.ts';
 
 /** Document schema, version 1. The published contract (FR31, architecture D3). */
 export const documentSchemaV1 = z
@@ -26,6 +27,18 @@ export const documentSchemaV1 = z
 		// `validateScaleReferences` and the dangling refs surface here as FR2
 		// problem-details errors at save/API time.
 		for (const issue of validateScaleReferences(document)) {
+			ctx.addIssue({
+				code: 'custom',
+				message: issue.message,
+				path: issue.path,
+				params: { hint: issue.hint }
+			});
+		}
+		// Internal-link cross-reference pass (Epic 11, Story 11.2): a `linkTo` on an
+		// inline run, a table row, or a comparison-matrix finding that names no
+		// section id is a dangling reference, surfaced here as an FR2 problem-details
+		// error so no document with a dead internal link is ever served.
+		for (const issue of validateInternalLinks(document)) {
 			ctx.addIssue({
 				code: 'custom',
 				message: issue.message,

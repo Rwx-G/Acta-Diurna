@@ -37,6 +37,19 @@ export const tableBlockSchema = z
 			)
 			.max(10000, 'Too many table rows: 10000 maximum.')
 			.optional(),
+		// Per-row internal links (Epic 11, Story 11.2): an array PARALLEL to `rows`,
+		// where `rowLinks[i]` is the optional `linkTo` (a section id in the same
+		// document) for row `i`; an absent or `null`/undefined slot is an un-linked
+		// row. Kept beside `rows` rather than inside the row record so the row stays a
+		// flat data record (the shape ingestion fills), so this is fully additive and
+		// an existing table renders byte-identically. The target section's existence
+		// is checked in the document-level cross-reference pass
+		// (`validateInternalLinks`). Optional, so a table without `rowLinks` is
+		// unchanged.
+		rowLinks: z
+			.array(idSchema.nullable())
+			.max(10000, 'Too many row links: 10000 maximum.')
+			.optional(),
 		binding: bindingSchema.optional(),
 		options: z
 			.object({

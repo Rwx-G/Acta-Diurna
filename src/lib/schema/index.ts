@@ -151,6 +151,9 @@ export type {
 	Scales
 } from './scales.ts';
 
+export { validateInternalLinks } from './internal-links.ts';
+export type { InternalLinkIssue } from './internal-links.ts';
+
 export {
 	documentSchemaV1,
 	getSchema,

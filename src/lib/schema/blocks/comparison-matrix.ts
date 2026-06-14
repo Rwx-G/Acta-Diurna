@@ -70,7 +70,14 @@ export const findingSchema = z.object({
 	// intersection and reads this `tag`; absent, 7.4 falls back to `label`.
 	// Defined here so 7.4 needs no schema change. Forward-dependency, do not
 	// repurpose.
-	tag: z.string().min(1).max(100, 'Finding tag too long: 100 characters maximum.').optional()
+	tag: z.string().min(1).max(100, 'Finding tag too long: 100 characters maximum.').optional(),
+	// Optional internal link (Epic 11, Story 11.2): a section id in the same
+	// document, rendered as an in-page anchor (`#<section-id>`) on the finding's
+	// label so a finding drills down to its detail page. The target section's
+	// existence is checked in the document-level cross-reference pass
+	// (`validateInternalLinks`). Additive and optional: a finding without `linkTo`
+	// renders byte-unchanged.
+	linkTo: idSchema.optional()
 });
 
 export type Finding = z.infer<typeof findingSchema>;

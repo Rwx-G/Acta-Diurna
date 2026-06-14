@@ -187,6 +187,11 @@
 															"required": [
 																"href"
 															]
+														},
+														"linkTo": {
+															"type": "string",
+															"maxLength": 300,
+															"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 														}
 													},
 													"required": [
@@ -281,6 +286,22 @@
 														}
 													]
 												}
+											}
+										},
+										"rowLinks": {
+											"maxItems": 10000,
+											"type": "array",
+											"items": {
+												"anyOf": [
+													{
+														"type": "string",
+														"maxLength": 300,
+														"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+													},
+													{
+														"type": "null"
+													}
+												]
 											}
 										},
 										"binding": {
@@ -870,6 +891,11 @@
 														"type": "string",
 														"minLength": 1,
 														"maxLength": 100
+													},
+													"linkTo": {
+														"type": "string",
+														"maxLength": 300,
+														"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 													}
 												},
 												"required": [
@@ -1178,6 +1204,11 @@
 															"required": [
 																"href"
 															]
+														},
+														"linkTo": {
+															"type": "string",
+															"maxLength": 300,
+															"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 														}
 													},
 													"required": [
@@ -1409,6 +1440,11 @@
 																		"required": [
 																			"href"
 																		]
+																	},
+																	"linkTo": {
+																		"type": "string",
+																		"maxLength": 300,
+																		"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 																	}
 																},
 																"required": [
@@ -1510,6 +1546,11 @@
 																		"required": [
 																			"href"
 																		]
+																	},
+																	"linkTo": {
+																		"type": "string",
+																		"maxLength": 300,
+																		"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 																	}
 																},
 																"required": [
