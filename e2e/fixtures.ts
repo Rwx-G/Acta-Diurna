@@ -24,6 +24,12 @@ export {
 	DELTA_SECOND_ISSUE_FIGURE,
 	DELTA_SECOND_ISSUE_DOWN_FIGURE
 } from './fixtures/delta.ts';
+export {
+	CHANGE_SUMMARY_ENABLED_DOCUMENT,
+	CHANGE_SUMMARY_DISABLED_DOCUMENT,
+	CHANGE_SUMMARY_FIRST_ISSUE_DOCUMENT,
+	CHANGE_SUMMARY_MOVEMENT_FIGURE
+} from './fixtures/change-summary.ts';
 
 export const E2E_PORT = 4173;
 export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
@@ -156,3 +162,14 @@ export const DETAIL_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000007';
 /** The Story 9.4 delta fixture: the first issue (no delta) and the second (baked up-delta). */
 export const DELTA_FIRST_ISSUE_REPORT_ID = '0197b300-0000-7000-8000-000000000008';
 export const DELTA_SECOND_ISSUE_REPORT_ID = '0197b300-0000-7000-8000-000000000009';
+
+/**
+ * The Story 9.5 reader change-summary fixtures: an opted-in issue with baked entries
+ * (the panel shows), an opted-out issue (no panel), and a first issue with no baked
+ * entries (no panel). The baked entries are seeded onto both the draft and the
+ * published document so the author `/view` render surface shows the panel
+ * deterministically; the publish-time bake and its leak-safety are unit-tested.
+ */
+export const CHANGE_SUMMARY_ENABLED_REPORT_ID = '0197b300-0000-7000-8000-00000000000a';
+export const CHANGE_SUMMARY_DISABLED_REPORT_ID = '0197b300-0000-7000-8000-00000000000b';
+export const CHANGE_SUMMARY_FIRST_ISSUE_REPORT_ID = '0197b300-0000-7000-8000-00000000000c';

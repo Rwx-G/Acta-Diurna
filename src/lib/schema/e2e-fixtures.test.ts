@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+	CHANGE_SUMMARY_DISABLED_DOCUMENT,
+	CHANGE_SUMMARY_ENABLED_DOCUMENT,
+	CHANGE_SUMMARY_FIRST_ISSUE_DOCUMENT,
 	DETAIL_FIXTURE_DOCUMENT,
 	MATRIX_FIXTURE_DOCUMENT,
 	PHASE_B_FIXTURE_DOCUMENT
@@ -48,6 +51,30 @@ describe('e2e accessibility fixtures', () => {
 
 	it('the detail fixture is a valid schema-v1 document', () => {
 		expect(validateDocument(DETAIL_FIXTURE_DOCUMENT).ok).toBe(true);
+	});
+
+	it('the change-summary fixtures are valid schema-v1 documents (Story 9.5)', () => {
+		for (const document of [
+			CHANGE_SUMMARY_ENABLED_DOCUMENT,
+			CHANGE_SUMMARY_DISABLED_DOCUMENT,
+			CHANGE_SUMMARY_FIRST_ISSUE_DOCUMENT
+		]) {
+			expect(validateDocument(document).ok).toBe(true);
+		}
+	});
+
+	it('the enabled change-summary fixture surfaces the baked panel on the reader view (Story 9.5)', () => {
+		const result = validateDocument(CHANGE_SUMMARY_ENABLED_DOCUMENT);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const view = toReportView(result.document);
+		// The baked entries reach the renderer; the opted-out and first-issue fixtures
+		// carry no entries, so the renderer shows no panel for them.
+		expect(view.changeSummary.length).toBe(3);
+		const disabled = validateDocument(CHANGE_SUMMARY_DISABLED_DOCUMENT);
+		const first = validateDocument(CHANGE_SUMMARY_FIRST_ISSUE_DOCUMENT);
+		expect(disabled.ok && toReportView(disabled.document).changeSummary).toEqual([]);
+		expect(first.ok && toReportView(first.document).changeSummary).toEqual([]);
 	});
 
 	it('the detail fixture surfaces the level switcher from detail-only audience tags (Story 11.4)', () => {
