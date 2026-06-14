@@ -12,7 +12,11 @@ import {
 	loginRateLimiter
 } from '$lib/server/auth/rate-limit';
 import { validateAuthorSession } from '$lib/server/auth/sessions';
-import { inheritLegacyOwnership, purgeStaleNullAuthorSessions } from '$lib/server/authors';
+import {
+	backfillReportSeries,
+	inheritLegacyOwnership,
+	purgeStaleNullAuthorSessions
+} from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
 import { runMigrations } from '$lib/server/db/migrate';
 import { serverEnv, trustsInboundForwardedHeader } from '$lib/server/env';
@@ -65,6 +69,11 @@ export const init: ServerInit = async () => {
 	// traffic. A failure here means ownership is unenforceable, so it is fatal.
 	try {
 		await inheritLegacyOwnership();
+		// Series lineage backfill (story 9.1): after every report carries an owner,
+		// give every pre-9.1 (series-less) report a fresh single-issue series carrying
+		// that owner, so no report is left without a series. Idempotent and a no-op on
+		// a fully-seriesed database, so it runs every boot after ownership inheritance.
+		await backfillReportSeries();
 		// Multi-mode boot only (no-op in single mode): drop pre-flip password author
 		// sessions that carry no author id, so a single->multi flip forces a fresh
 		// magic-link sign-in instead of letting a stale session act as the initial

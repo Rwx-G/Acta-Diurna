@@ -16,4 +16,8 @@ export {
 export { ownerFilter, ownerForInsert } from './scope.ts';
 export type { AuthorScope } from './scope.ts';
 export { resolveAuthorScope, resolveApiAuthorScope } from './resolve.ts';
-export { inheritLegacyOwnership, purgeStaleNullAuthorSessions } from './inheritance.ts';
+export {
+	inheritLegacyOwnership,
+	backfillReportSeries,
+	purgeStaleNullAuthorSessions
+} from './inheritance.ts';

@@ -17,6 +17,7 @@ import {
 	getPublishedDocument,
 	getReport,
 	listReports,
+	listSeriesIssues,
 	publishReport,
 	unpublishToDraft,
 	updateReportDocument,
@@ -30,12 +31,22 @@ import {
 const dbState = vi.hoisted(() => ({
 	rowsById: new Map<string, Record<string, unknown>>(),
 	inserted: [] as Record<string, unknown>[],
+	series: [] as Record<string, unknown>[],
 	orderBys: [] as { column: string; sql: string }[],
 	listLimits: [] as number[],
 	updates: [] as { column: string; value: unknown; set: Record<string, unknown> }[],
 	deleteFilters: [] as { column: string; value: unknown }[],
 	selectProjections: [] as (string[] | undefined)[]
 }));
+
+/** The drizzle table's SQL name (e.g. 'reports', 'report_series'), off its Name symbol. */
+function tableName(table: unknown): string {
+	if (typeof table !== 'object' || table === null) return '';
+	const sym = Object.getOwnPropertySymbols(table).find(
+		(s) => s.toString() === 'Symbol(drizzle:Name)'
+	);
+	return sym ? String((table as Record<symbol, unknown>)[sym]) : '';
+}
 
 /** The column names of a drizzle `.select({...})` projection, or undefined for a bare select. */
 function decodeSelectProjection(projection: unknown): string[] | undefined {
@@ -82,15 +93,40 @@ vi.mock('$lib/server/mode', () => ({
 
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
-		insert: () => ({
+		insert: (table: unknown) => ({
 			values: (row: Record<string, unknown>) => {
-				dbState.inserted.push(row);
-				dbState.rowsById.set(String(row.id), row);
+				// A report-series insert is tracked separately so the report-count
+				// assertions stay accurate now that create/duplicate also mint a series.
+				if (tableName(table) === 'report_series') {
+					dbState.series.push(row);
+				} else {
+					dbState.inserted.push(row);
+					dbState.rowsById.set(String(row.id), row);
+				}
 				return Promise.resolve();
 			}
 		}),
 		select: (projection?: unknown) => ({
-			from: () => {
+			from: (table?: unknown) => {
+				// The series-lineage read selects from report_series (the owner-scoped
+				// lookup) then from reports (the issues of the series). Serve those from
+				// the dedicated series store / a series-id filter so the chain assembles.
+				if (tableName(table) === 'report_series') {
+					return {
+						where: (filter: SQL) => {
+							const decoded = decodeEqFilters(filter);
+							const idFilter = decoded.find((entry) => entry.column === 'id');
+							return {
+								limit: () => {
+									const match = idFilter
+										? dbState.series.find((s) => String(s.id) === String(idFilter.value))
+										: undefined;
+									return Promise.resolve(match ? [{ id: match.id }] : []);
+								}
+							};
+						}
+					};
+				}
 				dbState.selectProjections.push(decodeSelectProjection(projection));
 				// One chainable builder so the list path (now `.$dynamic()` ->
 				// optional `.where()` -> `.orderBy()` -> `.limit()`, keyset-paginated)
@@ -98,20 +134,31 @@ vi.mock('$lib/server/db/client', () => ({
 				// is detected by an eq(id) where with no order; a list is detected by
 				// an orderBy. The first orderBy argument carries the sort column.
 				let lookup: { column: string; value: unknown } | null = null;
+				let seriesId: { column: string; value: unknown } | null = null;
 				let ordered = false;
 				const builder = {
 					$dynamic: () => builder,
 					where: (filter: SQL) => {
 						// The list keyset/owner WHERE is not a bare eq(id); only the id
 						// lookup is. Decode leniently and remember an eq(id) for the lookup
-						// branch; anything else is a list predicate the mock ignores.
+						// branch; an eq(series_id) for the series-issues branch; anything
+						// else is a list predicate the mock ignores.
 						const decoded = decodeEqFilters(filter);
 						lookup = decoded.find((entry) => entry.column === 'id') ?? null;
+						seriesId = decoded.find((entry) => entry.column === 'series_id') ?? null;
 						return builder;
 					},
 					orderBy: (order: SQL) => {
 						ordered = true;
 						dbState.orderBys.push(decodeOrderBy(order));
+						// The series-issues read ends at orderBy (no limit); resolve to the
+						// reports of that series so the predecessor chain assembles.
+						if (seriesId !== null) {
+							const rows = [...dbState.rowsById.values()].filter(
+								(row) => String(row.seriesId) === String(seriesId!.value)
+							);
+							return Promise.resolve(rows);
+						}
 						return builder;
 					},
 					limit: (count: number) => {
@@ -204,6 +251,9 @@ function seedReport(overrides: Partial<ReportRow> = {}): ReportRow {
 		publishedDocument: null,
 		publishedAt: null,
 		ownerId: null,
+		seriesId: null,
+		predecessorId: null,
+		issueLabel: null,
 		createdAt: new Date('2026-06-12T08:00:00Z'),
 		updatedAt: new Date('2026-06-12T08:00:00Z'),
 		...overrides
@@ -227,6 +277,7 @@ async function expectAppError(promise: Promise<unknown>, status: number): Promis
 beforeEach(() => {
 	dbState.rowsById.clear();
 	dbState.inserted = [];
+	dbState.series = [];
 	dbState.orderBys = [];
 	dbState.listLimits = [];
 	dbState.updates = [];
@@ -260,6 +311,18 @@ describe('createReport', () => {
 
 		expect(error.errors?.[0].path).toBe('title');
 		expect(dbState.inserted).toHaveLength(0);
+	});
+
+	it('starts its own one-issue series with a null predecessor (story 9.1)', async () => {
+		const report = await createReport('Weekly Ops Report', TEST_SCOPE);
+
+		// A fresh series was minted and stamped on the report; no predecessor yet.
+		expect(dbState.series).toHaveLength(1);
+		expect(report.seriesId).toBe(dbState.series[0].id);
+		expect(report.predecessorId).toBeNull();
+		expect(report.issueLabel).toBeNull();
+		// The series carries the creating author, so it is owner-consistent with its issue.
+		expect(dbState.series[0].ownerId).toBe(TEST_SCOPE.authorId);
 	});
 });
 
@@ -354,6 +417,30 @@ describe('duplicateReport', () => {
 		await expectAppError(duplicateReport('not-a-uuid', TEST_SCOPE), 404);
 		expect(dbState.inserted).toHaveLength(0);
 	});
+
+	it('records the lineage edge: predecessor is the source, series is inherited (story 9.1)', async () => {
+		const source = seedReport({ seriesId: '01970000-0000-7000-8000-0000000000c1' });
+
+		const copy = await duplicateReport(source.id, TEST_SCOPE);
+
+		expect(copy.predecessorId).toBe(source.id);
+		// The source already had a series, so no new one is minted; the copy joins it.
+		expect(copy.seriesId).toBe(source.seriesId);
+		expect(dbState.series).toHaveLength(0);
+	});
+
+	it('establishes a series for a legacy source with none and backfills the source onto it', async () => {
+		const source = seedReport({ seriesId: null });
+
+		const copy = await duplicateReport(source.id, TEST_SCOPE);
+
+		// A fresh series was minted, assigned to BOTH the source and the new issue.
+		expect(dbState.series).toHaveLength(1);
+		expect(copy.seriesId).toBe(dbState.series[0].id);
+		expect(copy.predecessorId).toBe(source.id);
+		const storedSource = dbState.rowsById.get(source.id) as ReportRow;
+		expect(storedSource.seriesId).toBe(copy.seriesId);
+	});
 });
 
 describe('getReport', () => {
@@ -372,6 +459,71 @@ describe('getReport', () => {
 
 	it('throws 404 for a malformed id without querying', async () => {
 		await expectAppError(getReport('not-a-uuid', TEST_SCOPE), 404);
+	});
+});
+
+describe('listSeriesIssues', () => {
+	const SERIES_ID = '01970000-0000-7000-8000-0000000000c1';
+
+	function seedSeries(): void {
+		dbState.series.push({ id: SERIES_ID, ownerId: TEST_SCOPE.authorId });
+	}
+
+	function seedIssue(
+		id: string,
+		predecessorId: string | null,
+		overrides: Partial<ReportRow> = {}
+	): void {
+		seedReport({ id, seriesId: SERIES_ID, predecessorId, ...overrides });
+	}
+
+	it('orders the issues by the predecessor chain, not by insertion or publish date', async () => {
+		seedSeries();
+		// Seed deliberately out of chain order; the chain is issue1 -> issue2 -> issue3.
+		seedIssue('01970000-0000-7000-8000-000000000003', '01970000-0000-7000-8000-000000000002');
+		seedIssue('01970000-0000-7000-8000-000000000001', null);
+		seedIssue('01970000-0000-7000-8000-000000000002', '01970000-0000-7000-8000-000000000001');
+
+		const issues = await listSeriesIssues(SERIES_ID, TEST_SCOPE);
+
+		expect(issues.map((issue) => issue.id)).toEqual([
+			'01970000-0000-7000-8000-000000000001',
+			'01970000-0000-7000-8000-000000000002',
+			'01970000-0000-7000-8000-000000000003'
+		]);
+		expect(issues[0].predecessorId).toBeNull();
+		expect(issues[1].predecessorId).toBe(issues[0].id);
+	});
+
+	it('returns a single-issue series as a one-element chain', async () => {
+		seedSeries();
+		seedIssue('01970000-0000-7000-8000-000000000001', null);
+
+		const issues = await listSeriesIssues(SERIES_ID, TEST_SCOPE);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].id).toBe('01970000-0000-7000-8000-000000000001');
+	});
+
+	it('throws 404 for an unknown series id', async () => {
+		await expectAppError(listSeriesIssues('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
+	});
+
+	it('throws 404 for a malformed series id without querying', async () => {
+		await expectAppError(listSeriesIssues('not-a-uuid', TEST_SCOPE), 404);
+	});
+
+	it('projects only the issue metadata, never the heavy JSONB document columns (E1)', async () => {
+		seedSeries();
+		seedIssue('01970000-0000-7000-8000-000000000001', null);
+		dbState.selectProjections = [];
+
+		await listSeriesIssues(SERIES_ID, TEST_SCOPE);
+
+		// The issues read selects the metadata projection only (the series lookup
+		// projects id; it does not go through the recorded projections path).
+		expect(dbState.selectProjections.flat()).not.toContain('document');
+		expect(dbState.selectProjections.flat()).not.toContain('published_document');
 	});
 });
 

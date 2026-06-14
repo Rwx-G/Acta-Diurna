@@ -85,6 +85,9 @@ function sampleReport(overrides: Partial<Report> = {}): Report {
 		document: sampleDocument(),
 		publishedDocument: null,
 		publishedAt: null,
+		seriesId: '01970000-0000-7000-8000-0000000000c1',
+		predecessorId: null,
+		issueLabel: null,
 		createdAt: new Date('2026-06-12T08:00:00Z'),
 		updatedAt: new Date('2026-06-12T09:30:00Z'),
 		...overrides

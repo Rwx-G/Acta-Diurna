@@ -23,7 +23,15 @@
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '$lib/server/db/client';
-import { apiTokens, dataSets, reports, sessions, skeletons } from '$lib/server/db/schema';
+import { uuidv7 } from '$lib/server/db/ids';
+import {
+	apiTokens,
+	dataSets,
+	reportSeries,
+	reports,
+	sessions,
+	skeletons
+} from '$lib/server/db/schema';
 import { logger } from '$lib/server/logger';
 import { isMultiAuthor } from '$lib/server/mode';
 import { ensureImplicitAuthor } from './identity';
@@ -83,6 +91,39 @@ export async function inheritLegacyOwnership(): Promise<{
 		logger.info(counts, 'legacy ownership inherited by the initial owner');
 	}
 	return counts;
+}
+
+/**
+ * Backfills a fresh single-issue series onto every report that has none (Epic 9,
+ * story 9.1). The 0017 migration adds `series_id`/`predecessor_id` NULLABLE so the
+ * DDL is safe against pre-existing rows; this boot step then gives each owner-less-
+ * of-series report its OWN series (a fresh `report_series` row carrying the report's
+ * owner) and a null predecessor, so no report is left without a series and a never-
+ * duplicated report is a one-issue series, not a null.
+ *
+ * Per-report, not a single sweep: each report gets a DISTINCT series (a series
+ * groups a lineage, not every legacy report), so this mints one series per report
+ * and points the report at it. The series carries the report's OWN owner so the
+ * series is owner-consistent with its issue (a series never spans authors). Runs
+ * AFTER `inheritLegacyOwnership` so every report already carries an owner to copy
+ * onto its series. Idempotent: the `series_id IS NULL` guard matches zero rows on a
+ * second boot (a report inserted by the running app already carries its series).
+ */
+export async function backfillReportSeries(): Promise<number> {
+	const db = getDb();
+	const orphans = await db
+		.select({ id: reports.id, ownerId: reports.ownerId })
+		.from(reports)
+		.where(isNull(reports.seriesId));
+	if (orphans.length === 0) return 0;
+
+	for (const report of orphans) {
+		const seriesId = uuidv7();
+		await db.insert(reportSeries).values({ id: seriesId, ownerId: report.ownerId });
+		await db.update(reports).set({ seriesId }).where(eq(reports.id, report.id));
+	}
+	logger.info({ reports: orphans.length }, 'report series backfilled for pre-9.1 reports');
+	return orphans.length;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { and, desc, eq, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, type SQL } from 'drizzle-orm';
 import {
 	validateDocument,
 	validateStoredDocument,
@@ -19,7 +19,7 @@ import {
 	type PageRequest
 } from '$lib/server/db/cursor';
 import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
-import { reports, type ReportRow } from '$lib/server/db/schema';
+import { reportSeries, reports, type ReportRow } from '$lib/server/db/schema';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError } from '$lib/server/problem';
 
@@ -37,6 +37,12 @@ export interface Report {
 	publishedDocument: DocumentV1 | null;
 	/** When the current snapshot was taken; null until first published. */
 	publishedAt: Date | null;
+	/** The series (lineage) this issue belongs to (story 9.1); null only on a pre-backfill row. */
+	seriesId: string | null;
+	/** The issue this one was duplicated from (story 9.1); null for the first issue of a series. */
+	predecessorId: string | null;
+	/** An optional author-set display label for the issue (story 9.1); cosmetic, never an ordering key. */
+	issueLabel: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -58,6 +64,9 @@ function toReport(row: ReportRow): Report {
 		document: row.document,
 		publishedDocument: row.publishedDocument ?? null,
 		publishedAt: row.publishedAt ?? null,
+		seriesId: row.seriesId ?? null,
+		predecessorId: row.predecessorId ?? null,
+		issueLabel: row.issueLabel ?? null,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt
 	};
@@ -188,6 +197,21 @@ async function getReaderRow(id: string): Promise<ReportReaderRow> {
 	return rows[0];
 }
 
+/**
+ * Mints a fresh series owned by the current author and returns its id (story
+ * 9.1). A report that is created fresh (not by duplication) starts its OWN series
+ * with a null predecessor, so a never-duplicated report is a one-issue series, not
+ * a null - the same `ownerForInsert` the report carries, so the series is
+ * owner-consistent with its first issue by construction.
+ */
+async function createSeries(scope: AuthorScope): Promise<string> {
+	const id = uuidv7();
+	await getDb()
+		.insert(reportSeries)
+		.values({ id, ownerId: ownerForInsert(scope) });
+	return id;
+}
+
 function validateOrThrow(input: unknown): DocumentV1 {
 	const result = validateDocument(input);
 	if (!result.ok) throw validationFailed(result.errors);
@@ -248,6 +272,8 @@ export async function createReport(title: string, scope: AuthorScope): Promise<R
 	});
 
 	const now = new Date();
+	// A fresh report starts its own one-issue series with a null predecessor (AC3).
+	const seriesId = await createSeries(scope);
 	const row: ReportRow = {
 		id: uuidv7(),
 		title: document.title,
@@ -257,6 +283,9 @@ export async function createReport(title: string, scope: AuthorScope): Promise<R
 		publishedDocument: null,
 		publishedAt: null,
 		ownerId: ownerForInsert(scope),
+		seriesId,
+		predecessorId: null,
+		issueLabel: null,
 		createdAt: now,
 		updatedAt: now
 	};
@@ -277,6 +306,8 @@ export async function createReportWithDocument(
 ): Promise<Report> {
 	const document = validateOrThrow(documentInput);
 	const now = new Date();
+	// A fresh report starts its own one-issue series with a null predecessor (AC3).
+	const seriesId = await createSeries(scope);
 	const row: ReportRow = {
 		id: uuidv7(),
 		title: document.title,
@@ -286,6 +317,9 @@ export async function createReportWithDocument(
 		publishedDocument: null,
 		publishedAt: null,
 		ownerId: ownerForInsert(scope),
+		seriesId,
+		predecessorId: null,
+		issueLabel: null,
 		createdAt: now,
 		updatedAt: now
 	};
@@ -306,11 +340,29 @@ export async function createReportWithDocument(
  * not carried: shares do not exist until Epic 3, and a fresh report id has none.
  * This stays correct when Epic 3 lands a shares table - duplicate keys only the
  * new report id, so it must never copy share rows from the source.
+ *
+ * Series lineage (Epic 9, story 9.1): this IS the "start the next issue" motion,
+ * so it records the lineage edge - the only addition over the duplicate semantics
+ * above. The new draft sets `predecessor_id` to the source and inherits the
+ * source's `series_id`; if the source carries no series yet (only a legacy
+ * pre-backfill row would, since every live report gets a series on create), one
+ * is established and assigned to the source FIRST, so the source and the new issue
+ * always share a lineage. Owner-scoped by construction: the scoped `getRow`
+ * already proved the source belongs to the duplicating author, the new series (if
+ * minted) carries that author, and the new report carries that author - a series
+ * never spans authors. In single mode this is the implicit author throughout.
  */
 export async function duplicateReport(id: string, scope: AuthorScope): Promise<Report> {
 	const source = await getRow(id, scope);
 	const document = structuredClone(source.document);
 	const now = new Date();
+	// Inherit the source's series; establish one for a legacy source with none, and
+	// backfill the source onto it so the predecessor and its copy share the lineage.
+	let seriesId = source.seriesId;
+	if (seriesId === null) {
+		seriesId = await createSeries(scope);
+		await getDb().update(reports).set({ seriesId }).where(eq(reports.id, source.id));
+	}
 	const row: ReportRow = {
 		id: uuidv7(),
 		title: document.title,
@@ -323,6 +375,9 @@ export async function duplicateReport(id: string, scope: AuthorScope): Promise<R
 		// single mode they are the same implicit author; in multi mode a duplicate
 		// only ever happens on a report the author already owns, via the scoped read).
 		ownerId: ownerForInsert(scope),
+		seriesId,
+		predecessorId: source.id,
+		issueLabel: null,
 		createdAt: now,
 		updatedAt: now
 	};
@@ -333,6 +388,112 @@ export async function duplicateReport(id: string, scope: AuthorScope): Promise<R
 /** Loads one report; 404 when the id is unknown, malformed, or owned by another author. */
 export async function getReport(id: string, scope: AuthorScope): Promise<Report> {
 	return toReport(await getRow(id, scope));
+}
+
+/**
+ * One issue of a series, in the ordered-lineage projection (story 9.1): the
+ * metadata the navigation/diff stories (9.2/9.3) consume, with NEITHER heavy JSONB
+ * document column. `predecessorId` is carried so a consumer can verify the chain.
+ */
+export interface SeriesIssue {
+	id: string;
+	title: string;
+	status: ReportStatus;
+	predecessorId: string | null;
+	issueLabel: string | null;
+	publishedAt: Date | null;
+	updatedAt: Date;
+}
+
+const seriesIssueProjection = {
+	id: reports.id,
+	title: reports.title,
+	status: reports.status,
+	predecessorId: reports.predecessorId,
+	issueLabel: reports.issueLabel,
+	publishedAt: reports.publishedAt,
+	updatedAt: reports.updatedAt
+};
+
+/**
+ * Orders the issues of a series by the PREDECESSOR CHAIN (story 9.1): issue N's
+ * predecessor is issue N-1, so a back-dated or out-of-order republish never
+ * reshuffles the series - `published_at` is a display label, NOT the ordering key.
+ *
+ * The chain is rebuilt in memory from the issue set: the head is the issue whose
+ * predecessor is null (or whose predecessor is outside this series - a defensive
+ * fallback for a hand-edited link), then each successor is the issue pointing back
+ * at the current one. A cycle or a fork (two issues sharing one predecessor) is
+ * impossible by construction (the edge is only ever set by `duplicateReport` to an
+ * existing issue, never re-pointed), but the walk is bounded by the issue count and
+ * stops on a repeat so a corrupted edge degrades to a truncated list, never a hang.
+ */
+function orderByPredecessorChain(issues: SeriesIssue[]): SeriesIssue[] {
+	const byId = new Map(issues.map((issue) => [issue.id, issue]));
+	const successorOf = new Map<string | null, SeriesIssue>();
+	for (const issue of issues) {
+		const key =
+			issue.predecessorId !== null && byId.has(issue.predecessorId) ? issue.predecessorId : null;
+		successorOf.set(key, issue);
+	}
+	const ordered: SeriesIssue[] = [];
+	const seen = new Set<string>();
+	let current = successorOf.get(null) ?? null;
+	while (current && !seen.has(current.id)) {
+		ordered.push(current);
+		seen.add(current.id);
+		current = successorOf.get(current.id) ?? null;
+	}
+	// Any issue the chain did not reach (an orphaned edge) is appended in id order so
+	// it is never silently dropped - the walk above covers the well-formed lineage.
+	for (const issue of issues) {
+		if (!seen.has(issue.id)) ordered.push(issue);
+	}
+	return ordered;
+}
+
+/**
+ * Lists the issues of a series ordered by the predecessor chain (story 9.1), the
+ * read the diff/navigation stories (9.2/9.3) consume. Owner-scoped: the series id
+ * is matched under the owner predicate, so a cross-author (or unknown, or
+ * malformed) series id returns the same neutral 404 the rest of the tenancy layer
+ * uses - no existence oracle. In single mode the implicit author owns every series,
+ * so the predicate is a no-op. Pulls the metadata projection only, never the JSONB
+ * document columns (E1).
+ */
+export async function listSeriesIssues(
+	seriesId: string,
+	scope: AuthorScope
+): Promise<SeriesIssue[]> {
+	if (!UUID_PATTERN.test(seriesId)) throw notFound();
+	// The owner predicate is applied to the SERIES, the lineage's owner of record;
+	// every issue of an owner-consistent series shares that owner by construction.
+	const owner = ownerFilter(scope, reportSeries.ownerId);
+	const seriesWhere = owner
+		? and(eq(reportSeries.id, seriesId), owner)!
+		: eq(reportSeries.id, seriesId);
+	const seriesRows = await getDb()
+		.select({ id: reportSeries.id })
+		.from(reportSeries)
+		.where(seriesWhere)
+		.limit(1);
+	if (seriesRows.length === 0) throw notFound();
+
+	const issueRows = await getDb()
+		.select(seriesIssueProjection)
+		.from(reports)
+		.where(eq(reports.seriesId, seriesId))
+		.orderBy(asc(reports.createdAt), asc(reports.id));
+	const issues = issueRows.map((row) => ({
+		id: row.id,
+		title: row.title,
+		status: row.status as ReportStatus,
+		predecessorId: row.predecessorId ?? null,
+		issueLabel: row.issueLabel ?? null,
+		publishedAt: row.publishedAt ?? null,
+		updatedAt: row.updatedAt
+	}));
+	return orderByPredecessorChain(issues);
 }
 
 /**

@@ -1,6 +1,10 @@
-import { isNull } from 'drizzle-orm';
+import { Column, Param, isNull } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { inheritLegacyOwnership, purgeStaleNullAuthorSessions } from './inheritance';
+import {
+	backfillReportSeries,
+	inheritLegacyOwnership,
+	purgeStaleNullAuthorSessions
+} from './inheritance';
 
 // The implicit author resolves to a fixed id; inheritance backfills every
 // owner-less row to it. The db mock records UPDATE ... SET owner_id WHERE
@@ -25,11 +29,12 @@ vi.mock('$lib/server/mode', () => ({
 }));
 
 const dbState = vi.hoisted(() => ({
-	reports: [] as { id: string; ownerId: string | null }[],
+	reports: [] as { id: string; ownerId: string | null; seriesId?: string | null }[],
 	dataSets: [] as { id: string; ownerId: string | null }[],
 	skeletons: [] as { id: string; ownerId: string | null }[],
 	apiTokens: [] as { id: string; ownerId: string | null }[],
-	sessions: [] as { id: string; realm: string; authorId: string | null }[]
+	sessions: [] as { id: string; realm: string; authorId: string | null }[],
+	series: [] as { id: string; ownerId: string | null }[]
 }));
 
 vi.mock('$lib/server/db/client', () => {
@@ -48,20 +53,59 @@ vi.mock('$lib/server/db/client', () => {
 		if (name === 'api_tokens') return dbState.apiTokens;
 		return [];
 	}
+	// Decode a bare eq(column, value) WHERE so the series backfill's per-row
+	// `update(reports).where(eq(id, x))` can be applied to the matching row.
+	function decodeEqId(filter: unknown): string | null {
+		const chunks = (filter as { queryChunks?: unknown[] }).queryChunks ?? [];
+		const column = chunks.find((c): c is Column => c instanceof Column);
+		const param = chunks.find((c): c is Param => c instanceof Param);
+		return column?.name === 'id' && param ? String(param.value) : null;
+	}
 	return {
 		getDb: () => ({
+			select: () => ({
+				// backfillReportSeries reads the series-less reports (series_id IS NULL);
+				// the mock keys off the live seriesId, so it returns exactly the orphans.
+				from: (table: unknown) => ({
+					where: () => {
+						if (nameOf(table) !== 'reports') return Promise.resolve([]);
+						const orphans = dbState.reports.filter(
+							(row) => row.seriesId === null || row.seriesId === undefined
+						);
+						return Promise.resolve(orphans.map((row) => ({ id: row.id, ownerId: row.ownerId })));
+					}
+				})
+			}),
+			insert: (table: unknown) => ({
+				values: (row: { id: string; ownerId: string | null }) => {
+					if (nameOf(table) === 'report_series') dbState.series.push(row);
+					return Promise.resolve();
+				}
+			}),
 			update: (table: unknown) => ({
-				set: (set: { ownerId: string }) => ({
-					where: () => ({
-						// inheritLegacyOwnership filters on owner_id IS NULL; the mock applies
-						// the set to exactly the currently-null rows and returns them.
-						returning: () => {
+				set: (set: { ownerId?: string; seriesId?: string }) => ({
+					// The series backfill awaits update(reports).where(eq(id, x)) directly
+					// (no .returning()); the ownership backfill calls .returning() on the
+					// IS NULL sweep. Return a thenable that ALSO carries .returning().
+					where: (filter: unknown) => {
+						const apply = () => {
 							const rows = rowsFor(nameOf(table));
+							if (set.seriesId !== undefined) {
+								const id = decodeEqId(filter);
+								const touched = rows.filter((row) => row.id === id);
+								for (const row of touched) (row as { seriesId?: string }).seriesId = set.seriesId;
+								return touched;
+							}
 							const touched = rows.filter((row) => row.ownerId === null);
-							for (const row of touched) row.ownerId = set.ownerId;
-							return Promise.resolve(touched.map((row) => ({ id: row.id })));
-						}
-					})
+							for (const row of touched) row.ownerId = set.ownerId!;
+							return touched;
+						};
+						const result = apply();
+						const promise = Promise.resolve({ rowCount: result.length });
+						return Object.assign(promise, {
+							returning: () => Promise.resolve(result.map((row) => ({ id: row.id })))
+						});
+					}
 				})
 			}),
 			delete: (table: unknown) => ({
@@ -97,6 +141,7 @@ beforeEach(() => {
 	dbState.skeletons = [{ id: 's-legacy', ownerId: null }];
 	dbState.apiTokens = [{ id: 't-legacy', ownerId: null }];
 	dbState.sessions = [];
+	dbState.series = [];
 });
 
 describe('inheritLegacyOwnership', () => {
@@ -122,6 +167,44 @@ describe('inheritLegacyOwnership', () => {
 		expect(second.dataSets).toBe(0);
 		expect(second.skeletons).toBe(0);
 		expect(second.apiTokens).toBe(0);
+	});
+});
+
+describe('backfillReportSeries (story 9.1)', () => {
+	beforeEach(() => {
+		// Every report carries an owner by the time the series backfill runs (it runs
+		// after inheritLegacyOwnership), but none carries a series yet.
+		dbState.reports = [
+			{ id: 'r-1', ownerId: 'author-a', seriesId: null },
+			{ id: 'r-2', ownerId: 'author-b', seriesId: null }
+		];
+	});
+
+	it('gives every series-less report its own fresh series carrying the report owner', async () => {
+		const count = await backfillReportSeries();
+
+		expect(count).toBe(2);
+		// Two DISTINCT series were minted (a series groups a lineage, not all reports).
+		expect(dbState.series).toHaveLength(2);
+		expect(dbState.series[0].id).not.toBe(dbState.series[1].id);
+		// Each report now points at a series, and that series carries the report's owner.
+		const r1 = dbState.reports.find((r) => r.id === 'r-1')!;
+		const r2 = dbState.reports.find((r) => r.id === 'r-2')!;
+		expect(r1.seriesId).toBeTruthy();
+		expect(r2.seriesId).toBeTruthy();
+		expect(r1.seriesId).not.toBe(r2.seriesId);
+		const s1 = dbState.series.find((s) => s.id === r1.seriesId)!;
+		const s2 = dbState.series.find((s) => s.id === r2.seriesId)!;
+		expect(s1.ownerId).toBe('author-a');
+		expect(s2.ownerId).toBe('author-b');
+	});
+
+	it('is idempotent: a second run finds no series-less report and mints nothing', async () => {
+		await backfillReportSeries();
+		const second = await backfillReportSeries();
+
+		expect(second).toBe(0);
+		expect(dbState.series).toHaveLength(2);
 	});
 });
 

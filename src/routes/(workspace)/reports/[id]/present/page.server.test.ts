@@ -41,6 +41,9 @@ function reportWith(
 		publishedDocument,
 		publishedAt: status === 'published' ? new Date() : null,
 		status,
+		seriesId: '01970000-0000-7000-8000-0000000000c1',
+		predecessorId: null,
+		issueLabel: null,
 		createdAt: new Date(),
 		updatedAt: new Date()
 	} as Awaited<ReturnType<typeof getReport>>;
