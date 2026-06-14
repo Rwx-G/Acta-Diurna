@@ -13,6 +13,7 @@ import {
 	createReport,
 	createReportWithDocument,
 	deleteDraft,
+	diffSeriesIssue,
 	duplicateReport,
 	getPublishedDocument,
 	getReport,
@@ -1045,6 +1046,112 @@ describe('getPublishedDocument', () => {
 
 		expect(error.type).toBe('/problems/document-validation');
 		expect(error.errors?.[0].path).toBe('version');
+	});
+});
+
+describe('diffSeriesIssue', () => {
+	const ISSUE_ID = '01970000-0000-7000-8000-000000000010';
+	const PRED_ID = '01970000-0000-7000-8000-000000000011';
+
+	/** A validated single-section document with one text block, content set by `prose`. */
+	function snapshot(prose: string): DocumentV1 {
+		const result = validateDocument({
+			version: 1,
+			title: 'Quarterly Review',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: prose }]] }]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('snapshot must be valid');
+		return result.document;
+	}
+
+	it('diffs a published issue against its published predecessor and flags the content change', async () => {
+		seedReport({
+			id: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshot('Old prose'),
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+		seedReport({
+			id: ISSUE_ID,
+			predecessorId: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshot('New prose'),
+			publishedAt: new Date('2026-06-13T09:00:00Z')
+		});
+
+		const result = await diffSeriesIssue(ISSUE_ID, TEST_SCOPE);
+
+		expect(result.kind).toBe('diff');
+		if (result.kind !== 'diff') throw new Error('expected a computed diff');
+		const block = result.sections.flatMap((s) => s.blocks).find((b) => b.id === 'intro');
+		expect(block?.change).toBe('kept');
+		expect(block?.contentChanged).toBe(true);
+		expect(block?.dataChanged).toBe(false);
+	});
+
+	it('returns a neutral no-predecessor result for the first issue (null predecessor)', async () => {
+		seedReport({
+			id: ISSUE_ID,
+			predecessorId: null,
+			status: 'published',
+			publishedDocument: snapshot('First edition'),
+			publishedAt: new Date('2026-06-13T09:00:00Z')
+		});
+
+		const result = await diffSeriesIssue(ISSUE_ID, TEST_SCOPE);
+
+		expect(result).toEqual({ kind: 'no-predecessor' });
+	});
+
+	it('returns no-predecessor when the predecessor exists but is unpublished (no snapshot)', async () => {
+		seedReport({ id: PRED_ID, status: 'draft', predecessorId: null });
+		seedReport({
+			id: ISSUE_ID,
+			predecessorId: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshot('New edition'),
+			publishedAt: new Date('2026-06-13T09:00:00Z')
+		});
+
+		const result = await diffSeriesIssue(ISSUE_ID, TEST_SCOPE);
+
+		expect(result).toEqual({ kind: 'no-predecessor' });
+	});
+
+	it('throws 409 not-published when the issue itself is a draft (no edition to diff)', async () => {
+		seedReport({ id: ISSUE_ID, predecessorId: PRED_ID, status: 'draft' });
+
+		const error = await expectAppError(diffSeriesIssue(ISSUE_ID, TEST_SCOPE), 409);
+
+		expect(error.type).toBe('/problems/report-not-published');
+	});
+
+	it('throws 404 for an unknown issue id', async () => {
+		await expectAppError(diffSeriesIssue('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
+	});
+
+	it('throws 404 for a malformed issue id without querying', async () => {
+		await expectAppError(diffSeriesIssue('not-a-uuid', TEST_SCOPE), 404);
+	});
+
+	it('throws 404 when the predecessor edge points at an unknown report (corrupted link)', async () => {
+		seedReport({
+			id: ISSUE_ID,
+			predecessorId: '01970000-0000-7000-8000-00000000beef',
+			status: 'published',
+			publishedDocument: snapshot('New edition'),
+			publishedAt: new Date('2026-06-13T09:00:00Z')
+		});
+
+		// The predecessor is re-resolved under the owner scope; an unresolvable edge is
+		// the same neutral 404, never a leak or a crash.
+		await expectAppError(diffSeriesIssue(ISSUE_ID, TEST_SCOPE), 404);
 	});
 });
 

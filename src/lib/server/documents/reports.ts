@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, type SQL } from 'drizzle-orm';
 import {
+	diffSnapshots,
 	validateDocument,
 	validateStoredDocument,
 	toProblemDetails,
 	type DocumentMigration,
 	type DocumentV1,
+	type SeriesDiff,
 	type ValidationErrorDetail
 } from '$lib/schema';
 import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
@@ -818,4 +820,75 @@ export async function getPublishedDocument(
 	if (!result.ok) throw validationFailed(result.errors);
 	// Author-only speaker notes never leave the server on a reader path (Story 6.2).
 	return stripSpeakerNotes(result.document);
+}
+
+/**
+ * The published snapshot of an owner-scoped row, validated through the same
+ * migrate-then-validate render-path contract `getPublishedDocument` uses, or null
+ * when the row carries no published snapshot (never published, or unpublished).
+ * Unlike `getPublishedDocument`, this reads an ALREADY owner-scoped row (the diff
+ * is an AUTHOR surface, not the share-gated reader path), so it is the scoped twin
+ * used to resolve the two editions a diff compares. Notes are NOT stripped here:
+ * this is an author-owned read, and the diff engine never ships prior-issue data
+ * to a reader (a later opt-in story gates any reader exposure).
+ */
+function publishedSnapshotOf(
+	row: ReportRow,
+	migrations?: readonly DocumentMigration[]
+): DocumentV1 | null {
+	if (row.status !== 'published' || row.publishedDocument === null) return null;
+	const result = validateStoredDocument(row.publishedDocument, migrations);
+	if (!result.ok) throw validationFailed(result.errors);
+	return result.document;
+}
+
+/**
+ * Diffs a published issue against its published predecessor in the same series
+ * (story 9.2), returning the typed {@link SeriesDiff} the workspace "what changed"
+ * view (9.3) and the optional reader summary (9.5) consume. This is the
+ * OWNER-SCOPED wiring around the pure {@link diffSnapshots} engine: the engine
+ * compares two documents and is side-effect-free; THIS function resolves the two
+ * published snapshots under one {@link AuthorScope} and feeds them in.
+ *
+ * Both reads go through the scoped `getRow`, so a cross-author, unknown, or
+ * malformed issue id is the same neutral 404 the rest of the tenancy layer uses -
+ * a diff never spans authors (the series is owner-consistent by construction, but
+ * the predecessor is independently re-scoped, so a hand-corrupted `predecessor_id`
+ * pointing at a foreign report still 404s rather than leaking it). In single mode
+ * the implicit author owns everything, so the predicate is a no-op.
+ *
+ * The issue itself must be published (a diff compares two frozen editions, so an
+ * unpublished issue has no edition to compare) - a draft issue throws the same 409
+ * not-published `getPublishedDocument` raises. The PREDECESSOR being absent (the
+ * first issue) or unpublished yields a neutral `no-predecessor` result, never an
+ * error: the engine is handed a null old snapshot. A genuinely different
+ * predecessor (a corrupted series link, a rebuilt issue) degrades to the engine's
+ * neutral `substantial-drift` verdict.
+ *
+ * `migrations` is injectable for tests, matching `getPublishedDocument` / the
+ * `validateStoredDocument` contract: a snapshot frozen under an earlier schema
+ * version is lifted to the current shape before the diff runs.
+ */
+export async function diffSeriesIssue(
+	id: string,
+	scope: AuthorScope,
+	migrations?: readonly DocumentMigration[]
+): Promise<SeriesDiff> {
+	const issueRow = await getRow(id, scope);
+	const newSnapshot = publishedSnapshotOf(issueRow, migrations);
+	if (newSnapshot === null) throw notShareable();
+
+	// No predecessor edge: the first issue of the series. The engine returns the
+	// neutral no-predecessor result, so the caller renders "first issue, nothing to
+	// compare" without a special-case here.
+	if (issueRow.predecessorId === null) {
+		return diffSnapshots(newSnapshot, null);
+	}
+
+	// The predecessor is re-resolved under the SAME scope: a foreign or unknown
+	// predecessor is the neutral 404, and an unpublished predecessor (no snapshot)
+	// is handed to the engine as a null old snapshot -> the no-predecessor verdict.
+	const predecessorRow = await getRow(issueRow.predecessorId, scope);
+	const oldSnapshot = publishedSnapshotOf(predecessorRow, migrations);
+	return diffSnapshots(newSnapshot, oldSnapshot);
 }
