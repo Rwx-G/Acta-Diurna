@@ -173,6 +173,140 @@ test('MCP write tools author a report end-to-end with a real PAT', async ({ page
 	}
 });
 
+// Story 11.5 (FR30/FR31 parity): authoring a detail section (`kind: 'detail'`) plus
+// an internal `linkTo` over MCP goes through the SAME validate-on-write service REST
+// and the workspace use. Drive create_report with a REAL MCP client and assert the
+// same three outcomes the REST twin (`reports-api.e2e.ts`) asserts: a valid detail +
+// linkTo creates; a dangling linkTo is the cross-ref 422 with the same actionable
+// errors[]; an annex + detail section is the mutual-exclusion 422.
+test('MCP authors a detail section + linkTo through the shared validate-on-write service', async ({
+	page
+}, testInfo) => {
+	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
+
+	await page.goto('/settings');
+	await page.getByLabel('Token name').fill('e2e mcp detail');
+	await page.getByRole('button', { name: 'Create token' }).click();
+	const tokenCode = page.locator('.created-url');
+	await expect(tokenCode).toBeVisible();
+	const rawToken = (await tokenCode.textContent())!.trim();
+
+	const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
+		requestInit: { headers: { authorization: `Bearer ${rawToken}` } }
+	});
+	const client = new Client({ name: 'e2e-detail', version: '0.0.0' });
+	await client.connect(transport);
+
+	const parse = (result: Awaited<ReturnType<typeof client.callTool>>) => {
+		const content = result.content as { type: string; text: string }[];
+		return JSON.parse(content[0].text) as Record<string, unknown>;
+	};
+
+	try {
+		// A valid detail section reached by a table rowLink -> accepted, a fresh draft.
+		const valid = await client.callTool({
+			name: 'create_report',
+			arguments: {
+				document: {
+					version: 1,
+					title: 'MCP drill-down',
+					sections: [
+						{
+							id: 'findings',
+							title: 'Findings',
+							blocks: [
+								{
+									type: 'table',
+									id: 'rows',
+									columns: [{ key: 'name', label: 'Name' }],
+									rows: [{ name: 'Row A' }],
+									rowLinks: ['finding-detail']
+								}
+							]
+						},
+						{
+							id: 'finding-detail',
+							title: 'Finding detail',
+							kind: 'detail',
+							blocks: [{ type: 'text', id: 'body', paragraphs: [[{ text: 'Evidence.' }]] }]
+						}
+					]
+				}
+			}
+		});
+		expect(valid.isError).toBeFalsy();
+		const id = (parse(valid) as { id: string }).id;
+		// Clean up the accepted draft.
+		await client.callTool({ name: 'delete_report', arguments: { id } });
+
+		// A dangling linkTo -> the cross-reference 422 with the actionable errors[]
+		// (the same payload REST returns: path names `linkTo`, message names the target).
+		const dangling = await client.callTool({
+			name: 'create_report',
+			arguments: {
+				document: {
+					version: 1,
+					title: 'MCP dangling',
+					sections: [
+						{
+							id: 'findings',
+							title: 'Findings',
+							blocks: [
+								{
+									type: 'text',
+									id: 'intro',
+									paragraphs: [[{ text: 'See ' }, { text: 'the detail', linkTo: 'ghost-section' }]]
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		expect(dangling.isError).toBe(true);
+		const danglingProblem = parse(dangling) as {
+			status: number;
+			errors: { path: string; message: string }[];
+		};
+		expect(danglingProblem.status).toBe(422);
+		expect(danglingProblem.errors.some((error) => error.path.includes('linkTo'))).toBe(true);
+		expect(danglingProblem.errors.some((error) => error.message.includes('ghost-section'))).toBe(
+			true
+		);
+
+		// An annex + detail section -> the mutual-exclusion 422.
+		const bothPlacements = await client.callTool({
+			name: 'create_report',
+			arguments: {
+				document: {
+					version: 1,
+					title: 'MCP both placements',
+					sections: [
+						{
+							id: 'finding-detail',
+							title: 'Finding detail',
+							kind: 'detail',
+							annex: true,
+							blocks: [{ type: 'text', id: 'body', paragraphs: [[{ text: 'Evidence.' }]] }]
+						}
+					]
+				}
+			}
+		});
+		expect(bothPlacements.isError).toBe(true);
+		const bothProblem = parse(bothPlacements) as {
+			status: number;
+			errors: { message: string }[];
+		};
+		expect(bothProblem.status).toBe(422);
+		expect(bothProblem.errors.some((error) => error.message.includes('mutually exclusive'))).toBe(
+			true
+		);
+	} finally {
+		await transport.close();
+	}
+});
+
 // The data-push follow-up (the FR13/14/15 parity of POST /api/v1/data-sets as an
 // MCP tool): drive push_data_set end-to-end with a REAL MCP client against the live
 // server + DB. Create a draft report carrying a table block whose binding maps a

@@ -133,3 +133,125 @@ test('full report lifecycle over /api/v1 with a PAT, plus the OpenAPI spec', asy
 	const noBearer = await page.request.get(base, { maxRedirects: 0, failOnStatusCode: false });
 	expect(noBearer.status()).toBe(401);
 });
+
+// Story 11.5 (FR30/FR31 parity): authoring a detail section (`kind: 'detail'`) plus
+// an internal `linkTo` over REST goes through the SAME validate-on-write service the
+// workspace and MCP use - same schema, same document-level cross-reference pass, same
+// actionable problem+json. Prove all three outcomes: a valid detail + linkTo creates;
+// a dangling linkTo is the cross-ref 422; an annex+detail section is the mutual-
+// exclusion 422. The MCP twin lives in `mcp-api.e2e.ts`.
+test('REST authors a detail section + linkTo through the shared validate-on-write service', async ({
+	page
+}, testInfo) => {
+	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
+
+	await page.goto('/settings');
+	await page.getByLabel('Token name').fill('e2e detail authoring');
+	await page.getByRole('button', { name: 'Create token' }).click();
+	const rawToken = (await page.locator('.created-url').textContent())!.trim();
+	const auth = { authorization: `Bearer ${rawToken}`, 'content-type': 'application/json' };
+	const base = `${E2E_BASE_URL}/api/v1/reports`;
+
+	// A detail section reached by a table rowLink: the cross-reference resolves, so
+	// the document is accepted (201) and the draft is created.
+	const valid = await page.request.post(base, {
+		headers: auth,
+		data: {
+			document: {
+				version: 1,
+				title: 'REST drill-down',
+				sections: [
+					{
+						id: 'findings',
+						title: 'Findings',
+						blocks: [
+							{
+								type: 'table',
+								id: 'rows',
+								columns: [{ key: 'name', label: 'Name' }],
+								rows: [{ name: 'Row A' }],
+								rowLinks: ['finding-detail']
+							}
+						]
+					},
+					{
+						id: 'finding-detail',
+						title: 'Finding detail',
+						kind: 'detail',
+						blocks: [{ type: 'text', id: 'body', paragraphs: [[{ text: 'Evidence.' }]] }]
+					}
+				]
+			}
+		},
+		failOnStatusCode: false
+	});
+	expect(valid.status()).toBe(201);
+	const created = (await valid.json()) as { id: string };
+	// Clean up the accepted draft.
+	await page.request.delete(`${base}/${created.id}`, { headers: auth, failOnStatusCode: false });
+
+	// A dangling linkTo (no such section) is the document-level cross-reference 422,
+	// carrying the actionable errors[] that names the offending path.
+	const dangling = await page.request.post(base, {
+		headers: auth,
+		data: {
+			document: {
+				version: 1,
+				title: 'REST dangling',
+				sections: [
+					{
+						id: 'findings',
+						title: 'Findings',
+						blocks: [
+							{
+								type: 'text',
+								id: 'intro',
+								paragraphs: [[{ text: 'See ' }, { text: 'the detail', linkTo: 'ghost-section' }]]
+							}
+						]
+					}
+				]
+			}
+		},
+		failOnStatusCode: false
+	});
+	expect(dangling.status()).toBe(422);
+	expect(dangling.headers()['content-type']).toContain('application/problem+json');
+	const danglingProblem = (await dangling.json()) as {
+		errors: Array<{ path: string; message: string }>;
+	};
+	expect(danglingProblem.errors.some((error) => error.path.includes('linkTo'))).toBe(true);
+	expect(danglingProblem.errors.some((error) => error.message.includes('ghost-section'))).toBe(
+		true
+	);
+
+	// An annex + detail section is the mutual-exclusion 422 (a section is one or the
+	// other, never both).
+	const bothPlacements = await page.request.post(base, {
+		headers: auth,
+		data: {
+			document: {
+				version: 1,
+				title: 'REST both placements',
+				sections: [
+					{
+						id: 'finding-detail',
+						title: 'Finding detail',
+						kind: 'detail',
+						annex: true,
+						blocks: [{ type: 'text', id: 'body', paragraphs: [[{ text: 'Evidence.' }]] }]
+					}
+				]
+			}
+		},
+		failOnStatusCode: false
+	});
+	expect(bothPlacements.status()).toBe(422);
+	expect(bothPlacements.headers()['content-type']).toContain('application/problem+json');
+	const bothProblem = (await bothPlacements.json()) as {
+		errors: Array<{ path: string; message: string }>;
+	};
+	expect(bothProblem.errors.some((error) => error.message.includes('mutually exclusive'))).toBe(
+		true
+	);
+});
