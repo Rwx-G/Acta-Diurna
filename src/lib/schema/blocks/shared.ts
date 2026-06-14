@@ -102,6 +102,85 @@ export const bindingDeltaSchema = z.object({
 export type BindingDelta = z.infer<typeof bindingDeltaSchema>;
 
 /**
+ * One headline data movement in the reader-facing change summary (Story 9.5): a
+ * single KPI figure that moved against the previous issue, carried by the SAME
+ * already-baked {@link BindingDelta} the renderer reads off the binding. It carries
+ * NO prior-issue raw data - only the leak-safe delta facts (direction, signed
+ * change) the reader is already served on the block itself, plus the block's own
+ * label - so surfacing it in the summary ships nothing new to the reader.
+ *
+ * `label` is the KPI item's own label (already in the reader's DOM); `delta` is the
+ * baked movement (already on the binding). Both are reader-visible by construction,
+ * so the summary is a re-presentation of facts the reader already has, never a leak.
+ */
+export const changeSummaryMovementSchema = z.object({
+	label: z.string().min(1).max(300, 'Movement label too long: 300 characters maximum.'),
+	delta: bindingDeltaSchema
+});
+
+export type ChangeSummaryMovement = z.infer<typeof changeSummaryMovementSchema>;
+
+/** The structural verdict a change-summary entry surfaces: a section appeared, vanished, or changed. */
+export const changeSummaryVerdictSchema = z.enum(['added', 'removed', 'updated']);
+
+export type ChangeSummaryVerdict = z.infer<typeof changeSummaryVerdictSchema>;
+
+/**
+ * One entry in the reader-facing change summary (Story 9.5): a section that was
+ * added, removed, or updated since the previous issue, plus any headline data
+ * movements under it. Each entry mirrors the SECTION's own audience tags so the
+ * reader CSS hides a summary line that references a section hidden at the reader's
+ * level - the same `data-audiences` mechanism that hides the section itself, so the
+ * summary never references a section the reader's level conceals (AC2).
+ *
+ * The entry carries only leak-safe facts: the section id and title (already in the
+ * reader's TOC), the structural verdict (a flag, never prior prose), the section's
+ * audience tags (already on the rendered section), and the baked headline movements
+ * (already on each KPI binding). No prior-issue raw content, no speaker notes, no
+ * draft content - nothing the reader is not already served on the report itself.
+ */
+export const changeSummaryEntrySchema = z.object({
+	sectionId: idSchema,
+	sectionTitle: z
+		.string()
+		.min(1, 'A change-summary entry needs a section title.')
+		.max(300, 'Section title too long: 300 characters maximum.'),
+	change: changeSummaryVerdictSchema,
+	audiences: audiencesSchema.optional(),
+	movements: z
+		.array(changeSummaryMovementSchema)
+		.max(50, 'Too many headline movements in a change-summary entry: 50 maximum.')
+		.optional()
+});
+
+export type ChangeSummaryEntry = z.infer<typeof changeSummaryEntrySchema>;
+
+/**
+ * The optional, opt-in reader-facing "changes since the previous issue" summary
+ * (Story 9.5). `enabled` is the author's opt-in, OFF by default: a document without
+ * this field, or with `enabled: false`, renders byte-unchanged and shows no panel.
+ *
+ * `entries` is the leak-safe summary BAKED at publish time, server-side, from the
+ * `SeriesDiff` against the predecessor's published snapshot (the same precompute
+ * pattern as the `binding.delta`): the platform computes the diff, distills it to a
+ * sections-plus-headline-movements summary carrying only reader-visible facts, and
+ * freezes it here so the PURE renderer reads it straight off the validated document
+ * (no `$lib/server`, no client compute, no prior-issue raw data). `entries` is absent
+ * when there is no predecessor (a first issue), the predecessor is unpublished, or the
+ * pair drifted substantially - the omit-rather-than-mislead rule, so the panel simply
+ * does not appear. Additive and optional throughout: no schema-version bump.
+ */
+export const changeSummarySchema = z.object({
+	enabled: z.boolean(),
+	entries: z
+		.array(changeSummaryEntrySchema)
+		.max(200, 'Too many change-summary entries: 200 maximum.')
+		.optional()
+});
+
+export type ChangeSummary = z.infer<typeof changeSummarySchema>;
+
+/**
  * Declares the fields a data-bound block expects so ingestion (Epic 2) can
  * resolve uploaded data against them. `dataSetId` stays optional until
  * uploads exist (Epic 2).

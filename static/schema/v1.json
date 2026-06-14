@@ -81,6 +81,114 @@
 				]
 			}
 		},
+		"changeSummary": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				},
+				"entries": {
+					"maxItems": 200,
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"sectionId": {
+								"type": "string",
+								"maxLength": 300,
+								"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+							},
+							"sectionTitle": {
+								"type": "string",
+								"minLength": 1,
+								"maxLength": 300
+							},
+							"change": {
+								"type": "string",
+								"enum": [
+									"added",
+									"removed",
+									"updated"
+								]
+							},
+							"audiences": {
+								"maxItems": 3,
+								"type": "array",
+								"items": {
+									"type": "string",
+									"enum": [
+										"summary",
+										"full",
+										"technical"
+									]
+								}
+							},
+							"movements": {
+								"maxItems": 50,
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"label": {
+											"type": "string",
+											"minLength": 1,
+											"maxLength": 300
+										},
+										"delta": {
+											"type": "object",
+											"properties": {
+												"direction": {
+													"type": "string",
+													"enum": [
+														"up",
+														"down",
+														"flat"
+													]
+												},
+												"priorValue": {
+													"type": "number"
+												},
+												"absolute": {
+													"type": "number"
+												},
+												"relative": {
+													"anyOf": [
+														{
+															"type": "number"
+														},
+														{
+															"type": "null"
+														}
+													]
+												}
+											},
+											"required": [
+												"direction",
+												"priorValue",
+												"absolute",
+												"relative"
+											]
+										}
+									},
+									"required": [
+										"label",
+										"delta"
+									]
+								}
+							}
+						},
+						"required": [
+							"sectionId",
+							"sectionTitle",
+							"change"
+						]
+					}
+				}
+			},
+			"required": [
+				"enabled"
+			]
+		},
 		"sections": {
 			"minItems": 1,
 			"maxItems": 100,

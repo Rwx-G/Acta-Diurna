@@ -1,0 +1,183 @@
+/**
+ * Reader-facing change-summary builder (Epic 9, Story 9.5).
+ *
+ * A pure, isomorphic function that distills a {@link SeriesDiff} into the leak-safe
+ * {@link ChangeSummary} entries baked onto the published snapshot at publish time.
+ * It is the single authoritative source the publish-time bake calls, kept here in
+ * the schema package (imports nothing from `$lib/server` or `$lib/ui`, the same
+ * boundary as `series-diff.ts` and `binding-delta.ts`) so the bake and the pure
+ * renderer can never drift on what the summary contains.
+ *
+ * The renderer never computes this: the entries are frozen onto the published
+ * snapshot at publish time and read straight off the validated document, so no
+ * prior-issue raw content ever reaches the reader.
+ *
+ * The field set (Story 9.5 AC1, "sections added/removed, headline data movements"):
+ * - SECTIONS that were added, removed, or updated since the previous issue. A
+ *   section is `updated` when it stayed (kept/moved) and any block under it changed
+ *   structurally, in data, or in content. A section with no change produces no entry.
+ * - HEADLINE DATA MOVEMENTS: the already-baked KPI {@link BindingDelta} of each
+ *   data-bound KPI in the section whose data changed. The delta is read straight off
+ *   the binding (it was baked by the 9.4 publish-time bake, which the summary bake
+ *   runs AFTER), so the summary re-presents a figure the reader is already served on
+ *   the block - never a prior raw value.
+ *
+ * Leak-safety: an entry carries only the section id and title (already in the
+ * reader's TOC), the structural verdict (a flag, never prior prose), the section's
+ * own audience tags (already on the rendered section, so the reader CSS hides a
+ * summary line for a section hidden at the reader's level), and the baked headline
+ * movements (already on each KPI binding). No prior-issue block bodies, no speaker
+ * notes, no draft content.
+ *
+ * Omit-rather-than-mislead: a `no-predecessor` or `substantial-drift` diff yields no
+ * entries at all (the panel does not appear), the same posture as the `binding.delta`
+ * omission - never a misleading or empty summary.
+ */
+import type { BindingDelta } from './blocks/shared.ts';
+import type { ChangeSummaryEntry, ChangeSummaryMovement } from './blocks/shared.ts';
+import type { DiffDocument } from './series-diff.ts';
+import type { SectionDiff, SeriesDiff } from './series-diff.ts';
+
+/**
+ * The minimal section/block shape the summary reads off the BAKED new snapshot to
+ * recover each section's audience tags and its KPI movements. A structural superset
+ * of the validated `DocumentV1` (the builder reads only `sections`, each section's
+ * `audiences`, and its KPI blocks' `binding.delta`), kept local so this module pulls
+ * no schema value and stays isomorphic - the document has already passed zod
+ * validation before reaching the bake.
+ */
+export interface SummarySourceDocument {
+	sections: ReadonlyArray<SummarySourceSection>;
+}
+
+interface SummarySourceSection {
+	id: string;
+	audiences?: readonly string[];
+	blocks: ReadonlyArray<SummarySourceBlock>;
+}
+
+interface SummarySourceBlock {
+	type: string;
+	id: string;
+	items?: ReadonlyArray<{ label?: string }>;
+	binding?: { delta?: BindingDelta };
+}
+
+/** True when a kept/moved section changed in any dimension (structure, data, or content). */
+function sectionChanged(section: SectionDiff): boolean {
+	if (section.change === 'added' || section.change === 'removed') return true;
+	return section.blocks.some(
+		(block) =>
+			block.change === 'added' ||
+			block.change === 'removed' ||
+			block.change === 'moved' ||
+			block.dataChanged ||
+			block.contentChanged
+	);
+}
+
+/** The change-summary verdict for a section: added/removed are direct; anything else surfaced is `updated`. */
+function verdictOf(section: SectionDiff): ChangeSummaryEntry['change'] {
+	if (section.change === 'added') return 'added';
+	if (section.change === 'removed') return 'removed';
+	return 'updated';
+}
+
+/**
+ * The headline data movements for a section: the baked KPI delta of each data-bound
+ * KPI block whose data changed in the diff. Reads the delta straight off the baked
+ * binding (so the figure is the SAME one the reader already sees on the block) and
+ * pairs it with the KPI's own single-item label. A multi-item KPI carries no
+ * binding-level delta (the 9.4 bake omits it as ambiguous), so it contributes no
+ * movement; a KPI whose data did not change, or that carries no baked delta, is
+ * skipped - only a real, reader-visible movement is surfaced.
+ */
+function movementsFor(
+	section: SectionDiff,
+	blocksById: ReadonlyMap<string, SummarySourceBlock>
+): ChangeSummaryMovement[] {
+	const movements: ChangeSummaryMovement[] = [];
+	for (const block of section.blocks) {
+		if (block.type !== 'kpi' || !block.dataChanged) continue;
+		const source = blocksById.get(block.id);
+		const delta = source?.binding?.delta;
+		if (delta === undefined) continue;
+		const label = source?.items?.[0]?.label;
+		movements.push({
+			label: label !== undefined && label.length > 0 ? label : section.title,
+			delta
+		});
+	}
+	return movements;
+}
+
+/** Indexes every block of the baked snapshot by its id, for the KPI delta / label lookup. */
+function indexBlocksById(document: SummarySourceDocument): Map<string, SummarySourceBlock> {
+	const byId = new Map<string, SummarySourceBlock>();
+	for (const section of document.sections) {
+		for (const block of section.blocks) {
+			if (!byId.has(block.id)) byId.set(block.id, block);
+		}
+	}
+	return byId;
+}
+
+/** The audience tags of a section in the baked snapshot, normalized to undefined when empty. */
+function audiencesById(document: SummarySourceDocument): Map<string, readonly string[]> {
+	const byId = new Map<string, readonly string[]>();
+	for (const section of document.sections) {
+		if (section.audiences !== undefined && section.audiences.length > 0) {
+			byId.set(section.id, section.audiences);
+		}
+	}
+	return byId;
+}
+
+/**
+ * Builds the leak-safe reader-facing change-summary entries from a {@link SeriesDiff}
+ * and the BAKED new snapshot (which already carries the 9.4 KPI deltas). Pure and
+ * total: it reads only the diff and the snapshot passed in, never throws, and returns
+ * the same result for the same inputs.
+ *
+ * A computed diff yields one entry per CHANGED section (added / removed / updated),
+ * each carrying the section's audience tags and its headline KPI movements, in the
+ * diff's section order (the current issue's structure). A `no-predecessor` or
+ * `substantial-drift` diff yields an EMPTY array - the panel does not appear, the
+ * omit-rather-than-mislead rule.
+ *
+ * `audiences` is typed as the schema `Audience` set at the bake boundary: the baked
+ * snapshot is a validated document, so its section `audiences` are valid audience
+ * tags; this module stays isomorphic by reading them as `readonly string[]` and the
+ * caller re-validates the assembled summary through the document schema.
+ */
+export function buildChangeSummaryEntries(
+	diff: SeriesDiff,
+	baked: SummarySourceDocument
+): ChangeSummaryEntry[] {
+	if (diff.kind !== 'diff') return [];
+
+	const blocksById = indexBlocksById(baked);
+	const audiences = audiencesById(baked);
+	const entries: ChangeSummaryEntry[] = [];
+	for (const section of diff.sections) {
+		if (!sectionChanged(section)) continue;
+		const movements = movementsFor(section, blocksById);
+		const tags = audiences.get(section.id);
+		entries.push({
+			sectionId: section.id,
+			sectionTitle: section.title,
+			change: verdictOf(section),
+			...(tags !== undefined ? { audiences: tags as ChangeSummaryEntry['audiences'] } : {}),
+			...(movements.length > 0 ? { movements } : {})
+		});
+	}
+	return entries;
+}
+
+/**
+ * The {@link DiffDocument} view of a validated document, for the bake site to feed the
+ * diff engine. Re-exported here so the bake imports one change-summary module rather
+ * than reaching into the diff engine's internals. A validated `DocumentV1` is a
+ * structural superset of `DiffDocument`, so this is a type-narrowing pass-through.
+ */
+export type { DiffDocument };

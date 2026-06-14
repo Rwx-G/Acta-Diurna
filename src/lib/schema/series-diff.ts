@@ -165,9 +165,11 @@ export interface ComputedDiff {
  * - `predecessor-unpublished`: a predecessor exists but is not published yet, so it
  *   has no frozen edition to diff against.
  */
+export type NoPredecessorReason = 'first-issue' | 'predecessor-unpublished';
+
 export interface NoPredecessorDiff {
 	kind: 'no-predecessor';
-	reason: 'first-issue' | 'predecessor-unpublished';
+	reason: NoPredecessorReason;
 }
 
 /** The two snapshots share almost no block ids: a per-block comparison would mislead. */
@@ -390,7 +392,7 @@ function sectionOrder(document: DiffDocument): Map<string, number> {
 export function diffSnapshots(
 	newSnapshot: DiffDocument,
 	oldSnapshot: DiffDocument | null,
-	noPredecessorReason: NoPredecessorDiff['reason'] = 'first-issue'
+	noPredecessorReason: NoPredecessorReason = 'first-issue'
 ): SeriesDiff {
 	if (oldSnapshot === null) {
 		return { kind: 'no-predecessor', reason: noPredecessorReason };

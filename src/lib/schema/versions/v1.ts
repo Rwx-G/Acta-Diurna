@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema } from '../blocks/shared.ts';
+import { changeSummarySchema, idSchema } from '../blocks/shared.ts';
 import { sectionSchema } from '../blocks/section.ts';
 import { scalesSchema, validateScaleReferences } from '../scales.ts';
 import { validateInternalLinks } from '../internal-links.ts';
@@ -17,6 +17,11 @@ export const documentSchemaV1 = z
 		// Additive, optional (Epic 7). A document with no `scales` validates and
 		// renders unchanged; no schema-version bump.
 		scales: scalesSchema.optional(),
+		// Additive, optional (Epic 9, Story 9.5). The opt-in reader-facing "changes
+		// since the previous issue" summary: OFF by default (absent or `enabled:
+		// false`), with the leak-safe `entries` baked at publish time. A document
+		// without it validates and renders byte-unchanged; no schema-version bump.
+		changeSummary: changeSummarySchema.optional(),
 		sections: z
 			.array(sectionSchema)
 			.min(1, 'A document must contain at least one section.')

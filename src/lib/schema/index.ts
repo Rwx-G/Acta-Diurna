@@ -17,6 +17,10 @@ export {
 	bindingFieldSchema,
 	bindingSchema,
 	bindingSlotSchema,
+	changeSummaryEntrySchema,
+	changeSummaryMovementSchema,
+	changeSummarySchema,
+	changeSummaryVerdictSchema,
 	idSchema,
 	SLOT_ROLES,
 	SLUG_PATTERN
@@ -27,7 +31,11 @@ export type {
 	BindingDelta,
 	BindingDeltaDirection,
 	BindingField,
-	BindingSlot
+	BindingSlot,
+	ChangeSummary,
+	ChangeSummaryEntry,
+	ChangeSummaryMovement,
+	ChangeSummaryVerdict
 } from './blocks/shared.ts';
 
 export {
@@ -172,6 +180,9 @@ export type { InternalLinkIssue } from './internal-links.ts';
 export { computeBindingDelta } from './binding-delta.ts';
 export type { ComparableValue } from './binding-delta.ts';
 
+export { buildChangeSummaryEntries } from './change-summary.ts';
+export type { SummarySourceDocument } from './change-summary.ts';
+
 export { diffSnapshots, SUBSTANTIAL_DRIFT_THRESHOLD } from './series-diff.ts';
 export type {
 	BlockDiff,
@@ -179,6 +190,7 @@ export type {
 	ComputedDiff,
 	DiffDocument,
 	NoPredecessorDiff,
+	NoPredecessorReason,
 	SectionDiff,
 	SeriesDiff,
 	SubstantialDriftDiff

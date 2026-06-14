@@ -113,6 +113,59 @@ describe('document schema v1 - valid documents', () => {
 		}
 	});
 
+	it('accepts an optional opt-in change-summary on the document, additively (Story 9.5)', () => {
+		// A document WITHOUT `changeSummary` validates unchanged (the field is optional, no
+		// version bump); a document WITH the opt-in (and the baked leak-safe entries)
+		// preserves them for the reader-facing panel.
+		const withSummary = validateDocument({
+			version: 1,
+			title: 'Issue 2',
+			changeSummary: {
+				enabled: true,
+				entries: [
+					{
+						sectionId: 'intro',
+						sectionTitle: 'Introduction',
+						change: 'updated',
+						audiences: ['technical']
+					},
+					{
+						sectionId: 'metrics',
+						sectionTitle: 'Metrics',
+						change: 'added',
+						movements: [
+							{
+								label: 'Revenue',
+								delta: { direction: 'up', priorValue: 100, absolute: 8, relative: 0.08 }
+							}
+						]
+					}
+				]
+			},
+			sections: [
+				{
+					id: 'intro',
+					title: 'Introduction',
+					blocks: [{ type: 'text', id: 't', paragraphs: [[{ text: 'Hi.' }]] }]
+				}
+			]
+		});
+		expect(withSummary.ok).toBe(true);
+		if (withSummary.ok) {
+			expect(withSummary.document.changeSummary?.enabled).toBe(true);
+			expect(withSummary.document.changeSummary?.entries?.[0].change).toBe('updated');
+			expect(withSummary.document.changeSummary?.entries?.[0].audiences).toEqual(['technical']);
+			expect(withSummary.document.changeSummary?.entries?.[1].movements?.[0].label).toBe('Revenue');
+			expect(withSummary.document.version).toBe(1);
+		}
+		// The full fixture carries no change summary and still validates, proving additivity.
+		const noSummary = validateDocument(fullDocument);
+		expect(noSummary.ok).toBe(true);
+		if (noSummary.ok) {
+			expect('changeSummary' in noSummary.document).toBe(false);
+		}
+	});
+
 	it("rejects a section that sets both annex and kind: 'detail' (Epic 11, FR2 parity)", () => {
 		const result = validateDocument({
 			version: 1,
