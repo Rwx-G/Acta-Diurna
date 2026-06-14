@@ -10,11 +10,10 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-0.14.0-brightgreen.svg" alt="Version">
-  <img src="https://img.shields.io/badge/status-planned%20epics%20complete%20%2B%20audited-brightgreen.svg" alt="Status">
+  <img src="https://img.shields.io/badge/status-feature--complete-brightgreen.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
   <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/tests-1702-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/deploy-docker%20compose-2496ED.svg" alt="Docker">
 </p>
 
@@ -24,7 +23,7 @@ Acta Diurna replaces the slide deck for recurring reporting. A report is one dec
 
 The tool carries the skeleton - structure, templates, rendering, sharing, access control. Connected AI assistants build the content and data into it: an agent authors natively over MCP, or an author generates a draft outline-first, both through the same validated document model. *Acta Diurna* were the daily public gazettes of ancient Rome: the original recurring report.
 
-> **Status: all planned epics implemented, then audited.** The whole v1 surface below plus the Phase-2 epics are implemented and hardened - the document model and renderer, the rich block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing with link hardening, the SMTP-gated single / multi-author model with per-author tenancy, and multi-audience reading and governance (audience levels, presenter view, access audit and retention, data freshness, theme selection). The planned roadmap is complete. A whole-software audit then ran (a BMAD completion check plus six specialist passes: security, penetration, quality, architecture, performance, dependency): completion was confirmed across all eight epics, the security and penetration passes found 0 Critical and 0 High (no cross-tenant chain; owner-scoped access closes IDOR with a 404 no-oracle across all four surfaces), and every actionable finding was remediated and is CI-green. The multi-author and reader-verification flows are now exercised end to end in CI by a Mailpit-backed harness (author magic-link sign-in, tenancy isolation, and reader verification against a real PostgreSQL + a real SMTP capture), not only unit-tested by forcing state. This is still not over-claimed as production-ready: the remaining work is live-deploy operational hardening (reverse-proxy / XFF guidance, an optional reader-session TTL, the unencrypted-remote-DB note) and the v2 vision features. Two honest caveats stand: the Excel parser is a disclosed 415 stub (CSV / JSON cover the format), and live AI generation runs against the connector mocked in CI by design (no real LLM call in the pipeline). See the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
+> **Status: feature-complete, not yet production-hardened.** Every capability below is implemented: the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing, the SMTP-gated single / multi-author model with per-author tenancy, and multi-audience reading and governance (audience levels, presenter view, access audit and retention, data freshness, theme selection). The codebase has been through a full security and quality audit with no high-severity findings outstanding, and its multi-author and reader-verification flows run end to end in CI. It is not yet production-ready - live-deploy hardening (reverse-proxy / TLS posture, an optional reader-session TTL) is still ahead. Two honest gaps: the Excel parser returns a "not enabled" stub (CSV / JSON are supported), and AI generation is tested against a mocked model in CI. See the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
 
 ## Key Features
 
@@ -200,9 +199,8 @@ Validation errors are RFC 9457 problem-details with the offending block path, fi
 | Version | Scope | Status |
 |---------|-------|--------|
 | v1 | Document model + hybrid renderer, block catalogue, templates + data binding, file upload + API push, REST API, MCP server, outline-first AI generation, magic-link sharing with hardening, docker compose distribution | Implemented |
-| Phase 2 | AI-native authoring (MCP + outline-first generation), the rich block catalogue (comparison matrix, UpSet, scales, callouts, code, lists, timelines and more), SMTP-gated identity & multi-author tenancy, and multi-audience reading and governance: audience levels (reader picks summary / full / technical), presenter view, access audit and retention, data freshness, theme selection | Implemented (last planned epic done) |
-| Audit | Whole-software audit: BMAD completion check + six specialist passes (security, penetration, quality, architecture, performance, dependency). 0 Critical / 0 High; every actionable finding remediated and CI-green; multi-mode author/reader flows now exercised end to end via the Mailpit-backed harness | Done |
-| Live deploy | Live-deploy operational hardening: reverse-proxy / XFF guidance, an optional reader-session TTL, the unencrypted-remote-DB note | Next |
+| Phase 2 | AI-native authoring (MCP + outline-first generation), the rich block catalogue (comparison matrix, UpSet, scales, callouts, code, lists, timelines and more), SMTP-gated identity & multi-author tenancy, and multi-audience reading and governance: audience levels (reader picks summary / full / technical), presenter view, access audit and retention, data freshness, theme selection | Implemented |
+| Live deploy | Live-deploy operational hardening: reverse-proxy / TLS posture, an optional reader-session TTL, the unencrypted-remote-DB note | Next |
 | v2 | In-browser WYSIWYG editor, report series with auto-diff between issues, scheduled email delivery with KPI digest, viewer analytics, synced blocks, SQL connectors, PDF / PPTX export, multi-tenant spaces | Planned |
 
 ## Documentation
