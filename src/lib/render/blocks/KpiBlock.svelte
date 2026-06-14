@@ -2,6 +2,7 @@
 	import type { KpiBlock } from '$lib/schema';
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
 	import DataAsOf from './DataAsOf.svelte';
+	import KpiDelta from './KpiDelta.svelte';
 
 	let { block }: { block: KpiBlock } = $props();
 
@@ -35,6 +36,7 @@
 				</div>
 			{/each}
 		</dl>
+		<KpiDelta delta={block.binding?.delta} />
 		<DataAsOf dataAsOf={block.binding?.dataAsOf} />
 	</div>
 {/if}

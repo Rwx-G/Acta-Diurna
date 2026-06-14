@@ -119,4 +119,34 @@ describe('KpiBlock render', () => {
 		});
 		expect(container.querySelector('.data-as-of')).toBeNull();
 	});
+
+	it('renders the Story 9.4 baked numeric delta indicator when the binding carries one', () => {
+		const { container } = render(KpiBlock, {
+			block: block({
+				binding: {
+					dataSetId: 'ds-1',
+					delta: { direction: 'up', priorValue: 100, absolute: 8, relative: 0.08 },
+					fields: [{ name: 'revenue', type: 'number' }]
+				}
+			})
+		});
+		const indicator = container.querySelector('.kpi-delta.kpi-delta-up') as HTMLElement | null;
+		expect(indicator).not.toBeNull();
+		expect(indicator?.querySelector('.figure')?.textContent?.trim()).toBe('+8 (+8%)');
+		expect(indicator?.querySelector('.sr-only')?.textContent?.trim()).toBe('up');
+	});
+
+	it('omits the delta indicator when the binding carries no baked delta', () => {
+		const { container } = render(KpiBlock, {
+			block: block({
+				binding: { dataSetId: 'ds-1', fields: [{ name: 'revenue', type: 'number' }] }
+			})
+		});
+		expect(container.querySelector('.kpi-delta')).toBeNull();
+	});
+
+	it('omits the delta indicator when the block is not data-bound (static items)', () => {
+		const { container } = render(KpiBlock, { block: block() });
+		expect(container.querySelector('.kpi-delta')).toBeNull();
+	});
 });
