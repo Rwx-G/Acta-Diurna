@@ -6,6 +6,13 @@
  * The model: a block or section with no `audiences` tag (undefined or empty)
  * belongs to EVERY level. A tagged element belongs only to the levels named in
  * its tag set. The default reading level is `full`.
+ *
+ * INVARIANT (audit-flagged): audience tags are a presentation / reading-comfort
+ * filter, NOT a confidentiality boundary. Every audience level is rendered into
+ * the authorized reader's DOM and hidden only by CSS. Never gate confidential or
+ * per-reader-restricted content behind an audience tag - it would still ship to
+ * the reader. The only author-private field (section speaker notes) is stripped
+ * server-side before the document reaches a reader.
  */
 import { AUDIENCES, type Audience } from './blocks/shared.ts';
 

@@ -17,7 +17,15 @@ export const audienceSchema = z.enum(AUDIENCES);
 
 export type Audience = z.infer<typeof audienceSchema>;
 
-/** Audience tags are accepted and typed in v1; audience-aware rendering ships in P2. */
+/**
+ * Audience tags drive the reader's summary / full / technical level switch.
+ *
+ * INVARIANT (audit-flagged): these tags are a presentation / reading-comfort
+ * filter, NOT a confidentiality boundary. All audience levels render into the
+ * authorized reader's DOM and are hidden only by CSS. Never gate confidential or
+ * per-reader-restricted content behind an audience tag; the only author-private
+ * field (section speaker notes) is stripped server-side before a reader sees it.
+ */
 export const audiencesSchema = z
 	.array(audienceSchema)
 	.max(AUDIENCES.length, `Too many audience tags: ${AUDIENCES.length} maximum.`);
