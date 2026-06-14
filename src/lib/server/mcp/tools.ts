@@ -40,7 +40,7 @@ import {
 	fillFromOutline,
 	generateOutline,
 	hashOutline,
-	type Outline
+	parseOutlineInput
 } from '$lib/server/ai/generate';
 import { AppError, rateLimited } from '$lib/server/problem';
 import { aiGenerationLimiter, mcpGenerationRateKey } from '$lib/server/auth/rate-limit';
@@ -315,8 +315,9 @@ export function generateOutlineTool(
  * `expectedUpdatedAt` is a 409); without one it seeds a fresh draft. A mismatched
  * `outlineHash` is the 409 stale-approval error BEFORE any LLM call; an invalid
  * model document is the validator's 422 with `errors[]` and the draft is untouched.
- * The `outline` arg is permissive (the service re-bounds it and `validateDocument`
- * is the final gate), mirroring the permissive `document` arg on the write tools.
+ * The `outline` arg is Zod-parsed against the canonical outline schema at the tool
+ * ENTRY (`parseOutlineInput`): a misshapen outline is a 400 BEFORE any LLM call,
+ * moving the trust boundary off the final `validateDocument` onto a clear message.
  */
 export function fillOutlineTool(
 	input: {
@@ -330,6 +331,18 @@ export function fillOutlineTool(
 	scope: AuthorScope
 ): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
+		const outline = parseOutlineInput(input.outline);
+		if (!outline) {
+			throw new AppError({
+				status: 400,
+				title: 'Invalid Outline',
+				type: '/problems/invalid-outline',
+				detail:
+					'The outline does not match the expected shape (a title and at least one section, ' +
+					'each with at least one block of a known type). Generate the outline with ' +
+					'generate_outline and post it back unchanged.'
+			});
+		}
 		const decision = aiGenerationLimiter.consume(mcpGenerationRateKey(scope.authorId));
 		if (!decision.allowed) {
 			throw rateLimited(decision.retryAfterSeconds);
@@ -338,7 +351,7 @@ export function fillOutlineTool(
 			await fillFromOutline(
 				{
 					intent: '',
-					outline: input.outline as unknown as Outline,
+					outline,
 					approvedHash: input.outlineHash,
 					skeletonId: input.skeletonId ?? null,
 					dataSetId: input.dataSetId ?? null

@@ -29,11 +29,18 @@ vi.mock('$lib/server/ingestion', async (importActual) => {
 	};
 });
 
-vi.mock('$lib/server/ai/generate', () => ({
-	generateOutline: vi.fn(),
-	fillFromOutline: vi.fn(),
-	hashOutline: vi.fn()
-}));
+// Keep the REAL parseOutlineInput (the canonical outline schema) so the fill
+// tool's entry-boundary validation is exercised, not stubbed away; mock only the
+// generation seams.
+vi.mock('$lib/server/ai/generate', async (importActual) => {
+	const actual = await importActual<typeof import('$lib/server/ai/generate')>();
+	return {
+		generateOutline: vi.fn(),
+		fillFromOutline: vi.fn(),
+		hashOutline: vi.fn(),
+		parseOutlineInput: actual.parseOutlineInput
+	};
+});
 
 vi.mock('$lib/server/mode', () => ({
 	operatingMode: () => 'single',
@@ -632,6 +639,26 @@ describe('generate_outline / generate_report tools', () => {
 		await fillOutlineTool({ outline: OUTLINE, outlineHash: 'h' }, TEST_SCOPE);
 
 		expect(fillFromOutlineMock.mock.calls[0][2]).toBeUndefined();
+	});
+
+	it('generate_report rejects a misshapen outline with a 400 BEFORE reaching fillFromOutline', async () => {
+		// A section with no blocks fails the canonical outline schema at the tool entry.
+		const misshapen = {
+			title: 'Broken',
+			sections: [{ title: 'No blocks', intent: '', blocks: [] }]
+		};
+
+		const result = await fillOutlineTool(
+			{ outline: misshapen, outlineHash: 'h', reportId: REPORT.id },
+			TEST_SCOPE
+		);
+
+		expect(result.isError).toBe(true);
+		const problem = payload(result) as { status: number; type: string };
+		expect(problem.status).toBe(400);
+		expect(problem.type).toBe('/problems/invalid-outline');
+		// The validation fired before any LLM call.
+		expect(fillFromOutlineMock).not.toHaveBeenCalled();
 	});
 
 	it('generate_report carries the stale-approval 409 (hash mismatch) as a problem-details tool error', async () => {

@@ -30,11 +30,17 @@ vi.mock('$lib/server/ingestion', async (importActual) => {
 	};
 });
 
-vi.mock('$lib/server/ai/generate', () => ({
-	generateOutline: vi.fn(),
-	fillFromOutline: vi.fn(),
-	hashOutline: vi.fn()
-}));
+// Keep the REAL parseOutlineInput (the canonical outline schema) so the fill
+// tool's entry-boundary validation runs through the SDK, not stubbed away.
+vi.mock('$lib/server/ai/generate', async (importActual) => {
+	const actual = await importActual<typeof import('$lib/server/ai/generate')>();
+	return {
+		generateOutline: vi.fn(),
+		fillFromOutline: vi.fn(),
+		hashOutline: vi.fn(),
+		parseOutlineInput: actual.parseOutlineInput
+	};
+});
 
 vi.mock('$lib/server/mode', () => ({
 	operatingMode: () => 'single',

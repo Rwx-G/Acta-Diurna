@@ -41,6 +41,7 @@
  * and never persists invalid.
  */
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
 import { type DocumentV1Input } from '$lib/schema';
 import type { AuthorScope } from '$lib/server/authors';
 import {
@@ -85,24 +86,51 @@ function isGeneratableType(value: unknown): value is GeneratableBlockType {
 	);
 }
 
+/**
+ * The canonical outline shape, the SINGLE source of truth for what a valid
+ * outline is. `parseOutline` reconstructs an outline DEFENSIVELY from untrusted
+ * MODEL output (prose-wrapped, malformed, oversized), while this schema is the
+ * STRICT trust boundary for a CLIENT-supplied outline (the MCP `generate_report`
+ * tool): an agent posting a misshapen outline is rejected at the tool entry, not
+ * deep in the assembly. The bounds mirror the same schema DoS ceilings
+ * `parseOutline` clamps to, so a hostile outline cannot blow past them.
+ */
+const outlineBlockSchema = z.object({
+	type: z.enum(GENERATABLE_BLOCK_TYPES),
+	intent: z.string().max(MAX_INTENT_CHARS)
+});
+
+const outlineSectionSchema = z.object({
+	title: z.string().min(1).max(MAX_INTENT_CHARS),
+	intent: z.string().max(MAX_INTENT_CHARS),
+	blocks: z.array(outlineBlockSchema).min(1).max(MAX_BLOCKS_PER_SECTION)
+});
+
+export const outlineSchema = z.object({
+	title: z.string().min(1).max(300),
+	sections: z.array(outlineSectionSchema).min(1).max(MAX_OUTLINE_SECTIONS)
+});
+
 /** One proposed block in the outline: a type + a one-line intent. */
-export interface OutlineBlock {
-	type: GeneratableBlockType;
-	intent: string;
-}
+export type OutlineBlock = z.infer<typeof outlineBlockSchema>;
 
 /** One proposed section in the outline: a title + intent + its blocks. */
-export interface OutlineSection {
-	title: string;
-	intent: string;
-	blocks: OutlineBlock[];
-}
+export type OutlineSection = z.infer<typeof outlineSectionSchema>;
 
 /** The reviewable, bounded outline artifact (sections + key points). Held for the
  *  author to edit/approve before any content is written. */
-export interface Outline {
-	title: string;
-	sections: OutlineSection[];
+export type Outline = z.infer<typeof outlineSchema>;
+
+/**
+ * Parses a CLIENT-supplied outline against the canonical schema, returning the
+ * typed `Outline` or null on any mismatch. The MCP fill tool uses this to move
+ * the trust boundary to the tool entry (a misshapen outline is a 400 there),
+ * instead of relying on the final `validateDocument`. Distinct from `parseOutline`
+ * (which salvages MODEL output); this REJECTS anything not already well-shaped.
+ */
+export function parseOutlineInput(value: unknown): Outline | null {
+	const result = outlineSchema.safeParse(value);
+	return result.success ? result.data : null;
 }
 
 /** Inputs the generation orchestration reads. Both ids optional so an outline can
