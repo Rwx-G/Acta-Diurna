@@ -8,8 +8,17 @@
  * separate from the shared full fixture so its snapshots stay intact; the reader
  * navigation specs (`reader-detail-navigation.e2e.ts`) drive this report.
  *
- * The detail sections are untagged (no `audiences`), so audience-level promotion
- * is out of scope here - that interaction is hardened in story 11.4.
+ * The first two detail sections are untagged (no `audiences`), so they appear at
+ * every level. Story 11.4 adds two AUDIENCE-TAGGED detail pages to harden the
+ * audience/deep-link edges: `detail-technical-only` is a section-level
+ * `['technical']` page (the whole detail host is hidden by the audience CSS until
+ * the level is promoted), and `detail-mixed-levels` is an untagged section whose
+ * only body block is `['technical']`-tagged (the host shows but its content is an
+ * empty box until promotion). Both are reachable through an inline `linkTo` from
+ * the summary prose, and a deep link / click promotion must land on their content.
+ *
+ * Audience tags are a reading-comfort filter, not a confidentiality boundary
+ * (Epic 6 invariant): every level still SSR-renders into the reader's DOM.
  */
 export const DETAIL_FIXTURE_DOCUMENT = {
 	version: 1 as const,
@@ -99,6 +108,35 @@ export const DETAIL_FIXTURE_DOCUMENT = {
 			]
 		},
 		{
+			// A dedicated flow section for the audience-tagged drill-down links (Story
+			// 11.4). Kept separate from `summary` and `findings` so those sections stay
+			// byte-stable for the 11.3 navigation geometry; this one carries the inline
+			// links into the two audience-tagged detail pages.
+			id: 'drilldowns',
+			title: 'Deeper reading',
+			blocks: [
+				{
+					type: 'text' as const,
+					id: 'audience-drilldowns',
+					paragraphs: [
+						[
+							{ text: 'A ' },
+							{
+								text: 'technical-only deep dive',
+								linkTo: 'detail-technical-only'
+							},
+							{ text: ' and a ' },
+							{
+								text: 'mixed-level appendix',
+								linkTo: 'detail-mixed-levels'
+							},
+							{ text: ' carry audience tags for readers who want the depth.' }
+						]
+					]
+				}
+			]
+		},
+		{
 			id: 'detail-weak-password',
 			title: 'Detail: Weak password policy',
 			kind: 'detail' as const,
@@ -128,6 +166,54 @@ export const DETAIL_FIXTURE_DOCUMENT = {
 						[
 							{
 								text: 'The management port was reachable from the office VLAN. It is now restricted to the jump host.'
+							}
+						]
+					]
+				}
+			]
+		},
+		{
+			// Section-level audience tag (Story 11.4): the whole detail host is
+			// `data-audiences="technical"`, so at the default `full` level the audience
+			// CSS hides it even when `:target` is set. A deep link or a click must
+			// promote the level to `technical` before navigating, or it lands on an
+			// empty hidden box.
+			id: 'detail-technical-only',
+			title: 'Detail: Technical deep dive',
+			kind: 'detail' as const,
+			audiences: ['technical'] as const,
+			blocks: [
+				{
+					type: 'text' as const,
+					id: 'technical-only-body',
+					paragraphs: [
+						[
+							{
+								text: 'Packet captures showed the management service answering unauthenticated probes from the office VLAN subnet.'
+							}
+						]
+					]
+				}
+			]
+		},
+		{
+			// Block-level audience tag (Story 11.4): the section itself is untagged (so
+			// it is visible at every level), but its only body block is
+			// `data-audiences="technical"`. At `full` the host shows but its content is
+			// hidden - an empty box. Promotion must raise the level to reveal the block,
+			// not merely the host.
+			id: 'detail-mixed-levels',
+			title: 'Detail: Mixed-level appendix',
+			kind: 'detail' as const,
+			blocks: [
+				{
+					type: 'text' as const,
+					id: 'mixed-technical-body',
+					audiences: ['technical'] as const,
+					paragraphs: [
+						[
+							{
+								text: 'The remediation rewrote the firewall policy to default-deny inbound on the management interface.'
 							}
 						]
 					]
