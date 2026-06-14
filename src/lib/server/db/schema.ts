@@ -8,7 +8,8 @@ import {
 	text,
 	timestamp,
 	uniqueIndex,
-	uuid
+	uuid,
+	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 import type { DocumentV1 } from '$lib/schema';
 
@@ -68,6 +69,31 @@ export const authors = pgTable(
 
 export type AuthorRow = typeof authors.$inferSelect;
 
+// A report series (Epic 9, story 9.1): the lineage that groups the consecutive
+// editions of one recurring report. A series is an EXPLICIT edge, not a guess
+// from titles or timestamps - it is created when an author starts the next issue
+// (duplicateReport, FR10) and inherited by every duplicate down the chain. The
+// row carries almost nothing on its own: the series is identified by its id, the
+// issues point back at it via `reports.series_id`, and the order among them is
+// the predecessor chain on `reports.predecessor_id` (NOT published_at).
+//
+// Owner-scoped (story 9.1): a series NEVER spans authors - it belongs to exactly
+// one author and only that author's reports may join it. Added like the other
+// owning tables, with `owner_id` backfilled at boot (authors/inheritance.ts)
+// since a pre-existing report gets a fresh single-issue series. ON DELETE
+// RESTRICT: an author owning series is not deletable out from under them.
+export const reportSeries = pgTable(
+	'report_series',
+	{
+		id: uuid('id').primaryKey(),
+		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('report_series_owner_id_idx').on(table.ownerId)]
+);
+
+export type ReportSeriesRow = typeof reportSeries.$inferSelect;
+
 // D2: the report document lives in a JSONB column; the relational columns
 // around it carry only what lists and lifecycle checks need. `schema_version`
 // is denormalized from the document so version queries never parse JSONB.
@@ -93,11 +119,31 @@ export const reports = pgTable(
 		// boot), so a live row always carries an owner. ON DELETE RESTRICT: an
 		// author owning reports cannot be deleted out from under them (no orphans).
 		ownerId: uuid('owner_id').references(() => authors.id, { onDelete: 'restrict' }),
+		// Series lineage (Epic 9, story 9.1). `series_id` is the lineage this issue
+		// belongs to; `predecessor_id` is the issue it was duplicated from (null for
+		// the first issue of a series). Added nullable because the migration runs
+		// against pre-existing rows; the boot series backfill (authors/inheritance.ts)
+		// gives every owner-less-of-series report a fresh single-issue series and a
+		// null predecessor, so a live row always carries a series. The series is
+		// owner-consistent by construction (a series never spans authors, story 9.1).
+		// `predecessor_id` is a SELF-reference to the prior issue; the chain is the
+		// authoritative order. ON DELETE RESTRICT on both so a referenced series or
+		// predecessor is never deleted out from under the issues that point at it.
+		seriesId: uuid('series_id').references(() => reportSeries.id, { onDelete: 'restrict' }),
+		predecessorId: uuid('predecessor_id').references((): AnyPgColumn => reports.id, {
+			onDelete: 'restrict'
+		}),
+		// An optional author-set display label for an issue ("2026-W24", "June board
+		// pack"). COSMETIC only (story 9.1): it never affects ordering or diffing - the
+		// predecessor chain is the order, published_at is a label. Null until set.
+		issueLabel: text('issue_label'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [
 		index('reports_owner_id_idx').on(table.ownerId),
+		index('reports_series_id_idx').on(table.seriesId),
+		index('reports_predecessor_id_idx').on(table.predecessorId),
 		check('reports_status_check', sql`${table.status} in ('draft', 'published')`)
 	]
 );
