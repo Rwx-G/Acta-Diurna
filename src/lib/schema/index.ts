@@ -12,6 +12,8 @@ export {
 	AUDIENCES,
 	audienceSchema,
 	audiencesSchema,
+	bindingDeltaDirectionSchema,
+	bindingDeltaSchema,
 	bindingFieldSchema,
 	bindingSchema,
 	bindingSlotSchema,
@@ -19,7 +21,14 @@ export {
 	SLOT_ROLES,
 	SLUG_PATTERN
 } from './blocks/shared.ts';
-export type { Audience, Binding, BindingField, BindingSlot } from './blocks/shared.ts';
+export type {
+	Audience,
+	Binding,
+	BindingDelta,
+	BindingDeltaDirection,
+	BindingField,
+	BindingSlot
+} from './blocks/shared.ts';
 
 export {
 	audiencesAttr,
@@ -159,6 +168,9 @@ export type {
 
 export { validateInternalLinks } from './internal-links.ts';
 export type { InternalLinkIssue } from './internal-links.ts';
+
+export { computeBindingDelta } from './binding-delta.ts';
+export type { ComparableValue } from './binding-delta.ts';
 
 export { diffSnapshots, SUBSTANTIAL_DRIFT_THRESHOLD } from './series-diff.ts';
 export type {

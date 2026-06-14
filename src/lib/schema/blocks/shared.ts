@@ -75,6 +75,29 @@ export const bindingFieldSchema = z.object({
 export type BindingField = z.infer<typeof bindingFieldSchema>;
 
 /**
+ * The numeric movement of a bound value against the same value in the previous
+ * issue of the series (Story 9.4). Direction is `up` / `down` / `flat` against the
+ * prior issue's value; `absolute` is the signed change (now minus prior); `relative`
+ * is the signed fraction of the prior value (e.g. `0.08` for +8%), null when the
+ * prior value is zero (no meaningful percentage) so a renderer omits the percent
+ * rather than dividing by zero. `priorValue` is the predecessor's numeric value, the
+ * baseline the figure is measured against.
+ */
+export const bindingDeltaDirectionSchema = z.enum(['up', 'down', 'flat']);
+
+export type BindingDeltaDirection = z.infer<typeof bindingDeltaDirectionSchema>;
+
+export const bindingDeltaSchema = z.object({
+	direction: bindingDeltaDirectionSchema,
+	priorValue: z.number(),
+	absolute: z.number(),
+	/** Signed fraction of the prior value; null when the prior value is zero. */
+	relative: z.number().nullable()
+});
+
+export type BindingDelta = z.infer<typeof bindingDeltaSchema>;
+
+/**
  * Declares the fields a data-bound block expects so ingestion (Epic 2) can
  * resolve uploaded data against them. `dataSetId` stays optional until
  * uploads exist (Epic 2).
@@ -87,10 +110,21 @@ export type BindingField = z.infer<typeof bindingFieldSchema>;
  * stays optional: a binding authored before an upload, or a data set with no
  * usable timestamp, simply carries none and the caption is omitted (never a
  * misleading date).
+ *
+ * `delta` is the Story 9.4 numeric movement against the previous issue, baked here
+ * server-side at publish time exactly like `dataAsOf` is at bind time: the platform
+ * compares this issue's resolved bound value to the id-matched block in the
+ * predecessor's published snapshot and freezes the resulting delta onto the binding,
+ * so the pure renderer reads the arrow + figure straight off the validated document
+ * (no `$lib/server`, no client compute, and the prior issue's raw data never reaches
+ * the reader - only the computed delta). It stays optional and additive: a first
+ * issue, an unpublished predecessor, a non-numeric or unmatched value, simply carries
+ * no `delta` and the indicator is omitted (never a misleading or zero delta).
  */
 export const bindingSchema = z.object({
 	dataSetId: z.string().min(1).max(300, 'Data set id too long: 300 characters maximum.').optional(),
 	dataAsOf: z.iso.datetime({ offset: true }).optional(),
+	delta: bindingDeltaSchema.optional(),
 	fields: z.array(bindingFieldSchema).min(1).max(100, 'Too many binding fields: 100 maximum.')
 });
 
