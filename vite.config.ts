@@ -35,8 +35,24 @@ export default defineConfig({
 				directives: {
 					'default-src': ['self'],
 					'script-src': ['self'],
+					// 'unsafe-inline' on style-src is REQUIRED and was evaluated for
+					// removal (security audit A6): the reader render emits per-document
+					// inline `style="..."` attributes carrying DYNAMIC values - chart
+					// series colours, badge/pill tints, comparison-matrix column widths,
+					// `--card-columns`, `--kpi-count`, etc. (src/lib/render/blocks/*).
+					// These values depend on the document, so `auto` mode cannot hash
+					// them at build time, and dropping 'unsafe-inline' would strip every
+					// such style and break the render. Svelte's SCOPED component styles
+					// compile to classes (not inline) and are fine; it is only these
+					// data-driven inline attributes that need the keyword. The reader
+					// markup is fully escaped (no `{@html}`), so this is not an HTML
+					// injection sink. Revisit if the render tier moves dynamic values to
+					// CSS custom properties set via hashed/nonced <style> blocks.
 					'style-src': ['self', 'unsafe-inline'],
-					'font-src': ['self'],
+					// 'data:' on img-src is a placeholder-era allowance: images resolve
+					// to local asset paths today and no real image-serving pipeline
+					// exists yet. Revisit (tighten to 'self') when real image serving
+					// lands (Epic 2 follow-up).
 					'img-src': ['self', 'data:'],
 					'connect-src': ['self'],
 					'base-uri': ['self'],
