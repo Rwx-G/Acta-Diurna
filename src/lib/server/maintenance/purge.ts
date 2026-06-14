@@ -22,13 +22,12 @@ import { accessRecords, dataSets, verificationTokens } from '$lib/server/db/sche
 import type * as schema from '$lib/server/db/schema';
 import { serverEnv } from '$lib/server/env';
 import { logger } from '$lib/server/logger';
+import { MS_PER_DAY } from '$lib/server/time';
 
 type Db = NodePgDatabase<typeof schema>;
 
 /** Default retention grace for an unbound data set before it counts as orphaned. */
 export const DEFAULT_ORPHAN_RETENTION_DAYS = 30;
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * The instant before which an unbound data set is an orphan: `now` minus the

@@ -5,6 +5,7 @@ import { uuidv7 } from '../db/ids';
 import { hashToken } from '../crypto/hash-token';
 import { readerSessions, sessions } from '../db/schema';
 import { serverEnv } from '../env';
+import { MS_PER_DAY } from '../time';
 
 /**
  * Realm-parameterized session core (NFR12 / architecture D4). The two realms are
@@ -32,7 +33,7 @@ import { serverEnv } from '../env';
  */
 
 /** Author sessions: fixed 7-day expiry, no sliding renewal. */
-export const AUTHOR_SESSION_TTL_MS: number = 7 * 24 * 60 * 60 * 1000;
+export const AUTHOR_SESSION_TTL_MS: number = 7 * MS_PER_DAY;
 
 /**
  * Reader-session TTL in milliseconds, or null when there is no time bound. null
@@ -42,7 +43,7 @@ export const AUTHOR_SESSION_TTL_MS: number = 7 * 24 * 60 * 60 * 1000;
  */
 function readerSessionTtlMs(): number | null {
 	const days = serverEnv().READER_SESSION_TTL;
-	return days === undefined ? null : days * 24 * 60 * 60 * 1000;
+	return days === undefined ? null : days * MS_PER_DAY;
 }
 
 const TOKEN_BYTES = 32;

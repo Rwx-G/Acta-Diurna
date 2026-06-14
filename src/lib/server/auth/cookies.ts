@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { serverEnv } from '../env';
+import { MS_PER_DAY } from '../time';
 
 // Realm separation (NFR12/AR6): each realm gets its OWN cookie name, so an
 // author cookie can never be presented as a reader credential or vice versa.
@@ -87,8 +88,7 @@ export function deleteAuthorCookie(cookies: Cookies): void {
  * which the reader re-verifies. The share governs real access, not the cookie.
  */
 export function setReaderCookie(cookies: Cookies, token: string, expiresAt: Date | null): void {
-	const cookieExpiry =
-		expiresAt ?? new Date(Date.now() + READER_COOKIE_MAX_DAYS * 24 * 60 * 60 * 1000);
+	const cookieExpiry = expiresAt ?? new Date(Date.now() + READER_COOKIE_MAX_DAYS * MS_PER_DAY);
 	setSessionCookie(cookies, READER_COOKIE_NAME, token, cookieExpiry);
 }
 
