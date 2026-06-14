@@ -418,6 +418,130 @@ export const PHASE_B_FIXTURE_DOCUMENT = {
 	]
 };
 
+/**
+ * A sixth seeded report on the WARM MERIDIAN theme (Story 6.5, FR39). The shared
+ * full fixture already exercises the COOL AURORA theme end to end (its `theme` is
+ * `aurora`, and the reader axe e2e runs on it), so the two non-default light
+ * identities are both gated under axe-core: aurora via the full fixture, meridian
+ * via this one. The renderer maps the document `theme` slug to a `data-theme`
+ * attribute, so seeding `theme: 'meridian'` renders the whole surface under the
+ * meridian token block (cream paper, sepia ink, terracotta accent). Content is
+ * deliberately broad-but-small - a cover, a KPI strip, a rich-text paragraph with
+ * inline marks, a table and a chip-cluster off a document scale - so axe sees a
+ * representative chunk of the render under the theme without disturbing any other
+ * fixture's snapshots. NFR14.
+ */
+export const MERIDIAN_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000006';
+
+export const MERIDIAN_FIXTURE_DOCUMENT = {
+	version: 1 as const,
+	title: 'Warm Meridian Fixture',
+	theme: 'meridian',
+	scales: [
+		{
+			key: 'status',
+			label: 'Status',
+			kind: 'ordinal' as const,
+			entries: [
+				{ key: 'done', label: 'Done' },
+				{ key: 'in-progress', label: 'In progress' },
+				{ key: 'planned', label: 'Planned' }
+			]
+		}
+	],
+	sections: [
+		{
+			id: 'overview',
+			title: 'Overview',
+			blocks: [
+				{
+					type: 'kpi' as const,
+					id: 'headline',
+					items: [
+						{ label: 'Releases', value: 12, trend: 'up' as const },
+						{ label: 'Open issues', value: 4, trend: 'down' as const }
+					]
+				},
+				{
+					type: 'text' as const,
+					id: 'narrative',
+					paragraphs: [
+						[
+							{ text: 'The quarter closed ' },
+							{ text: 'ahead of plan', bold: true },
+							{ text: ' on the ' },
+							{ text: 'meridian', code: true },
+							{ text: ' theme.' }
+						]
+					]
+				}
+			]
+		},
+		{
+			id: 'detail',
+			title: 'Detail',
+			blocks: [
+				{
+					type: 'table' as const,
+					id: 'workstreams',
+					columns: [
+						{ key: 'name', label: 'Workstream' },
+						{ key: 'state', label: 'State', scaleRef: 'status' }
+					],
+					rows: [
+						{ name: 'Ingestion', state: 'done' },
+						{ name: 'Sharing', state: 'in-progress' },
+						{ name: 'Editor', state: 'planned' }
+					]
+				},
+				{
+					type: 'chip-cluster' as const,
+					id: 'states',
+					scaleRef: 'status',
+					title: 'Tracked states',
+					entries: ['done', 'in-progress', 'planned']
+				}
+			]
+		}
+	]
+};
+
+/**
+ * Fixed ids and literals for the access-audit e2e (Story 6.3, FR24). In SINGLE
+ * mode an `/r/<token>` consultation read serves the report DIRECTLY and never
+ * calls `recordAccess` (only the MULTI magic-link `completeVerification` writes an
+ * access row), so the audit trail cannot be produced through the single-mode HTTP
+ * reader flow. The spec therefore seeds the trail through the DB seam (the same
+ * `DB_URL_FILE` route `restricted-share.e2e.ts` uses for DB-only state): one
+ * share on the full fixture report, one reader identity, and one access record at
+ * a fixed UTC instant so the rendered "Opened" cell is byte-stable. Fixed ids let
+ * the desktop and mobile project runs share the seeded rows (ON CONFLICT DO
+ * NOTHING), and `accessedAt` is fixed so the formatted timestamp is deterministic.
+ */
+export const AUDIT_SHARE_ID = '0197b300-0000-7000-8000-0000000000a1';
+export const AUDIT_READER_IDENTITY_ID = '0197b300-0000-7000-8000-0000000000a2';
+export const AUDIT_ACCESS_RECORD_ID = '0197b300-0000-7000-8000-0000000000a3';
+export const AUDIT_READER_EMAIL = 'audit-reader@reader.example.com';
+export const AUDIT_ACCESSED_AT_ISO = '2026-06-13T14:30:00.000Z';
+export const AUDIT_ACCESSED_AT_CELL = '2026-06-13 14:30 UTC';
+
+/**
+ * Fixed ids for the retention-purge integration e2e (Story 6.3, FR24/FR38/NFR11).
+ * The boot sweep only fires `purgeAccessRecords` when `ACCESS_RECORD_RETENTION_DAYS`
+ * is set, and the single-mode harness boots WITHOUT it (the audit trail is kept by
+ * default), so the boot sweep cannot be reached in-process. The spec instead drives
+ * the REAL `purgeAccessRecords(db, now, retentionDays)` against the live
+ * testcontainer Postgres (via DB_URL_FILE), seeding one AGED access record (older
+ * than the cutoff) and one FRESH one on a dedicated share + identity, then asserting
+ * the DELETE removed only the aged row. This exercises the real end-to-end DELETE
+ * the boot sweep would run, just invoked directly rather than through boot env.
+ */
+export const RETENTION_SHARE_ID = '0197b300-0000-7000-8000-0000000000b1';
+export const RETENTION_READER_IDENTITY_ID = '0197b300-0000-7000-8000-0000000000b2';
+export const RETENTION_AGED_RECORD_ID = '0197b300-0000-7000-8000-0000000000b3';
+export const RETENTION_FRESH_RECORD_ID = '0197b300-0000-7000-8000-0000000000b4';
+export const RETENTION_READER_EMAIL = 'retention-reader@reader.example.com';
+
 /** The fixture's section ids, for deep-link assertions. */
 export const FIXTURE_SECTION_IDS = [
 	'executive-summary',
