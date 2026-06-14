@@ -37,6 +37,11 @@
 			aria-current={active('/data-sets') ? 'page' : undefined}>Data sets</a
 		>
 		<a
+			href={resolve('/(workspace)/audit')}
+			class:active={active('/audit')}
+			aria-current={active('/audit') ? 'page' : undefined}>Access audit</a
+		>
+		<a
 			href={resolve('/(workspace)/settings')}
 			class:active={active('/settings')}
 			aria-current={active('/settings') ? 'page' : undefined}>Settings</a
