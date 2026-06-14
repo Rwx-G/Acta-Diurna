@@ -11,9 +11,7 @@ vi.mock('$lib/server/audit/access-log', () => ({
 // thread it through to BOTH queries so the audit view is owner-scoped. Hoisted so
 // the mock factory (also hoisted) can reference it without a TDZ error.
 const resolveAuthorScope = vi.hoisted(() =>
-	vi.fn((_authorId?: string | null) =>
-		Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
-	)
+	vi.fn(() => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' }))
 );
 vi.mock('$lib/server/authors', () => ({ resolveAuthorScope }));
 
