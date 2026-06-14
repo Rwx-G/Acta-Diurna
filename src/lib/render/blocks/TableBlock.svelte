@@ -20,6 +20,17 @@
 	const rows = $derived(block.rows ?? []);
 	const stickyHeader = $derived(block.options?.stickyHeader ?? true);
 
+	// Per-row internal link (Epic 11, Story 11.2): `block.rowLinks[i]` is the
+	// optional `linkTo` (a validated section id, never a URL) for row `i`. The
+	// drill-down anchor renders in the row's first cell as `#<section-id>`, escaped
+	// by Svelte attribute interpolation - no scriptable URL can enter. A row with no
+	// link (absent slot, or `null`) renders byte-identically to before. The
+	// reveal/back/focus navigation lands in Story 11.3.
+	function rowLink(rowIndex: number): string | undefined {
+		const linkTo = block.rowLinks?.[rowIndex];
+		return typeof linkTo === 'string' ? linkTo : undefined;
+	}
+
 	function display(cell: TableCell | undefined): string {
 		if (cell === undefined || cell === null) return '';
 		if (typeof cell === 'boolean') return cell ? 'Yes' : 'No';
@@ -60,8 +71,9 @@
 				</thead>
 				<tbody>
 					{#each rows as row, rowIndex (rowIndex)}
+						{@const link = rowLink(rowIndex)}
 						<tr>
-							{#each block.columns as column (column.key)}
+							{#each block.columns as column, columnIndex (column.key)}
 								{@const scale = columnScale(column.scaleRef)}
 								{#if scale}
 									{@const key = badgeKey(row[column.key])}
@@ -69,6 +81,12 @@
 										{#if key !== undefined}
 											<Badge {scale} entryKey={key} {theme} />
 										{/if}
+									</td>
+								{:else if link && columnIndex === 0}
+									<td class:numeric={isNumeric(row[column.key])}>
+										<a href={`#${link}`} class="row-link" data-internal-link={link}
+											>{display(row[column.key])}</a
+										>
 									</td>
 								{:else}
 									<td class:numeric={isNumeric(row[column.key])}>{display(row[column.key])}</td>
@@ -122,6 +140,17 @@
 
 	td.numeric {
 		text-align: right;
+	}
+
+	.row-link {
+		color: var(--report-accent);
+		text-decoration: underline;
+		text-underline-offset: 0.15em;
+		text-decoration-thickness: 0.06em;
+	}
+
+	.row-link:hover {
+		text-decoration-thickness: 0.12em;
 	}
 
 	tbody tr:last-child td {

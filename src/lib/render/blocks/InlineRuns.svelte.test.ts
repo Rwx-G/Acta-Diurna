@@ -66,4 +66,29 @@ describe('InlineRuns', () => {
 		expect(container.querySelector('a')).toBeNull();
 		expect(container.textContent?.trim()).toBe('plain prose');
 	});
+
+	it('renders a linkTo run as an in-page anchor (#section-id), no target/rel (Epic 11)', async () => {
+		const paragraph: Paragraph = [{ text: 'see detail', linkTo: 'finding-detail' }];
+		const { container } = render(InlineRuns, { paragraph });
+		const link = container.querySelector('a.run-link');
+		expect(link?.getAttribute('href')).toBe('#finding-detail');
+		expect(link?.getAttribute('target')).toBeNull();
+		expect(link?.getAttribute('rel')).toBeNull();
+		expect(link?.getAttribute('data-internal-link')).toBe('finding-detail');
+		expect(link?.textContent).toContain('see detail');
+	});
+
+	it('builds the linkTo href as # + the section id only, never a scriptable URL (injection-safety)', async () => {
+		// `linkTo` is a validated section id (a slug: lowercase, digits, single
+		// hyphens), so the only href the renderer can emit is `#` + that id. A
+		// schema-rejected value never reaches the renderer, and even a hand-forged id
+		// is fragment-only - no javascript:, no http(s), no protocol. Svelte attribute
+		// interpolation escapes it.
+		const paragraph: Paragraph = [{ text: 'go', linkTo: 'detail-1' }];
+		const { container } = render(InlineRuns, { paragraph });
+		const href = container.querySelector('a.run-link')?.getAttribute('href');
+		expect(href).toBe('#detail-1');
+		expect(href?.startsWith('#')).toBe(true);
+		expect(href).not.toMatch(/^[a-z]+:/i);
+	});
 });

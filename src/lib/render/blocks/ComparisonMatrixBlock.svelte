@@ -140,7 +140,20 @@
 						</tr>
 					{/if}
 					<tr>
-						<th scope="row" class="finding-label">{finding.label}</th>
+						<th scope="row" class="finding-label">
+							{#if finding.linkTo}
+								<!-- Internal drill-down (Epic 11, Story 11.2): the finding label is an
+								     in-page anchor to its detail section. `linkTo` is a validated section
+								     id (never a URL), so the href is `#` + that id, escaped by Svelte
+								     attribute interpolation - no scriptable URL can enter. The
+								     reveal/back/focus navigation lands in Story 11.3. -->
+								<a
+									href={`#${finding.linkTo}`}
+									class="finding-link"
+									data-internal-link={finding.linkTo}>{finding.label}</a
+								>
+							{:else}{finding.label}{/if}
+						</th>
 						<td class="severity-cell">
 							<span
 								class="pill"
@@ -250,6 +263,17 @@
 		font-weight: 600;
 		border-bottom: 1px solid var(--report-rule);
 		max-width: 22ch;
+	}
+
+	.finding-link {
+		color: var(--report-accent);
+		text-decoration: underline;
+		text-underline-offset: 0.15em;
+		text-decoration-thickness: 0.06em;
+	}
+
+	.finding-link:hover {
+		text-decoration-thickness: 0.12em;
 	}
 
 	.pill {

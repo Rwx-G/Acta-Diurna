@@ -150,3 +150,45 @@ describe('TableBlock additivity (existing table unchanged)', () => {
 		expect(container.querySelector('.data-as-of')).toBeNull();
 	});
 });
+
+describe('TableBlock row internal links (Epic 11)', () => {
+	it('renders a per-row linkTo as an in-page anchor in the first cell (#section-id)', () => {
+		const block = plainTable({ rowLinks: ['finding-detail'] });
+		const { container } = render(TableBlock, { block });
+		const link = container.querySelector('tbody tr td:first-child a.row-link');
+		expect(link?.getAttribute('href')).toBe('#finding-detail');
+		expect(link?.getAttribute('data-internal-link')).toBe('finding-detail');
+		expect(link?.textContent?.trim()).toBe('Alpha');
+	});
+
+	it('links only the rows with a non-null rowLinks slot', () => {
+		const block = plainTable({
+			rows: [
+				{ name: 'Alpha', count: 1 },
+				{ name: 'Beta', count: 2 }
+			],
+			rowLinks: [null, 'beta-detail']
+		});
+		const { container } = render(TableBlock, { block });
+		const links = container.querySelectorAll('a.row-link');
+		expect(links.length).toBe(1);
+		expect(links[0].getAttribute('href')).toBe('#beta-detail');
+		expect(links[0].textContent?.trim()).toBe('Beta');
+	});
+
+	it('builds the row anchor href as # + the section id only, never a scriptable URL', () => {
+		const block = plainTable({ rowLinks: ['detail-1'] });
+		const { container } = render(TableBlock, { block });
+		const href = container.querySelector('a.row-link')?.getAttribute('href');
+		expect(href).toBe('#detail-1');
+		expect(href).not.toMatch(/^[a-z]+:/i);
+	});
+
+	it('renders byte-identically to a no-rowLinks table when rowLinks is absent (additivity)', () => {
+		const withLinks = render(TableBlock, { block: plainTable({ rowLinks: undefined }) }).container
+			.innerHTML;
+		const withoutLinks = render(TableBlock, { block: plainTable() }).container.innerHTML;
+		expect(withLinks).toBe(withoutLinks);
+		expect(withoutLinks).not.toContain('row-link');
+	});
+});

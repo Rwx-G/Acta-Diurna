@@ -11,6 +11,13 @@
 	// also tells the SvelteKit lint rule this is not a route). The owning block
 	// keeps its own <p> wrapper so its paragraph styling stays scoped to it; this
 	// component owns only the inline marks and their styles.
+	//
+	// `linkTo` (Epic 11, Story 11.2) is the in-report drill-down twin of the
+	// external `link.href`, mutually exclusive with it (the schema enforces). It is
+	// a SECTION ID (a validated slug, never an arbitrary URL), so the anchor href is
+	// `#` + that id, escaped by Svelte attribute interpolation - no scriptable URL
+	// can enter. No target/rel: it is an in-page anchor, the reveal/back/focus
+	// navigation lands in Story 11.3.
 	let { paragraph }: { paragraph: Paragraph } = $props();
 </script>
 
@@ -26,7 +33,11 @@
 		>{:else if run.italic}<em>{run.text}</em>{:else}{run.text}{/if}{/snippet}
 
 {#each paragraph as run, runIndex (runIndex)}
-	{#if run.link}
+	{#if run.linkTo}
+		<a href={`#${run.linkTo}`} class="run-link" data-internal-link={run.linkTo}
+			>{@render markedRun(run)}</a
+		>
+	{:else if run.link}
 		<a href={run.link.href} target="_blank" rel="external noopener noreferrer" class="run-link">
 			{@render markedRun(run)}
 		</a>

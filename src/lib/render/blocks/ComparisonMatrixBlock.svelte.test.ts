@@ -238,4 +238,53 @@ describe('ComparisonMatrixBlock render', () => {
 		expect(container.querySelector('table')).toBeNull();
 		expect(container.querySelector('.block-placeholder')).not.toBeNull();
 	});
+
+	it('renders a finding linkTo as an in-page anchor on the finding label (#section-id, Epic 11)', () => {
+		const { container } = render(ComparisonMatrixBlock, {
+			block: block({
+				findings: [
+					{
+						category: 'Access',
+						label: 'Weak policy',
+						severity: 'high',
+						sources: {},
+						treatment: { before: 'x', after: 'y', status: 'action' },
+						linkTo: 'weak-policy-detail'
+					}
+				]
+			}),
+			scales
+		});
+		const link = container.querySelector('.finding-label a.finding-link');
+		expect(link?.getAttribute('href')).toBe('#weak-policy-detail');
+		expect(link?.getAttribute('data-internal-link')).toBe('weak-policy-detail');
+		expect(link?.textContent?.trim()).toBe('Weak policy');
+	});
+
+	it('renders a finding label as plain text when it carries no linkTo (additivity)', () => {
+		const { container } = render(ComparisonMatrixBlock, { block: block(), scales });
+		expect(container.querySelector('a.finding-link')).toBeNull();
+		expect(container.querySelector('.finding-label')?.textContent?.trim()).toBe('Weak policy');
+	});
+
+	it('builds the finding anchor href as # + the section id only, never a scriptable URL', () => {
+		const { container } = render(ComparisonMatrixBlock, {
+			block: block({
+				findings: [
+					{
+						category: 'Access',
+						label: 'F',
+						severity: 'high',
+						sources: {},
+						treatment: { before: 'x', after: 'y', status: 'action' },
+						linkTo: 'detail-1'
+					}
+				]
+			}),
+			scales
+		});
+		const href = container.querySelector('a.finding-link')?.getAttribute('href');
+		expect(href).toBe('#detail-1');
+		expect(href).not.toMatch(/^[a-z]+:/i);
+	});
 });
