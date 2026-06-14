@@ -290,7 +290,14 @@ export const accessRecords = pgTable(
 	(table) => [
 		index('access_records_reader_identity_id_idx').on(table.readerIdentityId),
 		index('access_records_share_id_idx').on(table.shareId),
-		index('access_records_report_id_idx').on(table.reportId)
+		index('access_records_report_id_idx').on(table.reportId),
+		// The audit query (`listAccessRecords`) filters by report and orders by
+		// accessed_at DESC under a keyset cursor (story 6.3 + the cursor pagination).
+		// The (report_id, accessed_at) composite keys the report-scoped ordered scan
+		// so a report's log pages without re-sorting; the (accessed_at, id) composite
+		// keys the keyset order + tiebreak for the unfiltered (owner-only) page.
+		index('access_records_report_id_accessed_at_idx').on(table.reportId, table.accessedAt),
+		index('access_records_accessed_at_id_idx').on(table.accessedAt, table.id)
 	]
 );
 

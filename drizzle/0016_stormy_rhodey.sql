@@ -1,0 +1,2 @@
+CREATE INDEX "access_records_report_id_accessed_at_idx" ON "access_records" USING btree ("report_id","accessed_at");--> statement-breakpoint
+CREATE INDEX "access_records_accessed_at_id_idx" ON "access_records" USING btree ("accessed_at","id");
