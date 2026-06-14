@@ -27,6 +27,13 @@
 	// hides the summary line for it - the summary never references a section the reader's
 	// level conceals. An untagged section's entry carries no `data-audiences` and shows at
 	// every level, exactly like the section itself.
+	//
+	// A KPI block can carry its OWN audience tags, narrower than its section's: a movement
+	// therefore carries the leak-safe intersection of the section's and the block's tags
+	// (baked server-side) on its own `data-audiences`, so the SAME CSS hides the movement
+	// line whenever EITHER the section or the block is hidden at the reader's level. A
+	// `technical`-tagged KPI inside a section visible at `summary` thus never surfaces its
+	// figure at `summary` - the summary line is hidden in lockstep with the block itself.
 	let { entries }: { entries: ChangeSummaryEntry[] } = $props();
 </script>
 
@@ -49,7 +56,10 @@
 					{#if entry.movements && entry.movements.length > 0}
 						<ul class="movement-list">
 							{#each entry.movements as movement, index (index)}
-								<li class="movement movement-{movement.delta.direction}">
+								<li
+									class="movement movement-{movement.delta.direction}"
+									data-audiences={audiencesAttr(movement.audiences)}
+								>
 									<span class="movement-glyph" aria-hidden="true"
 										>{DIRECTION_GLYPH[movement.delta.direction]}</span
 									>

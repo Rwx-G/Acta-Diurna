@@ -112,10 +112,20 @@ export type BindingDelta = z.infer<typeof bindingDeltaSchema>;
  * `label` is the KPI item's own label (already in the reader's DOM); `delta` is the
  * baked movement (already on the binding). Both are reader-visible by construction,
  * so the summary is a re-presentation of facts the reader already has, never a leak.
+ *
+ * `audiences` is the leak-safe audience tag set the renderer puts on the movement's
+ * own element, so the SAME reader CSS that hides the block hides its movement line: a
+ * movement is hidden at a level when EITHER its section OR its block is hidden there.
+ * It is the intersection of the section's tags and the block's own tags (a level shows
+ * the movement only when both show it), so a KPI tagged `technical` inside a section
+ * visible at `summary` never surfaces its figure at `summary` - the summary cannot
+ * contradict the body at the same level. Absent when both the section and the block
+ * are untagged (the movement then shows at every level, like its block).
  */
 export const changeSummaryMovementSchema = z.object({
 	label: z.string().min(1).max(300, 'Movement label too long: 300 characters maximum.'),
-	delta: bindingDeltaSchema
+	delta: bindingDeltaSchema,
+	audiences: audiencesSchema.optional()
 });
 
 export type ChangeSummaryMovement = z.infer<typeof changeSummaryMovementSchema>;

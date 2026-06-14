@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { validateDocument, type ChangeSummaryEntry, type DocumentV1 } from '$lib/schema';
+import {
+	validateDocument,
+	type BindingDelta,
+	type ChangeSummaryEntry,
+	type DocumentV1
+} from '$lib/schema';
 import { bakeChangeSummary } from './bake-change-summary.ts';
 
 /**
@@ -12,12 +17,7 @@ function reportDocument(options: {
 	intro: string;
 	extraSection?: boolean;
 	revenue?: number;
-	revenueDelta?: {
-		direction: 'up' | 'down' | 'flat';
-		priorValue: number;
-		absolute: number;
-		relative: number | null;
-	};
+	revenueDelta?: BindingDelta;
 }): DocumentV1 {
 	const sections: unknown[] = [
 		{
@@ -80,6 +80,8 @@ describe('bakeChangeSummary', () => {
 		const baked = bakeChangeSummary(issue, predecessor);
 		expect(baked.changeSummary).toEqual({ enabled: false });
 		expect(baked.changeSummary?.entries).toBeUndefined();
+		// No stale entries to drop, so the bake returns the input identity unchanged.
+		expect(baked).toBe(issue);
 	});
 
 	it('bakes no entries on a first issue (null predecessor), keeping the opt-in on', () => {

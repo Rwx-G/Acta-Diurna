@@ -75,6 +75,49 @@ describe('ChangeSummary render', () => {
 		expect(movement.querySelector('.movement-label')?.textContent).toBe('Revenue');
 	});
 
+	it('carries the movement audience tags on data-audiences so a hidden-level KPI movement is hidden too', () => {
+		const { container } = render(ChangeSummary, {
+			entries: [
+				entry({
+					sectionId: 'metrics',
+					sectionTitle: 'Metrics',
+					change: 'updated',
+					movements: [
+						{
+							label: 'Revenue',
+							delta: { direction: 'up', priorValue: 100, absolute: 8, relative: 0.08 },
+							audiences: ['technical']
+						}
+					]
+				})
+			]
+		});
+		// The movement line carries its own data-audiences, so the SAME reader CSS that hides
+		// the technical KPI in the body hides the movement line at a non-technical level.
+		const movement = container.querySelector('.movement');
+		expect(movement?.getAttribute('data-audiences')).toBe('technical');
+	});
+
+	it('omits data-audiences on a movement with no audience tags (shows at every level)', () => {
+		const { container } = render(ChangeSummary, {
+			entries: [
+				entry({
+					sectionId: 'metrics',
+					sectionTitle: 'Metrics',
+					change: 'updated',
+					movements: [
+						{
+							label: 'Revenue',
+							delta: { direction: 'up', priorValue: 100, absolute: 8, relative: 0.08 }
+						}
+					]
+				})
+			]
+		});
+		const movement = container.querySelector('.movement');
+		expect(movement?.hasAttribute('data-audiences')).toBe(false);
+	});
+
 	it('carries the section audience tags on data-audiences so the reader CSS can hide a hidden-level entry', () => {
 		const { container } = render(ChangeSummary, {
 			entries: [

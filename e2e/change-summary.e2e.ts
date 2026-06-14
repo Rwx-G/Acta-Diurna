@@ -39,6 +39,7 @@ test('an opted-in issue with a predecessor shows the change-summary panel', asyn
 	await expect(panel).toContainText('Introduction');
 	await expect(panel).toContainText('Metrics');
 	await expect(panel).toContainText('Added');
+	await expect(panel).toContainText('Updated');
 
 	// The headline KPI movement: the signed figure (not colour alone) and the
 	// accessible direction word.

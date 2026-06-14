@@ -13,11 +13,18 @@ function textBlock(id: string, text: string): Block {
 	return { type: 'text', id, paragraphs: [[{ text }]] };
 }
 
-function kpiBlock(id: string, label: string, value: number, delta?: BindingDelta): Block {
+function kpiBlock(
+	id: string,
+	label: string | undefined,
+	value: number,
+	delta?: BindingDelta,
+	audiences?: readonly string[]
+): Block {
 	return {
 		type: 'kpi',
 		id,
-		items: [{ label, value }],
+		...(audiences !== undefined ? { audiences } : {}),
+		items: [{ ...(label !== undefined ? { label } : {}), value }],
 		binding: {
 			fields: [{ name: 'value', type: 'number' }],
 			...(delta !== undefined ? { delta } : {})
@@ -132,5 +139,79 @@ describe('buildChangeSummaryEntries', () => {
 		const diff = diffSnapshots(baked, old);
 		const entries = buildChangeSummaryEntries(diff, baked);
 		expect(entries[0].audiences).toEqual(['technical']);
+	});
+
+	it('carries the block audience tags on a movement so a hidden-level KPI movement is hidden too', () => {
+		// A section visible at every level (untagged) containing a KPI tagged `technical`:
+		// the report body hides that KPI at `summary` via `data-level`, so the movement must
+		// inherit the BLOCK's tags - otherwise the summary surfaces a figure the body
+		// conceals at `summary`. The movement carries the block's tags so the SAME CSS hides
+		// it: hidden at `summary`, shown at `technical`.
+		const old = doc([
+			section('metrics', 'Metrics', [kpiBlock('rev', 'Revenue', 100, undefined, ['technical'])])
+		]);
+		const baked = doc([
+			section('metrics', 'Metrics', [kpiBlock('rev', 'Revenue', 108, upDelta(), ['technical'])])
+		]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked);
+		expect(entries[0].movements).toEqual([
+			{ label: 'Revenue', delta: upDelta(), audiences: ['technical'] }
+		]);
+	});
+
+	it('intersects the section and block audience tags on a movement (EITHER-hidden rule)', () => {
+		// Section visible at summary+full, KPI tagged full+technical: the movement is shown
+		// only where BOTH show it (the intersection `full`), so it is hidden at summary (the
+		// section hides it there) and at technical (the block hides it there).
+		const old = doc([
+			section(
+				'metrics',
+				'Metrics',
+				[kpiBlock('rev', 'Revenue', 100, undefined, ['full', 'technical'])],
+				['summary', 'full']
+			)
+		]);
+		const baked = doc([
+			section(
+				'metrics',
+				'Metrics',
+				[kpiBlock('rev', 'Revenue', 108, upDelta(), ['full', 'technical'])],
+				['summary', 'full']
+			)
+		]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked);
+		expect(entries[0].movements?.[0].audiences).toEqual(['full']);
+	});
+
+	it('omits a movement whose KPI has no usable label (omit-rather-than-mislead)', () => {
+		// An unlabeled KPI must not borrow the section title - that would attribute the
+		// figure to the wrong subject. The movement is omitted entirely, the same posture as
+		// a KPI with no baked delta.
+		const old = doc([section('metrics', 'Metrics', [kpiBlock('rev', undefined, 100)])]);
+		const baked = doc([
+			section('metrics', 'Metrics', [kpiBlock('rev', undefined, 108, upDelta())])
+		]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked);
+		expect(entries).toEqual([{ sectionId: 'metrics', sectionTitle: 'Metrics', change: 'updated' }]);
+	});
+
+	it('emits no movements for an added section (its blocks are all added, no prior to compare)', () => {
+		const old = doc([section('intro', 'Intro', [textBlock('p', 'Kept.')])]);
+		const baked = doc([
+			section('intro', 'Intro', [textBlock('p', 'Kept.')]),
+			section('metrics', 'Metrics', [kpiBlock('rev', 'Revenue', 108, upDelta())])
+		]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked);
+		expect(entries).toContainEqual({
+			sectionId: 'metrics',
+			sectionTitle: 'Metrics',
+			change: 'added'
+		});
+		const added = entries.find((entry) => entry.sectionId === 'metrics');
+		expect(added?.movements).toBeUndefined();
 	});
 });

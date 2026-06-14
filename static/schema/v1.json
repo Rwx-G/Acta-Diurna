@@ -168,6 +168,18 @@
 												"absolute",
 												"relative"
 											]
+										},
+										"audiences": {
+											"maxItems": 3,
+											"type": "array",
+											"items": {
+												"type": "string",
+												"enum": [
+													"summary",
+													"full",
+													"technical"
+												]
+											}
 										}
 									},
 									"required": [
