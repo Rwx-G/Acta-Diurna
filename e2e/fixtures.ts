@@ -17,6 +17,7 @@ export {
 	DATA_AS_OF_ISO,
 	DATA_AS_OF_CAPTION
 } from './fixtures/data-as-of.ts';
+export { DETAIL_FIXTURE_DOCUMENT } from './fixtures/detail.ts';
 
 export const E2E_PORT = 4173;
 export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
@@ -142,3 +143,6 @@ export const PRESENTER_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000004
 
 /** The data-as-of caption fixture report id (document in `fixtures/data-as-of.ts`). */
 export const DATA_AS_OF_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000005';
+
+/** The Epic 11 drill-down fixture report id (document in `fixtures/detail.ts`). */
+export const DETAIL_FIXTURE_REPORT_ID = '0197b300-0000-7000-8000-000000000007';
