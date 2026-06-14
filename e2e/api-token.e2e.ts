@@ -40,9 +40,12 @@ test('create a PAT, authenticate the API with it, then revoke', async ({ page },
 	const rawToken = (await tokenCode.textContent())!.trim();
 	expect(rawToken).toMatch(/^acta_pat_[A-Za-z0-9_-]{43}$/);
 
-	// The token is now listed (active) without exposing the raw value.
+	// The token is now listed (active) without exposing the raw value. Scope to THIS
+	// token's row by its name: other specs in the suite mint tokens into the same
+	// list, so an unscoped "active" assertion would resolve to several rows.
 	const list = page.locator('.token-list');
-	await expect(list.getByText('active')).toBeVisible();
+	const row = list.locator('li').filter({ hasText: 'e2e script' });
+	await expect(row.getByText('active')).toBeVisible();
 	await expect(list).not.toContainText(rawToken);
 
 	// Use the raw token as a Bearer on the real API route -> 200.
@@ -55,11 +58,12 @@ test('create a PAT, authenticate the API with it, then revoke', async ({ page },
 	const body = (await authed.json()) as { tokenId: string | null };
 	expect(body.tokenId).toBeTruthy();
 
-	// Revoke the token via the UI (two-click confirm), then it no longer authenticates.
-	const revoke = page.locator('.token-list').getByRole('button', { name: 'Revoke' });
-	await revoke.click(); // arms
-	await page.getByRole('button', { name: 'Confirm revoke?' }).click(); // confirms
-	await expect(page.locator('.token-list').getByText('revoked')).toBeVisible();
+	// Revoke THIS token via the UI (two-click confirm), then it no longer
+	// authenticates. Scoped to the "e2e script" row so a sibling spec's token in the
+	// shared list is never the one revoked.
+	await row.getByRole('button', { name: 'Revoke' }).click(); // arms
+	await row.getByRole('button', { name: 'Confirm revoke?' }).click(); // confirms
+	await expect(row.getByText('revoked')).toBeVisible();
 
 	const afterRevoke = await page.request.get(whoamiUrl, {
 		headers: { authorization: `Bearer ${rawToken}` },
