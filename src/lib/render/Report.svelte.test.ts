@@ -175,6 +175,115 @@ describe('Report (render integration)', () => {
 		expect(getComputedStyle(host!).display).toBe('none');
 	});
 
+	it('renders the opt-in change-summary panel on the reader path when entries are baked (Story 9.5)', async () => {
+		const doc: DocumentV1 = {
+			version: 1,
+			title: 'Issue 2',
+			changeSummary: {
+				enabled: true,
+				entries: [
+					{ sectionId: 'intro', sectionTitle: 'Introduction', change: 'updated' },
+					{
+						sectionId: 'metrics',
+						sectionTitle: 'Metrics',
+						change: 'updated',
+						movements: [
+							{
+								label: 'Revenue',
+								delta: { direction: 'up', priorValue: 100, absolute: 8, relative: 0.08 }
+							}
+						]
+					}
+				]
+			},
+			sections: [
+				{
+					id: 'intro',
+					title: 'Introduction',
+					blocks: [{ type: 'text', id: 't', paragraphs: [[{ text: 'Hi' }]] }]
+				}
+			]
+		};
+		const { container } = render(Report, { view: toReportView(doc) });
+		const panel = container.querySelector('.change-summary');
+		expect(panel).not.toBeNull();
+		expect(panel?.getAttribute('aria-labelledby')).toBe('change-summary-heading');
+		expect(container.querySelectorAll('.change-summary-entry')).toHaveLength(2);
+		expect(container.querySelector('.movement-figure')?.textContent).toBe('+8 (+8%)');
+	});
+
+	it('renders no change-summary panel when the document carries no baked entries (off / first issue)', async () => {
+		const { container } = render(Report, { view: toReportView(validFull()) });
+		expect(container.querySelector('.change-summary')).toBeNull();
+	});
+
+	it('omits the change-summary panel from the embedded workspace preview (publish-only surface)', async () => {
+		const doc: DocumentV1 = {
+			version: 1,
+			title: 'Issue 2',
+			changeSummary: {
+				enabled: true,
+				entries: [{ sectionId: 'intro', sectionTitle: 'Introduction', change: 'updated' }]
+			},
+			sections: [
+				{
+					id: 'intro',
+					title: 'Introduction',
+					blocks: [{ type: 'text', id: 't', paragraphs: [[{ text: 'Hi' }]] }]
+				}
+			]
+		};
+		const { container } = render(Report, { view: toReportView(doc), embedded: true });
+		expect(container.querySelector('.change-summary')).toBeNull();
+	});
+
+	it('hides a change-summary entry for a section hidden at the reader’s level (audience-aware, Story 9.5)', async () => {
+		const doc: DocumentV1 = {
+			version: 1,
+			title: 'Issue 2',
+			changeSummary: {
+				enabled: true,
+				entries: [
+					{
+						sectionId: 'method',
+						sectionTitle: 'Methodology',
+						change: 'updated',
+						audiences: ['technical']
+					},
+					{ sectionId: 'intro', sectionTitle: 'Introduction', change: 'updated' }
+				]
+			},
+			sections: [
+				{
+					id: 'method',
+					title: 'Methodology',
+					audiences: ['technical'],
+					blocks: [{ type: 'text', id: 'm', paragraphs: [[{ text: 'Deep' }]] }]
+				},
+				{
+					id: 'intro',
+					title: 'Introduction',
+					blocks: [{ type: 'text', id: 't', paragraphs: [[{ text: 'Hi' }]] }]
+				}
+			]
+		};
+		const { container } = render(Report, { view: toReportView(doc) });
+		// Default reading level is full. The technical-only entry carries the section's
+		// audience tag, so the SAME audience CSS that hides the technical section hides
+		// its summary line - the summary never references a section the level conceals.
+		const techEntry = container.querySelector<HTMLElement>(
+			'.change-summary-entry[data-audiences="technical"]'
+		);
+		expect(techEntry).not.toBeNull();
+		expect(getComputedStyle(techEntry!).display).toBe('none');
+		// The untagged entry stays visible.
+		const visibleEntry = [...container.querySelectorAll<HTMLElement>('.change-summary-entry')].find(
+			(el) => !el.hasAttribute('data-audiences')
+		);
+		expect(visibleEntry).not.toBeUndefined();
+		expect(getComputedStyle(visibleEntry!).display).not.toBe('none');
+	});
+
 	it('renders a transiently-invalid block as a notice without throwing', async () => {
 		const snapshot = {
 			version: 1,

@@ -20,6 +20,7 @@ import {
 	validateInternalLinks,
 	type Audience,
 	type Block,
+	type ChangeSummaryEntry,
 	type ComparisonMatrixBlock,
 	type DocumentV1,
 	type Scales,
@@ -133,6 +134,17 @@ export interface ReportView {
 	 * renders identically for everyone (AC2).
 	 */
 	hasAudiences: boolean;
+	/**
+	 * The OPT-IN reader-facing change-summary entries (Story 9.5), baked onto the
+	 * published snapshot at publish time. Present and non-empty ONLY when the author
+	 * enabled the summary AND a computed diff against the published predecessor produced
+	 * changes; absent (the default), opted out, first issue, unpublished predecessor, or
+	 * a drifted pair all yield an empty array, so the reader sees no panel. Carries only
+	 * leak-safe facts (section ids, titles, verdicts, audience tags, and the already-baked
+	 * KPI deltas) - never prior-issue raw content. The pure ChangeSummary component reads
+	 * this straight off the validated document; no `$lib/server`, no client compute.
+	 */
+	changeSummary: ChangeSummaryEntry[];
 }
 
 /** Indexes every comparison-matrix block in a section list by its id. */
@@ -195,7 +207,10 @@ export function toReportView(document: DocumentV1): ReportView {
 		danglingLinks: [],
 		// Counts detail-section tags too: a document whose only audience tags are on
 		// detail sections still surfaces the switcher (Epic 11 kickoff default).
-		hasAudiences: hasAudienceTags(document.sections)
+		hasAudiences: hasAudienceTags(document.sections),
+		// The opt-in reader change summary, baked at publish (Story 9.5). Only the baked
+		// `entries` reach the renderer; the bare `enabled` opt-in carries no panel content.
+		changeSummary: document.changeSummary?.entries ?? []
 	};
 }
 
@@ -334,7 +349,11 @@ export function toPreviewView(snapshot: unknown): ReportView {
 		// `linkTo` whose target section is not authored yet becomes a gentle,
 		// actionable notice the editor renders, while save/publish still rejects it.
 		danglingLinks: previewDanglingLinks(rawSections),
-		hasAudiences: hasAudienceTags(sections)
+		hasAudiences: hasAudienceTags(sections),
+		// The change summary is baked at PUBLISH (Story 9.5), never onto the editable
+		// draft this preview renders, so the workspace preview shows no panel - the author
+		// sees the summary only on a published, opted-in issue (the reader surface).
+		changeSummary: []
 	};
 }
 

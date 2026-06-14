@@ -11,6 +11,7 @@
 	import { resolveTheme } from './theme/index.ts';
 	import { ReaderNavigation, indexForFragment, detailIdForFragment } from './navigation.svelte.ts';
 	import type { ReportView, SectionView } from './document-view.ts';
+	import ChangeSummary from './ChangeSummary.svelte';
 	import Cover from './Cover.svelte';
 	import LevelSwitcher from './LevelSwitcher.svelte';
 	import ProgressRail from './ProgressRail.svelte';
@@ -372,6 +373,15 @@
 			}}
 			onclose={() => nav.closeToc()}
 		/>
+	{/if}
+
+	{#if !embedded && view.changeSummary.length > 0}
+		<!-- The Story 9.5 opt-in reader change summary. Rendered inside `.report` so the
+		     `data-level` root governs its entries' `data-audiences` (an entry for a section
+		     hidden at the reader's level is hidden by the SAME CSS). SSR and escaped; absent
+		     unless a published, opted-in issue baked entries. Kept off the embedded preview
+		     (the workspace renders the draft, which carries no baked summary). -->
+		<ChangeSummary entries={view.changeSummary} />
 	{/if}
 
 	<!-- Edge-tap paging is a pointer enhancement on top of full keyboard nav
