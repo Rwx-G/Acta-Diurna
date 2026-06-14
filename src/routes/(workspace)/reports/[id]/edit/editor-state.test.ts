@@ -7,6 +7,7 @@ import {
 	moveItem,
 	newBlock,
 	newSection,
+	optimisticDocumentIssues,
 	paragraphText
 } from './editor-state';
 
@@ -333,5 +334,57 @@ describe('applyNarrativeFields', () => {
 		applyNarrativeFields(original, data);
 
 		expect(original.title).toBe('Original');
+	});
+});
+
+describe('optimisticDocumentIssues', () => {
+	it('returns no issues for a valid document', () => {
+		expect(optimisticDocumentIssues(documentWith([newBlock('text')]))).toEqual([]);
+	});
+
+	it('places an issue at the failing block with the same path shape the server emits', () => {
+		// The optimistic client validation must agree with `validateDocument` on the
+		// error PATH so `groupErrorsByLocation` maps both to the same block. An image
+		// block with empty alt is a stable, single-field failure to compare on.
+		const document = documentWith([newBlock('image')]);
+
+		const optimistic = optimisticDocumentIssues(document);
+		const server = validateDocument(document);
+
+		expect(server.ok).toBe(false);
+		const optimisticPaths = optimistic.map((issue) => issue.path);
+		expect(optimisticPaths).toContain('sections[0].blocks[0].alt');
+		if (!server.ok) {
+			// Every server error path is reproduced by the optimistic pass (it runs the
+			// SAME `documentSchemaV1`, including the cross-reference passes), so the
+			// inline placement is identical before and after the round-trip.
+			for (const serverPath of server.errors.map((error) => error.path)) {
+				expect(optimisticPaths).toContain(serverPath);
+			}
+		}
+	});
+
+	it('groups its issues onto the failing block id like the server errors do', () => {
+		const document = documentWith([newBlock('image')]);
+		const issues = optimisticDocumentIssues(document);
+
+		const grouped = groupErrorsByLocation(issues, document);
+
+		expect(grouped['block:' + document.sections[0].blocks[0].id]).toBeDefined();
+	});
+
+	it('reports a root-level failure under the document group', () => {
+		// An empty title is a root field: its path is `title`, which groups to
+		// `document` (not a block), so the editor surfaces it at the document level.
+		const issues = optimisticDocumentIssues({
+			version: 1,
+			title: '',
+			sections: [{ id: 'fixture', title: 'Fixture', blocks: [newBlock('text')] }]
+		});
+
+		expect(issues.map((issue) => issue.path)).toContain('title');
+		expect(
+			groupErrorsByLocation(issues, documentWith([newBlock('text')]))['document']
+		).toBeDefined();
 	});
 });

@@ -172,9 +172,72 @@ describe('save action', () => {
 
 		const result = await actions.save(saveEvent(data));
 
-		expect(updateMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, document, TEST_SCOPE);
+		// A JS save without a posted `expectedUpdatedAt` (the no-concurrency baseline)
+		// passes `undefined` for the token, so the service stays on the single-writer
+		// path (no optimistic-concurrency check).
+		expect(updateMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, document, TEST_SCOPE, undefined);
 		expect(result).toEqual({ savedAt: '2026-06-12T10:15:00.000Z' });
 		expect(getReportMock).not.toHaveBeenCalled();
+	});
+
+	it('forwards the posted expectedUpdatedAt to the service for optimistic concurrency', async () => {
+		// Epic 10.1: the editor posts the loaded `updatedAt` so the service can reject a
+		// write that lands after a concurrent edit. The action parses the ISO string into
+		// a Date and threads it through as the fourth argument.
+		const report = sampleReport({ updatedAt: new Date('2026-06-12T10:15:00Z') });
+		updateMock.mockResolvedValue(report);
+		const document = sampleDocument();
+		const data = new FormData();
+		data.set('document', JSON.stringify(document));
+		data.set('expectedUpdatedAt', '2026-06-12T09:30:00.000Z');
+
+		await actions.save(saveEvent(data));
+
+		expect(updateMock).toHaveBeenCalledExactlyOnceWith(
+			REPORT_ID,
+			document,
+			TEST_SCOPE,
+			new Date('2026-06-12T09:30:00.000Z')
+		);
+	});
+
+	it('ignores a malformed expectedUpdatedAt and stays on the single-writer path', async () => {
+		// A non-ISO value never throws the save: it degrades to undefined (no
+		// concurrency check) rather than failing a save the author cannot diagnose.
+		const report = sampleReport();
+		updateMock.mockResolvedValue(report);
+		const data = new FormData();
+		data.set('document', JSON.stringify(sampleDocument()));
+		data.set('expectedUpdatedAt', 'not-a-date');
+
+		await actions.save(saveEvent(data));
+
+		const call = updateMock.mock.calls[0];
+		expect(call[3]).toBeUndefined();
+	});
+
+	it('maps a 409 report-conflict AppError (stale expectedUpdatedAt) to a failure', async () => {
+		// A concurrent write landed between load and save: the service rejects the stale
+		// token with the 409 `/problems/report-conflict`, which the action surfaces as a
+		// 409 failure carrying the resolve-by-reload detail.
+		updateMock.mockRejectedValue(
+			new AppError({
+				status: 409,
+				title: 'Report changed concurrently',
+				type: '/problems/report-conflict',
+				detail: 'The report was modified since you loaded it; reload and reapply your change.'
+			})
+		);
+		const data = new FormData();
+		data.set('document', JSON.stringify(sampleDocument()));
+		data.set('expectedUpdatedAt', '2026-06-12T09:30:00.000Z');
+
+		const result = (await actions.save(saveEvent(data))) as ActionFailure<{ message: string }>;
+
+		expect(result.status).toBe(409);
+		expect(result.data.message).toBe(
+			'The report was modified since you loaded it; reload and reapply your change.'
+		);
 	});
 
 	it('maps a 422 AppError to a failure carrying the actionable errors[]', async () => {
