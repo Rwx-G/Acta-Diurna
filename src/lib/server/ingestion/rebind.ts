@@ -119,9 +119,14 @@ export async function rebindReport(
 	dataSetId: string,
 	scope: AuthorScope
 ): Promise<RebindResult> {
-	const dataSet = await getDataSet(dataSetId, scope);
+	// The data set read and the report read are independent, so run them together;
+	// the table read keys off the resolved data set, so it follows (E3). Error
+	// semantics are unchanged: a 404 on either independent read still rejects.
+	const [dataSet, report] = await Promise.all([
+		getDataSet(dataSetId, scope),
+		getReport(reportId, scope)
+	]);
 	const table = await readDataSetTable(dataSetId, scope);
-	const report = await getReport(reportId, scope);
 
 	const available = dataSet.fields.map((field) => field.name);
 	const document = structuredClone(report.document);
@@ -189,9 +194,14 @@ export async function remapField(
 	availableField: string,
 	scope: AuthorScope
 ): Promise<Report> {
-	const dataSet = await getDataSet(dataSetId, scope);
+	// The data set read and the report read are independent (E3); the table read
+	// keys off the resolved data set, so it follows. A 404 on either surfaces the
+	// same problem as before.
+	const [dataSet, report] = await Promise.all([
+		getDataSet(dataSetId, scope),
+		getReport(reportId, scope)
+	]);
 	const table = await readDataSetTable(dataSetId, scope);
-	const report = await getReport(reportId, scope);
 
 	const document = structuredClone(report.document);
 	for (const section of document.sections) {
