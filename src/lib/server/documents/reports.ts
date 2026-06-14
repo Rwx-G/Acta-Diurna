@@ -17,7 +17,7 @@ import {
 	type Page,
 	type PageRequest
 } from '$lib/server/db/cursor';
-import { uuidv7 } from '$lib/server/db/ids';
+import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
 import { reports, type ReportRow } from '$lib/server/db/schema';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { AppError } from '$lib/server/problem';
@@ -47,8 +47,6 @@ export interface ReportSummary {
 	status: ReportStatus;
 	updatedAt: Date;
 }
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function toReport(row: ReportRow): Report {
 	return {

@@ -16,7 +16,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { AuthorScope } from '$lib/server/authors';
 import { destroyReaderSessionsForShare } from '$lib/server/auth/sessions';
 import { getDb } from '$lib/server/db/client';
-import { uuidv7 } from '$lib/server/db/ids';
+import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
 import { shares, type ShareRow } from '$lib/server/db/schema';
 import { assertShareable, getReport } from '$lib/server/documents/reports';
 import { isMultiAuthor } from '$lib/server/mode';
@@ -243,8 +243,6 @@ export async function getShareByToken(rawToken: string): Promise<ResolvedShare |
 		status: shareStatus(row)
 	};
 }
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * Whether `scope` owns the share - i.e. owns the report the share belongs to

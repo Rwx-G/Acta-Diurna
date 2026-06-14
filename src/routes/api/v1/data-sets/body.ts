@@ -6,11 +6,10 @@
  * `ingestBytes` takes. Every business rule (parse, inspect, store, bind,
  * rebind, diagnostics) stays in the reused services.
  */
+import { UUID_PATTERN } from '$lib/server/db/ids';
 import { MAX_UPLOAD_BYTES, readStreamToCap, type SourceFormat } from '$lib/server/ingestion';
 import { excelNotEnabled, tooLarge, unsupportedFormat } from '$lib/server/ingestion/errors';
 import { AppError } from '$lib/server/problem';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function malformedRequest(detail: string): AppError {
 	return new AppError({

@@ -14,7 +14,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
 import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
-import { uuidv7 } from '$lib/server/db/ids';
+import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
 import { skeletons, type SkeletonRow } from '$lib/server/db/schema';
 import { createReportWithDocument, type Report } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
@@ -35,8 +35,6 @@ export interface SkeletonSummary {
 	name: string;
 	updatedAt: Date;
 }
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Postgres unique_violation; a duplicate skeleton name trips `skeletons_owner_id_name_idx`. */
 const UNIQUE_VIOLATION = '23505';

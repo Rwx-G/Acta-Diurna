@@ -26,6 +26,7 @@
  */
 import { and, eq, lt, or, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
+import { UUID_PATTERN } from './ids.ts';
 
 /** The default page size when a caller passes no `limit` (matches the prior list caps' intent: a bounded page). */
 export const DEFAULT_PAGE_SIZE = 100;
@@ -50,8 +51,6 @@ interface CursorPosition {
 	timestamp: Date;
 	id: string;
 }
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * Clamps a requested page size into `[1, MAX_PAGE_SIZE]`, defaulting to

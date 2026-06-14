@@ -26,9 +26,8 @@ import {
 	type Page,
 	type PageRequest
 } from '$lib/server/db/cursor';
+import { UUID_PATTERN } from '$lib/server/db/ids';
 import { accessRecords, readerIdentities, reports } from '$lib/server/db/schema';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * Safety ceiling on the owned-report dropdown options ({@link listOwnedReportOptions}).

@@ -1,6 +1,16 @@
 import { randomBytes } from 'node:crypto';
 
 /**
+ * Canonical UUID shape (8-4-4-4-12 lowercase hex), the single source of truth for
+ * the boundary id guard every service applies: a malformed id is rejected as a 404
+ * (or a no-match) BEFORE it reaches a postgres uuid cast, so a bad id is never a
+ * 500 nor an existence oracle. Deliberately version-agnostic (not the v7-strict
+ * shape `uuidv7` mints) so it also accepts ids minted elsewhere; the database
+ * column is the real type gate.
+ */
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
  * Generates a UUIDv7 (RFC 9562): 48-bit unix-millisecond timestamp followed
  * by random bits, so ids sort by creation time. Architecture rule: every
  * entity primary key is UUIDv7 (crypto.randomUUID() only produces v4).
