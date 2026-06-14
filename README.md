@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.14.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.15.0-brightgreen.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-feature--complete-brightgreen.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
@@ -23,7 +23,7 @@ Acta Diurna replaces the slide deck for recurring reporting. A report is one dec
 
 The tool carries the skeleton - structure, templates, rendering, sharing, access control. Connected AI assistants build the content and data into it: an agent authors natively over MCP, or an author generates a draft outline-first, both through the same validated document model. *Acta Diurna* were the daily public gazettes of ancient Rome: the original recurring report.
 
-> **Status: feature-complete, not yet production-hardened.** Every capability below is implemented: the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing, the SMTP-gated single / multi-author model with per-author tenancy, and multi-audience reading and governance (audience levels, presenter view, access audit and retention, data freshness, theme selection). The codebase has been through a full security and quality audit with no high-severity findings outstanding, and its multi-author and reader-verification flows run end to end in CI. It is not yet production-ready - live-deploy hardening (reverse-proxy / TLS posture, an optional reader-session TTL) is still ahead. Two honest gaps: the Excel parser returns a "not enabled" stub (CSV / JSON are supported), and AI generation is tested against a mocked model in CI. See the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
+> **Status: feature-complete, not yet production-hardened.** Every capability below is implemented: the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing, the SMTP-gated single / multi-author model with per-author tenancy, multi-audience reading and governance (audience levels, presenter view, access audit and retention, data freshness, theme selection), and in-report drill-down (internal links to hidden detail pages). The codebase has been through a full security and quality audit with no high-severity findings outstanding, and its multi-author and reader-verification flows run end to end in CI. It is not yet production-ready - live-deploy hardening (reverse-proxy / TLS posture, an optional reader-session TTL) is still ahead. Two honest gaps: the Excel parser returns a "not enabled" stub (CSV / JSON are supported), and AI generation is tested against a mocked model in CI. See the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
 
 ## Key Features
 
@@ -39,10 +39,11 @@ The tool carries the skeleton - structure, templates, rendering, sharing, access
 - **Hybrid renderer** - sections navigate as fullscreen slides, content scrolls within them, annexes stay out of the way; keyboard and touch navigation, table of contents, deep links
 - **Audience levels** - one report serves the whole room: a reader switches between **summary / full / technical** instantly, all levels server-rendered and toggled by CSS (near-zero added JS), with a matching author per-level preview. Tags are a reading-comfort filter, not a confidentiality boundary (the share is the boundary)
 - **Presenter view** - an author-only local presenter window runs a meeting from the same published document the readers received: current section, **author-private speaker notes** (stripped server-side before any reader sees the document), next-section preview, an elapsed timer, and a meeting mode that hides annexes from the flow
+- **Internal links / drill-down detail pages** - a finding in a table (or a matrix finding, or a phrase in prose) drills down to its own dedicated page: full evidence, reproduction, remediation, one click away. That detail page is part of the same document but hidden from the main flow and the table of contents - reachable only via the internal link, revealed by pure CSS (`:target`, near-zero added JS), with a "back to where you were" affordance. The `linkTo` reference is validated against the document (a dangling link is a validation error, never a dead click) and renders as an escaped in-page anchor, renderer-pure. "Reachable only via a link" is navigation, not a confidentiality boundary - the share is the boundary
 - **Data freshness** - a data-bound block shows an unobtrusive "Data as of <date>" caption (the explicit data-as-of, else the injection time), baked onto the binding server-side so the renderer stays pure, and omitted rather than showing a misleading date
 - **Server-side SVG charts** (d3-scale / d3-shape) with **zero hydration** - the reader path ships static HTML/SVG, no client charting library
 - **Theme selection** - four built-in themes (Modern Gazette, Midnight, Cool Aurora, Warm Meridian) as complete design-token sets; an author picks one per report, an unknown reference falls back to the default with a workspace warning, self-hosted fonts under a strict Content-Security-Policy (no CDN, no third-party asset)
-- **WCAG AAA** report content (AA chrome floor, every built-in theme contrast-verified), gated by axe-core in CI; reader-path JS held under a **200 KB budget** (currently ~73 KB), enforced on every build
+- **WCAG AAA** report content (AA chrome floor, every built-in theme contrast-verified), gated by axe-core in CI; reader-path JS held under a **200 KB budget** (currently ~75 KB), enforced on every build
 
 ### :bricks: Block catalogue
 
@@ -200,8 +201,9 @@ Validation errors are RFC 9457 problem-details with the offending block path, fi
 |---------|-------|--------|
 | v1 | Document model + hybrid renderer, block catalogue, templates + data binding, file upload + API push, REST API, MCP server, outline-first AI generation, magic-link sharing with hardening, docker compose distribution | Implemented |
 | Phase 2 | AI-native authoring (MCP + outline-first generation), the rich block catalogue (comparison matrix, UpSet, scales, callouts, code, lists, timelines and more), SMTP-gated identity & multi-author tenancy, and multi-audience reading and governance: audience levels (reader picks summary / full / technical), presenter view, access audit and retention, data freshness, theme selection | Implemented |
+| v2 (in) | [Internal links + drill-down detail pages](docs/prd/epic-11.md): a finding in a table drills down to its dedicated detail page, hidden from the main flow and the TOC, reachable only via the internal link, renderer-pure | Implemented |
 | Live deploy | Live-deploy operational hardening: reverse-proxy / TLS posture, an optional reader-session TTL, the unencrypted-remote-DB note | Next |
-| v2 | Three drafted epics: [report series + auto-diff](docs/prd/epic-9.md), [in-browser WYSIWYG editor](docs/prd/epic-10.md), [internal links + drill-down detail pages](docs/prd/epic-11.md). Further vision (not yet drafted): viewer analytics, synced blocks, SQL connectors, multi-tenant spaces | Planned |
+| v2 | Two drafted epics: [report series + auto-diff](docs/prd/epic-9.md) and the [in-browser WYSIWYG editor](docs/prd/epic-10.md). Further vision (not yet drafted): viewer analytics, synced blocks, SQL connectors, multi-tenant spaces | Planned |
 
 ## Documentation
 
