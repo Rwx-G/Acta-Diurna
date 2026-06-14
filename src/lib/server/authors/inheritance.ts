@@ -44,29 +44,33 @@ export async function inheritLegacyOwnership(): Promise<{
 	const authorId = await ensureImplicitAuthor();
 	const db = getDb();
 
-	const inheritedReports = await db
-		.update(reports)
-		.set({ ownerId: authorId })
-		.where(isNull(reports.ownerId))
-		.returning({ id: reports.id });
-
-	const inheritedDataSets = await db
-		.update(dataSets)
-		.set({ ownerId: authorId })
-		.where(isNull(dataSets.ownerId))
-		.returning({ id: dataSets.id });
-
-	const inheritedSkeletons = await db
-		.update(skeletons)
-		.set({ ownerId: authorId })
-		.where(isNull(skeletons.ownerId))
-		.returning({ id: skeletons.id });
-
-	const inheritedTokens = await db
-		.update(apiTokens)
-		.set({ ownerId: authorId })
-		.where(isNull(apiTokens.ownerId))
-		.returning({ id: apiTokens.id });
+	// Seed the implicit author FIRST (above) so the FK target exists, THEN run the
+	// four backfills in parallel (E6): each targets a distinct table with the same
+	// `WHERE owner_id IS NULL` guard, so they are independent and order-free. The
+	// guard keeps each idempotent (a second boot matches zero rows), unchanged.
+	const [inheritedReports, inheritedDataSets, inheritedSkeletons, inheritedTokens] =
+		await Promise.all([
+			db
+				.update(reports)
+				.set({ ownerId: authorId })
+				.where(isNull(reports.ownerId))
+				.returning({ id: reports.id }),
+			db
+				.update(dataSets)
+				.set({ ownerId: authorId })
+				.where(isNull(dataSets.ownerId))
+				.returning({ id: dataSets.id }),
+			db
+				.update(skeletons)
+				.set({ ownerId: authorId })
+				.where(isNull(skeletons.ownerId))
+				.returning({ id: skeletons.id }),
+			db
+				.update(apiTokens)
+				.set({ ownerId: authorId })
+				.where(isNull(apiTokens.ownerId))
+				.returning({ id: apiTokens.id })
+		]);
 
 	const counts = {
 		authorId,

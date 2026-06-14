@@ -82,9 +82,12 @@ export async function purgeOrphanDataSets(
 		.where(and(isNull(dataSets.reportId), lt(dataSets.injectedAt, cutoff)))
 		.returning({ storagePath: dataSets.storagePath });
 
-	for (const row of deleted) {
-		await unlinkOrphanFile(row.storagePath);
-	}
+	// Unlink in parallel (E6): the rows are already deleted (the authoritative
+	// cleanup), so the unlinks are independent best-effort bookkeeping. Each
+	// `unlinkOrphanFile` isolates its own error, so one un-removable file never
+	// rejects the batch and strands the rest - the same per-file isolation the
+	// sequential loop had, now without serializing the I/O.
+	await Promise.all(deleted.map((row) => unlinkOrphanFile(row.storagePath)));
 	return deleted.length;
 }
 
