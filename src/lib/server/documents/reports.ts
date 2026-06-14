@@ -172,6 +172,45 @@ async function getMetaRow(id: string, scope: AuthorScope): Promise<ReportMetaRow
 	return rows[0];
 }
 
+/**
+ * Diff-snapshot projection: the columns the diff reads - id, status, the published
+ * snapshot, and the predecessor edge - with NO draft `document` column. The diff
+ * compares two FROZEN editions, so it never needs the editable draft; pulling it on
+ * both reads (the issue and its predecessor) would transfer a heavy JSONB column
+ * for nothing (3.x performance audit, E1, the same projection discipline the reader
+ * and status paths follow).
+ */
+type ReportDiffRow = {
+	id: string;
+	status: string;
+	publishedDocument: DocumentV1 | null;
+	predecessorId: string | null;
+};
+
+const diffSnapshotProjection = {
+	id: reports.id,
+	status: reports.status,
+	publishedDocument: reports.publishedDocument,
+	predecessorId: reports.predecessorId
+};
+
+/**
+ * Loads the diff-snapshot projection by id, owner-scoped like {@link getRow}: a
+ * cross-author, unknown, or malformed id is the same neutral 404 the tenancy layer
+ * uses, so a diff never spans authors. Pulls only the four columns the diff needs,
+ * never the draft `document` (E1).
+ */
+async function getDiffSnapshotRow(id: string, scope: AuthorScope): Promise<ReportDiffRow> {
+	if (!UUID_PATTERN.test(id)) throw notFound();
+	const rows = await getDb()
+		.select(diffSnapshotProjection)
+		.from(reports)
+		.where(scopedWhere(id, scope))
+		.limit(1);
+	if (rows.length === 0) throw notFound();
+	return rows[0];
+}
+
 /** Reader projection: the published snapshot, status, and id - the only columns the reader serves. */
 type ReportReaderRow = { id: string; status: string; publishedDocument: DocumentV1 | null };
 
@@ -710,6 +749,22 @@ function notShareable(): AppError {
 }
 
 /**
+ * The 409 raised when a DIFF is requested on an unpublished issue. Same status and
+ * problem type as {@link notShareable} (both say "publish first"), but a
+ * diff-appropriate detail: a diff compares two frozen editions, so it is not about
+ * sharing. Keeping the two factories distinct lets the message track the surface
+ * the user is on without overloading the sharing copy onto the diff path.
+ */
+function notPublished(): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Report is not published',
+		type: '/problems/report-not-published',
+		detail: 'A diff requires a published snapshot; publish the report first.'
+	});
+}
+
+/**
  * Guards the sharing entry point (FR6): a report is eligible to be shared only
  * once it is published. Throws a 409 otherwise. Exposed now so Epic 3's share
  * service consumes one canonical check; the publish lifecycle owns the rule.
@@ -833,7 +888,7 @@ export async function getPublishedDocument(
  * to a reader (a later opt-in story gates any reader exposure).
  */
 function publishedSnapshotOf(
-	row: ReportRow,
+	row: Pick<ReportRow, 'status' | 'publishedDocument'>,
 	migrations?: readonly DocumentMigration[]
 ): DocumentV1 | null {
 	if (row.status !== 'published' || row.publishedDocument === null) return null;
@@ -868,27 +923,37 @@ function publishedSnapshotOf(
  * `migrations` is injectable for tests, matching `getPublishedDocument` / the
  * `validateStoredDocument` contract: a snapshot frozen under an earlier schema
  * version is lifted to the current shape before the diff runs.
+ *
+ * Both reads use the narrow {@link getDiffSnapshotRow} projection (id, status, the
+ * published snapshot, the predecessor edge), so the diff never transfers the draft
+ * `document` column it does not read (E1).
+ *
+ * @throws {AppError} 404 when the issue OR its predecessor id is cross-author,
+ * unknown, or malformed; 409 not-published when the issue itself is unpublished;
+ * 422 when a stored snapshot fails to validate after migration (the
+ * `validateStoredDocument` render-path contract, via {@link publishedSnapshotOf}).
  */
 export async function diffSeriesIssue(
 	id: string,
 	scope: AuthorScope,
 	migrations?: readonly DocumentMigration[]
 ): Promise<SeriesDiff> {
-	const issueRow = await getRow(id, scope);
+	const issueRow = await getDiffSnapshotRow(id, scope);
 	const newSnapshot = publishedSnapshotOf(issueRow, migrations);
-	if (newSnapshot === null) throw notShareable();
+	if (newSnapshot === null) throw notPublished();
 
 	// No predecessor edge: the first issue of the series. The engine returns the
-	// neutral no-predecessor result, so the caller renders "first issue, nothing to
-	// compare" without a special-case here.
+	// neutral no-predecessor result tagged `first-issue`, so the caller renders
+	// "first issue, nothing to compare" without a special-case here.
 	if (issueRow.predecessorId === null) {
-		return diffSnapshots(newSnapshot, null);
+		return diffSnapshots(newSnapshot, null, 'first-issue');
 	}
 
 	// The predecessor is re-resolved under the SAME scope: a foreign or unknown
 	// predecessor is the neutral 404, and an unpublished predecessor (no snapshot)
-	// is handed to the engine as a null old snapshot -> the no-predecessor verdict.
-	const predecessorRow = await getRow(issueRow.predecessorId, scope);
+	// is handed to the engine as a null old snapshot -> the no-predecessor verdict,
+	// tagged `predecessor-unpublished` so 9.5 can message it apart from a first issue.
+	const predecessorRow = await getDiffSnapshotRow(issueRow.predecessorId, scope);
 	const oldSnapshot = publishedSnapshotOf(predecessorRow, migrations);
-	return diffSnapshots(newSnapshot, oldSnapshot);
+	return diffSnapshots(newSnapshot, oldSnapshot, 'predecessor-unpublished');
 }

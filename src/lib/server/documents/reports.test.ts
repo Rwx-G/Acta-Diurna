@@ -1070,6 +1070,23 @@ describe('diffSeriesIssue', () => {
 		return result.document;
 	}
 
+	/** A validated snapshot whose section and block ids are caller-chosen, for disjoint-lineage fixtures. */
+	function snapshotWithIds(sectionId: string, blockId: string): DocumentV1 {
+		const result = validateDocument({
+			version: 1,
+			title: 'Quarterly Review',
+			sections: [
+				{
+					id: sectionId,
+					title: 'Overview',
+					blocks: [{ type: 'text', id: blockId, paragraphs: [[{ text: 'prose' }]] }]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('snapshot must be valid');
+		return result.document;
+	}
+
 	it('diffs a published issue against its published predecessor and flags the content change', async () => {
 		seedReport({
 			id: PRED_ID,
@@ -1106,7 +1123,7 @@ describe('diffSeriesIssue', () => {
 
 		const result = await diffSeriesIssue(ISSUE_ID, TEST_SCOPE);
 
-		expect(result).toEqual({ kind: 'no-predecessor' });
+		expect(result).toEqual({ kind: 'no-predecessor', reason: 'first-issue' });
 	});
 
 	it('returns no-predecessor when the predecessor exists but is unpublished (no snapshot)', async () => {
@@ -1121,7 +1138,31 @@ describe('diffSeriesIssue', () => {
 
 		const result = await diffSeriesIssue(ISSUE_ID, TEST_SCOPE);
 
-		expect(result).toEqual({ kind: 'no-predecessor' });
+		// The two no-predecessor causes are kept apart: an unpublished predecessor is
+		// tagged distinctly from a genuine first issue so a later surface (9.5) messages
+		// them differently.
+		expect(result).toEqual({ kind: 'no-predecessor', reason: 'predecessor-unpublished' });
+	});
+
+	it('returns substantial-drift when the two published snapshots share no block ids', async () => {
+		seedReport({
+			id: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshotWithIds('old-section', 'old-block'),
+			publishedAt: new Date('2026-06-12T09:00:00Z')
+		});
+		seedReport({
+			id: ISSUE_ID,
+			predecessorId: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshotWithIds('new-section', 'new-block'),
+			publishedAt: new Date('2026-06-13T09:00:00Z')
+		});
+
+		const result = await diffSeriesIssue(ISSUE_ID, TEST_SCOPE);
+
+		expect(result.kind).toBe('substantial-drift');
+		if (result.kind === 'substantial-drift') expect(result.overlap).toBe(0);
 	});
 
 	it('throws 409 not-published when the issue itself is a draft (no edition to diff)', async () => {

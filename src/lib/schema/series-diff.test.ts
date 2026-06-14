@@ -7,6 +7,11 @@ import {
 	type SeriesDiff
 } from './series-diff.ts';
 
+/** [0, 1, ..., n-1], for building bulk fixtures. */
+function range(n: number): number[] {
+	return Array.from({ length: n }, (_, i) => i);
+}
+
 /** A block carries an id and type plus arbitrary content/data fields - the snapshot shape the engine reads. */
 type Block = { type: string; id: string; [key: string]: unknown };
 
@@ -57,9 +62,18 @@ function blockById(result: ComputedDiff, id: string) {
 
 describe('diffSnapshots', () => {
 	describe('no predecessor', () => {
-		it('returns a neutral no-predecessor result when the old snapshot is null', () => {
+		it('returns a neutral no-predecessor result defaulting to first-issue when null', () => {
 			const result = diffSnapshots(doc([section('s1', 'Intro', [textBlock('b1', 'Hello')])]), null);
-			expect(result).toEqual({ kind: 'no-predecessor' });
+			expect(result).toEqual({ kind: 'no-predecessor', reason: 'first-issue' });
+		});
+
+		it('carries the caller-supplied reason for an existing-but-unpublished predecessor', () => {
+			const result = diffSnapshots(
+				doc([section('s1', 'Intro', [textBlock('b1', 'Hello')])]),
+				null,
+				'predecessor-unpublished'
+			);
+			expect(result).toEqual({ kind: 'no-predecessor', reason: 'predecessor-unpublished' });
 		});
 	});
 
@@ -357,10 +371,27 @@ describe('diffSnapshots', () => {
 			]);
 			expect(() => diffSnapshots(corrupted, structuredClone(corrupted))).not.toThrow();
 		});
+
+		it('does not flag a phantom change when the same data is serialized in a different key order', () => {
+			// Same block content, fields keyed in opposite order. A key-order-sensitive
+			// compare (raw JSON.stringify) would read this as a content/data change; the
+			// engine canonicalizes keys first, so it must read as kept-with-no-change.
+			const oldDoc = doc([
+				section('s1', 'Metrics', [
+					{ type: 'table', id: 't1', columns: [{ key: 'm', label: 'M' }], rows: [{ a: 1, b: 2 }] }
+				])
+			]);
+			const newDoc = doc([
+				section('s1', 'Metrics', [
+					{ type: 'table', id: 't1', rows: [{ b: 2, a: 1 }], columns: [{ label: 'M', key: 'm' }] }
+				])
+			]);
+
+			const block = blockById(asDiff(diffSnapshots(newDoc, oldDoc)), 't1');
+
+			expect(block.change).toBe('kept');
+			expect(block.dataChanged).toBe(false);
+			expect(block.contentChanged).toBe(false);
+		});
 	});
 });
-
-/** [0, 1, ..., n-1], for building bulk fixtures. */
-function range(n: number): number[] {
-	return Array.from({ length: n }, (_, i) => i);
-}

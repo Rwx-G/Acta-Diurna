@@ -162,8 +162,8 @@ export type { InternalLinkIssue } from './internal-links.ts';
 
 export { diffSnapshots, SUBSTANTIAL_DRIFT_THRESHOLD } from './series-diff.ts';
 export type {
-	BlockChange,
 	BlockDiff,
+	ChangeVerdict,
 	ComputedDiff,
 	DiffDocument,
 	NoPredecessorDiff,

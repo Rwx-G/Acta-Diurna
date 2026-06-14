@@ -35,6 +35,12 @@
  * predecessor) it returns a neutral `no-predecessor` result. Neither throws.
  */
 
+// TYPE-ONLY import: this keeps the module isomorphic (`import type` is erased at
+// build, so no schema value is pulled in) while pinning DATA_FIELD_BY_TYPE to the
+// real bindable block shapes - a schema rename of a data field then breaks the
+// build here, not silently at runtime.
+import type { BindableBlock } from './blocks/bindable.ts';
+
 /**
  * A document the diff engine reads. Structural superset of the validated
  * `DocumentV1` (the engine reads only `sections` and the block shape), kept local
@@ -63,12 +69,28 @@ function fieldsOf(block: DiffBlock): BlockFields {
 	return block as unknown as BlockFields;
 }
 
+/**
+ * Each bindable block type mapped to the NAME of its data-bearing field, pinned to
+ * the real schema shape: the value for `T` must be a key of the bindable block
+ * variant whose `type` is `T`. A schema rename (or a new bindable block without a
+ * data field declared here) is then a compile error, not a silently muted
+ * data-change detection.
+ */
+type DataFieldByType = {
+	[T in BindableBlock['type']]: keyof Extract<BindableBlock, { type: T }> & string;
+};
+
 /** The block types whose data-bearing field carries resolved bound values. */
-const DATA_FIELD_BY_TYPE: Readonly<Record<string, string>> = {
+const DATA_FIELD_BY_TYPE = {
 	table: 'rows',
 	chart: 'series',
 	kpi: 'items'
-};
+} as const satisfies DataFieldByType;
+
+/** Resolves the data field name for a block type, or undefined for a non-bound type. */
+function dataFieldKey(type: string): string | undefined {
+	return (DATA_FIELD_BY_TYPE as Readonly<Record<string, string>>)[type];
+}
 
 /**
  * The overlap below which two snapshots are declared substantially drifted. The
@@ -88,8 +110,13 @@ const DATA_FIELD_BY_TYPE: Readonly<Record<string, string>> = {
  */
 export const SUBSTANTIAL_DRIFT_THRESHOLD = 0.1;
 
-/** Structural verdict for one block, matched by id across the two snapshots. */
-export type BlockChange = 'added' | 'removed' | 'moved' | 'kept';
+/**
+ * Structural verdict for a block OR a section, matched by id across the two
+ * snapshots: in both is `kept` (or `moved` if its position/parent changed), only in
+ * the new is `added`, only in the old is `removed`. Shared by {@link BlockDiff} and
+ * {@link SectionDiff} so the two carry the same verdict vocabulary.
+ */
+export type ChangeVerdict = 'added' | 'removed' | 'moved' | 'kept';
 
 /** The per-block result: its structural verdict plus the data/content flags. */
 export interface BlockDiff {
@@ -98,7 +125,7 @@ export interface BlockDiff {
 	/** The block `type` (from the new snapshot when present, else the old). */
 	type: string;
 	/** Structural verdict: added / removed / moved / kept. */
-	change: BlockChange;
+	change: ChangeVerdict;
 	/**
 	 * True when this is a data-bound block (table/chart/kpi) whose resolved bound
 	 * values (rows/series/items) differ between snapshots. Only meaningful for a
@@ -120,7 +147,7 @@ export interface SectionDiff {
 	/** The section title (from the new snapshot when present, else the old). */
 	title: string;
 	/** Structural verdict for the section itself. */
-	change: BlockChange;
+	change: ChangeVerdict;
 	/** The block diffs under this section, in new-snapshot order (old order for a removed section). */
 	blocks: BlockDiff[];
 }
@@ -131,9 +158,16 @@ export interface ComputedDiff {
 	sections: SectionDiff[];
 }
 
-/** No published predecessor: the first issue, or an unpublished predecessor. */
+/**
+ * No published snapshot to compare against, with the two distinct causes kept
+ * separate so a consumer (9.5) can message them differently:
+ * - `first-issue`: this is the first issue of the series (no predecessor edge).
+ * - `predecessor-unpublished`: a predecessor exists but is not published yet, so it
+ *   has no frozen edition to diff against.
+ */
 export interface NoPredecessorDiff {
 	kind: 'no-predecessor';
+	reason: 'first-issue' | 'predecessor-unpublished';
 }
 
 /** The two snapshots share almost no block ids: a per-block comparison would mislead. */
@@ -171,34 +205,65 @@ function placeBlocks(document: DiffDocument): Map<string, PlacedBlock> {
 }
 
 /**
- * The overlap ratio of two block-id sets: shared / min(old, new). Returns 0 when
- * either snapshot has no blocks (nothing to line up), so an empty pair is always
- * drift rather than a divide-by-zero.
+ * The overlap ratio of two placed-block maps (keyed by id): shared / min(old, new).
+ * Iterates the maps directly (no intermediate Sets) since a `Map.has`/`Map.size`
+ * answers id membership and count already. Returns 0 when either snapshot has no
+ * blocks (nothing to line up), so an empty pair is always drift rather than a
+ * divide-by-zero.
  */
-function blockOverlap(oldIds: ReadonlySet<string>, newIds: ReadonlySet<string>): number {
-	const smaller = Math.min(oldIds.size, newIds.size);
+function blockOverlap(
+	oldPlaced: ReadonlyMap<string, PlacedBlock>,
+	newPlaced: ReadonlyMap<string, PlacedBlock>
+): number {
+	const smaller = Math.min(oldPlaced.size, newPlaced.size);
 	if (smaller === 0) return 0;
 	let shared = 0;
-	for (const id of newIds) {
-		if (oldIds.has(id)) shared += 1;
+	for (const id of newPlaced.keys()) {
+		if (oldPlaced.has(id)) shared += 1;
 	}
 	return shared / smaller;
 }
 
 /**
- * Stable structural equality by canonical JSON. The block fields are plain JSON
- * (strings, numbers, booleans, null, arrays, objects with string keys), and both
- * snapshots are produced by the same serializer, so key order is stable and a
- * canonical `JSON.stringify` compares deeply and deterministically. This is the
- * same comparison strategy `structural-equality.ts` uses on its fingerprints.
+ * Canonical JSON of a plain-JSON value with object keys SORTED, so equality is
+ * correct-by-construction regardless of the key order the caller's snapshot happens
+ * to carry. Raw `JSON.stringify` is key-order-sensitive: two equal blocks whose
+ * fields were serialized in a different key order (a future reader path, an
+ * MCP-authored snapshot, or a cache that re-keyed the JSONB) would otherwise read
+ * as a phantom data/content change. Arrays are kept in order - order is meaningful
+ * for sections, rows, and paragraphs, so reordering them IS a real change. The
+ * `structural-equality.ts` precedent normalizes the same way before comparing.
+ */
+function stableStringify(value: unknown): string {
+	if (value === null || typeof value !== 'object') {
+		return JSON.stringify(value) ?? 'null';
+	}
+	if (Array.isArray(value)) {
+		return `[${value.map(stableStringify).join(',')}]`;
+	}
+	const entries = Object.keys(value as Record<string, unknown>)
+		.sort()
+		.map(
+			(key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`
+		);
+	return `{${entries.join(',')}}`;
+}
+
+/**
+ * Stable structural equality by canonical, key-sorted JSON. The block fields are
+ * plain JSON (strings, numbers, booleans, null, arrays, objects with string keys);
+ * {@link stableStringify} normalizes object key order so the compare is deep,
+ * deterministic, and independent of whatever key order the snapshot was serialized
+ * with. This is the same normalize-then-compare strategy `structural-equality.ts`
+ * uses on its fingerprints.
  */
 function deepEqual(a: unknown, b: unknown): boolean {
-	return JSON.stringify(a) === JSON.stringify(b);
+	return stableStringify(a) === stableStringify(b);
 }
 
 /** The resolved bound-data value of a block (rows/series/items), or undefined for a non-bound type. */
 function dataField(block: DiffBlock): unknown {
-	const key = DATA_FIELD_BY_TYPE[block.type];
+	const key = dataFieldKey(block.type);
 	return key === undefined ? undefined : fieldsOf(block)[key];
 }
 
@@ -210,7 +275,7 @@ function dataField(block: DiffBlock): unknown {
  * without re-flagging a data edit as content too.
  */
 function contentView(block: DiffBlock): Record<string, unknown> {
-	const dataKey = DATA_FIELD_BY_TYPE[block.type];
+	const dataKey = dataFieldKey(block.type);
 	const fields = fieldsOf(block);
 	const view: Record<string, unknown> = {};
 	for (const key of Object.keys(fields)) {
@@ -280,7 +345,7 @@ function sectionChange(
 	id: string,
 	oldOrder: Map<string, number>,
 	newOrder: Map<string, number>
-): BlockChange {
+): ChangeVerdict {
 	const inOld = oldOrder.has(id);
 	const inNew = newOrder.has(id);
 	if (inOld && !inNew) return 'removed';
@@ -302,23 +367,25 @@ function sectionOrder(document: DiffDocument): Map<string, number> {
  * it reads only the two documents passed in, never throws, and returns the same
  * result for the same inputs (a deterministic, cacheable derivation).
  *
- * `oldSnapshot` null means there is no published predecessor (the first issue, or
- * an unpublished predecessor) -> a neutral `no-predecessor` result. When the two
- * snapshots share almost no block ids (overlap below
- * {@link SUBSTANTIAL_DRIFT_THRESHOLD}) -> a neutral `substantial-drift` verdict.
- * Otherwise a full per-section, per-block `diff`.
+ * `oldSnapshot` null means there is no published predecessor -> a neutral
+ * `no-predecessor` result; `noPredecessorReason` records WHICH cause (the first
+ * issue, default, or an existing-but-unpublished predecessor) so a consumer can
+ * message them apart. When the two snapshots share almost no block ids (overlap
+ * below {@link SUBSTANTIAL_DRIFT_THRESHOLD}) -> a neutral `substantial-drift`
+ * verdict. Otherwise a full per-section, per-block `diff`.
  */
 export function diffSnapshots(
 	newSnapshot: DiffDocument,
-	oldSnapshot: DiffDocument | null
+	oldSnapshot: DiffDocument | null,
+	noPredecessorReason: NoPredecessorDiff['reason'] = 'first-issue'
 ): SeriesDiff {
 	if (oldSnapshot === null) {
-		return { kind: 'no-predecessor' };
+		return { kind: 'no-predecessor', reason: noPredecessorReason };
 	}
 
 	const oldPlaced = placeBlocks(oldSnapshot);
 	const newPlaced = placeBlocks(newSnapshot);
-	const overlap = blockOverlap(new Set(oldPlaced.keys()), new Set(newPlaced.keys()));
+	const overlap = blockOverlap(oldPlaced, newPlaced);
 	if (overlap < SUBSTANTIAL_DRIFT_THRESHOLD) {
 		return { kind: 'substantial-drift', overlap };
 	}
