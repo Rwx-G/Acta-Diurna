@@ -89,29 +89,25 @@ test('the REST generation endpoints return the disabled problem when AI is off (
 	expect(outline.headers()['content-type']).toContain('application/problem+json');
 	expect((await outline.json()).type).toBe('/problems/ai-generation-disabled');
 
-	// POST /generate/fill -> the same 503; the disabled gate fires inside the service
-	// (the fill's hash check would 409, but the connector gate is asserted first here
-	// only AFTER the hash check, so we post a matching-shape outline; either way the
-	// flow never reaches an outbound call). A trivial outline + an arbitrary hash is
-	// enough to drive the endpoint: a real instance would 409 on the hash first, but
-	// with AI off the connector path is what matters - assert no 5xx-from-call leak.
+	// POST /generate/fill -> the same 503; the disabled gate fires inside the service.
+	// The outline is a VALID minimal outline (one section, one block of a known type)
+	// and the hash is arbitrary, but `fillFromOutline` asserts the AI gate FIRST (before
+	// the approval-hash check), so a disabled instance returns the disabled 503 and makes
+	// NO outbound call - the arbitrary hash is never exercised.
 	const fill = await page.request.post(`${base}/fill`, {
 		headers: { ...auth, 'content-type': 'application/json' },
 		data: {
-			outline: { title: 'X', sections: [{ title: 'S', intent: '', blocks: [] }] },
+			outline: {
+				title: 'X',
+				sections: [{ title: 'S', intent: '', blocks: [{ type: 'text', intent: '' }] }]
+			},
 			outlineHash: 'deadbeef'
 		},
 		failOnStatusCode: false
 	});
-	// The hash will not match (no real approval), so the service 409s BEFORE the
-	// connector gate - which still proves NO outbound LLM call happened. Accept either
-	// the stale-approval 409 or the disabled 503; both are pre-call refusals.
-	expect([409, 503]).toContain(fill.status());
+	expect(fill.status()).toBe(503);
 	expect(fill.headers()['content-type']).toContain('application/problem+json');
-	const fillBody = (await fill.json()) as { type: string };
-	expect(['/problems/ai-outline-stale', '/problems/ai-generation-disabled']).toContain(
-		fillBody.type
-	);
+	expect(((await fill.json()) as { type: string }).type).toBe('/problems/ai-generation-disabled');
 });
 
 test('the MCP generation tools return the disabled problem when AI is off (no LLM call)', async ({
@@ -151,20 +147,24 @@ test('the MCP generation tools return the disabled problem when AI is off (no LL
 		expect(outline.isError).toBe(true);
 		expect((parse(outline) as { type: string }).type).toBe('/problems/ai-generation-disabled');
 
-		// generate_report: an arbitrary hash fails the approval check (409) before the
-		// connector gate, still proving no outbound call. Accept the stale-approval 409
-		// or the disabled 503 - both are pre-call refusals.
+		// generate_report on a disabled instance: the outline is a VALID minimal outline
+		// (one section, one block of a known type) so it clears the tool-entry
+		// `parseOutlineInput` shape check and reaches the service, where `fillFromOutline`
+		// asserts the AI gate FIRST (before the approval-hash check), so the result is the
+		// disabled 503 - and NO outbound call. The arbitrary hash never gets exercised
+		// because the gate fires first.
 		const fill = await client.callTool({
 			name: 'generate_report',
 			arguments: {
-				outline: { title: 'X', sections: [{ title: 'S', intent: '', blocks: [] }] },
+				outline: {
+					title: 'X',
+					sections: [{ title: 'S', intent: '', blocks: [{ type: 'text', intent: '' }] }]
+				},
 				outlineHash: 'deadbeef'
 			}
 		});
 		expect(fill.isError).toBe(true);
-		expect(['/problems/ai-outline-stale', '/problems/ai-generation-disabled']).toContain(
-			(parse(fill) as { type: string }).type
-		);
+		expect((parse(fill) as { type: string }).type).toBe('/problems/ai-generation-disabled');
 	} finally {
 		await transport.close();
 	}
