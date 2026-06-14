@@ -225,40 +225,53 @@ function blockOverlap(
 }
 
 /**
- * Canonical JSON of a plain-JSON value with object keys SORTED, so equality is
- * correct-by-construction regardless of the key order the caller's snapshot happens
- * to carry. Raw `JSON.stringify` is key-order-sensitive: two equal blocks whose
- * fields were serialized in a different key order (a future reader path, an
- * MCP-authored snapshot, or a cache that re-keyed the JSONB) would otherwise read
- * as a phantom data/content change. Arrays are kept in order - order is meaningful
- * for sections, rows, and paragraphs, so reordering them IS a real change. The
- * `structural-equality.ts` precedent normalizes the same way before comparing.
- */
-function stableStringify(value: unknown): string {
-	if (value === null || typeof value !== 'object') {
-		return JSON.stringify(value) ?? 'null';
-	}
-	if (Array.isArray(value)) {
-		return `[${value.map(stableStringify).join(',')}]`;
-	}
-	const entries = Object.keys(value as Record<string, unknown>)
-		.sort()
-		.map(
-			(key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`
-		);
-	return `{${entries.join(',')}}`;
-}
-
-/**
- * Stable structural equality by canonical, key-sorted JSON. The block fields are
- * plain JSON (strings, numbers, booleans, null, arrays, objects with string keys);
- * {@link stableStringify} normalizes object key order so the compare is deep,
- * deterministic, and independent of whatever key order the snapshot was serialized
- * with. This is the same normalize-then-compare strategy `structural-equality.ts`
- * uses on its fingerprints.
+ * Deep structural equality of two plain-JSON values, key-order-independent and
+ * SHORT-CIRCUITING. The block fields are plain JSON (strings, numbers, booleans,
+ * null, arrays, objects with string keys), so a recursive walk decides equality
+ * directly without ever materializing a serialized string of either side.
+ *
+ * Object key order is irrelevant: two equal blocks whose fields were serialized in
+ * a different key order (a future reader path, an MCP-authored snapshot, or a cache
+ * that re-keyed the JSONB) must NOT read as a phantom data/content change, so keys
+ * are compared as a set (same size, every key present and equal). Arrays ARE
+ * order-sensitive - order is meaningful for sections, rows, and paragraphs, so
+ * reordering them is a real change - and are compared index by index.
+ *
+ * The walk returns on the FIRST mismatch (a differing primitive, a length/key-set
+ * difference, a type mismatch) and on reference identity (`a === b`), so an equal
+ * subtree is never fully serialized just to confirm it is equal - the common case
+ * (a refill that touched one field) bails out as soon as it finds the change. The
+ * `structural-equality.ts` precedent compares the same plain-JSON shape.
  */
 function deepEqual(a: unknown, b: unknown): boolean {
-	return stableStringify(a) === stableStringify(b);
+	if (a === b) return true;
+	if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') {
+		// Distinct primitives (or a primitive vs an object) are unequal; `a === b` above
+		// already settled the equal-primitive case.
+		return false;
+	}
+	const aIsArray = Array.isArray(a);
+	if (aIsArray !== Array.isArray(b)) return false;
+	if (aIsArray) {
+		const aArr = a as unknown[];
+		const bArr = b as unknown[];
+		if (aArr.length !== bArr.length) return false;
+		for (let i = 0; i < aArr.length; i += 1) {
+			if (!deepEqual(aArr[i], bArr[i])) return false;
+		}
+		return true;
+	}
+	const aObj = a as Record<string, unknown>;
+	const bObj = b as Record<string, unknown>;
+	const aKeys = Object.keys(aObj);
+	if (aKeys.length !== Object.keys(bObj).length) return false;
+	for (const key of aKeys) {
+		// `Object.hasOwn` so a key present in `a` with value `undefined` is not confused
+		// with a key absent from `b` (both would read as `bObj[key] === undefined`).
+		if (!Object.hasOwn(bObj, key)) return false;
+		if (!deepEqual(aObj[key], bObj[key])) return false;
+	}
+	return true;
 }
 
 /** The resolved bound-data value of a block (rows/series/items), or undefined for a non-bound type. */
