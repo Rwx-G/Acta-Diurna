@@ -17,10 +17,17 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
-vi.mock('$lib/server/ingestion', () => ({
-	ingestBytes: vi.fn(),
-	rebindReport: vi.fn()
-}));
+// Mock the ingestion seam but keep the REAL size cap + 413 factory so the tool's
+// pre-encode `tooLarge(MAX_UPLOAD_BYTES)` guard is exercised, not stubbed away.
+vi.mock('$lib/server/ingestion', async (importActual) => {
+	const actual = await importActual<typeof import('$lib/server/ingestion')>();
+	return {
+		ingestBytes: vi.fn(),
+		rebindReport: vi.fn(),
+		MAX_UPLOAD_BYTES: actual.MAX_UPLOAD_BYTES,
+		tooLarge: actual.tooLarge
+	};
+});
 
 vi.mock('$lib/server/ai/generate', () => ({
 	generateOutline: vi.fn(),
@@ -49,7 +56,7 @@ import {
 } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import { listSkeletons } from '$lib/server/skeletons/skeletons';
-import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
+import { ingestBytes, MAX_UPLOAD_BYTES, rebindReport, type DataSet } from '$lib/server/ingestion';
 import { fillFromOutline, generateOutline, hashOutline } from '$lib/server/ai/generate';
 import { aiGenerationLimiter } from '$lib/server/auth/rate-limit';
 import {
@@ -530,6 +537,31 @@ describe('push_data_set tool', () => {
 
 		expect(result.isError).toBe(true);
 		expect((payload(result) as { status: number }).status).toBe(409);
+	});
+
+	it('rejects an over-cap content with the 413 tooLarge problem BEFORE encoding or ingest', async () => {
+		// One byte over the cap (ASCII so byte length == char length). The guard must
+		// fire on the cheap byte-length measure, never reaching the encode + ingest.
+		const oversize = 'a'.repeat(MAX_UPLOAD_BYTES + 1);
+
+		const result = await pushDataSetTool({ content: oversize, format: 'csv' }, TEST_SCOPE);
+
+		expect(result.isError).toBe(true);
+		const problem = payload(result) as { status: number; type: string };
+		expect(problem.status).toBe(413);
+		expect(problem.type).toBe('/problems/upload-too-large');
+		// The early reject path: no second full copy, no ingestion call.
+		expect(ingestBytesMock).not.toHaveBeenCalled();
+	});
+
+	it('accepts content exactly at the cap (boundary is inclusive)', async () => {
+		ingestBytesMock.mockResolvedValue(DATA_SET);
+		const atCap = 'a'.repeat(MAX_UPLOAD_BYTES);
+
+		const result = await pushDataSetTool({ content: atCap, format: 'csv' }, TEST_SCOPE);
+
+		expect(result.isError).toBeUndefined();
+		expect(ingestBytesMock).toHaveBeenCalledOnce();
 	});
 });
 

@@ -34,4 +34,4 @@ export type { SlotMapping } from './bind.ts';
 export { inferColumnType, inferValueType, inspectFields } from './inspect.ts';
 export type { FieldType } from './inspect.ts';
 
-export { ParseError } from './errors.ts';
+export { ParseError, tooLarge } from './errors.ts';

@@ -18,10 +18,17 @@ vi.mock('$lib/server/skeletons/skeletons', () => ({
 	listSkeletons: vi.fn()
 }));
 
-vi.mock('$lib/server/ingestion', () => ({
-	ingestBytes: vi.fn(),
-	rebindReport: vi.fn()
-}));
+// Mock the ingestion seam but keep the REAL size cap + 413 factory so the tool's
+// pre-encode `tooLarge(MAX_UPLOAD_BYTES)` guard behaves as in production.
+vi.mock('$lib/server/ingestion', async (importActual) => {
+	const actual = await importActual<typeof import('$lib/server/ingestion')>();
+	return {
+		ingestBytes: vi.fn(),
+		rebindReport: vi.fn(),
+		MAX_UPLOAD_BYTES: actual.MAX_UPLOAD_BYTES,
+		tooLarge: actual.tooLarge
+	};
+});
 
 vi.mock('$lib/server/ai/generate', () => ({
 	generateOutline: vi.fn(),
@@ -53,6 +60,7 @@ import { listSkeletons } from '$lib/server/skeletons/skeletons';
 import { ingestBytes, rebindReport, type DataSet } from '$lib/server/ingestion';
 import { generateOutline, fillFromOutline, hashOutline } from '$lib/server/ai/generate';
 import { aiGenerationLimiter } from '$lib/server/auth/rate-limit';
+import { MAX_UPLOAD_BYTES } from '$lib/server/ingestion';
 import { buildMcpServer, MCP_SERVER_NAME } from './server';
 
 const generateOutlineMock = vi.mocked(generateOutline);
@@ -362,6 +370,22 @@ describe('buildMcpServer', () => {
 		const content = limited.content as { type: string; text: string }[];
 		expect((JSON.parse(content[0].text) as { status: number }).status).toBe(429);
 		expect(generateOutlineMock.mock.calls.length).toBe(callsBefore);
+	});
+
+	it('rejects an over-cap push_data_set through the SDK with the 413 before ingest', async () => {
+		const oversize = 'a'.repeat(MAX_UPLOAD_BYTES + 1);
+
+		const result = await client.callTool({
+			name: 'push_data_set',
+			arguments: { content: oversize, format: 'csv' }
+		});
+
+		expect(result.isError).toBe(true);
+		const content = result.content as { type: string; text: string }[];
+		const problem = JSON.parse(content[0].text) as { status: number; type: string };
+		expect(problem.status).toBe(413);
+		expect(problem.type).toBe('/problems/upload-too-large');
+		expect(ingestBytesMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects a malformed push_data_set reportId at the boundary (no service call)', async () => {

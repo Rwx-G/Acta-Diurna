@@ -29,7 +29,13 @@ import {
 } from '$lib/server/documents/reports';
 import { composeReportUpdate, type ReportUpdate } from '$lib/server/documents/update-composition';
 import { DEFAULT_REPORT_TITLE } from '$lib/server/documents/defaults';
-import { ingestBytes, rebindReport, type SourceFormat } from '$lib/server/ingestion';
+import {
+	ingestBytes,
+	MAX_UPLOAD_BYTES,
+	rebindReport,
+	tooLarge,
+	type SourceFormat
+} from '$lib/server/ingestion';
 import {
 	fillFromOutline,
 	generateOutline,
@@ -207,6 +213,11 @@ export function deleteReportTool(id: string, scope: AuthorScope): Promise<McpToo
  * argument (there is no Content-Type header on a tool call), restricted to the two
  * the REST push parses; an unparseable body is the service 422, a published target
  * the service 409, a foreign/unknown `reportId` the scoped 404.
+ *
+ * SIZE cap: an oversize `content` is rejected with the REST `tooLarge` 413 BEFORE
+ * encoding, via a `Buffer.byteLength` measure that allocates nothing - so an
+ * over-cap push never gets a full UTF-8 copy here on top of the one `ingestBytes`
+ * would do. The transport `BODY_SIZE_LIMIT` already bounds the body upstream.
  */
 export function pushDataSetTool(
 	input: {
@@ -218,6 +229,14 @@ export function pushDataSetTool(
 	scope: AuthorScope
 ): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
+		// Reject an oversize body BEFORE encoding: `Buffer.byteLength` measures the
+		// UTF-8 size without allocating the bytes, so an over-cap push returns the
+		// same 413 the REST path returns without the full encode + copy `ingestBytes`
+		// would otherwise do a second time. The transport `BODY_SIZE_LIMIT` already
+		// bounds the body, so this is a cheap guard, not the only one.
+		if (Buffer.byteLength(input.content, 'utf8') > MAX_UPLOAD_BYTES) {
+			throw tooLarge(MAX_UPLOAD_BYTES);
+		}
 		const bytes = new TextEncoder().encode(input.content);
 		const reportId = input.reportId ?? null;
 		const dataSet = await ingestBytes({
