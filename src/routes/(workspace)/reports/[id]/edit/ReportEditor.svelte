@@ -14,10 +14,12 @@
 	import GeneratePanel from './GeneratePanel.svelte';
 	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
+	import LivePreview from '../preview/LivePreview.svelte';
 	import {
 		groupErrorsByLocation,
 		moveItem,
 		newSection,
+		optimisticDocumentIssues,
 		type EditorIssue,
 		type ErrorsByKey
 	} from './editor-state';
@@ -82,6 +84,15 @@
 	let saving = $state(false);
 	// svelte-ignore state_referenced_locally
 	let savedAt = $state(report.updatedAt.toISOString());
+	// Optimistic concurrency (Epic 10.1): the `updatedAt` the next save asserts.
+	// Seeded from the loaded row and advanced to each successful save's timestamp,
+	// so a write that lands after a concurrent edit (a second tab, an API push, an
+	// MCP write) is the 409 conflict the editor surfaces, never a silent overwrite.
+	// svelte-ignore state_referenced_locally
+	let expectedUpdatedAt = $state(report.updatedAt.toISOString());
+	// True once a save came back 409: the in-memory edits are ahead of a newer
+	// server state, so the author must reload to reconcile before saving again.
+	let conflict = $state(false);
 	// null = no JS save yet (fall back to the server-rendered `form` prop, the
 	// no-JS path); [] = last JS save succeeded; entries = last JS save failed.
 	let clientErrors = $state<EditorIssue[] | null>(null);
@@ -94,12 +105,46 @@
 	let saveFormElement: HTMLFormElement | undefined = $state();
 	let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const issues: EditorIssue[] = $derived(clientErrors ?? form?.errors ?? []);
-	const errorsByKey: ErrorsByKey = $derived(groupErrorsByLocation(issues, submittedDoc ?? doc));
+	// Optimistic client validation (Epic 10.1): the editor parses the live in-edit
+	// document against the SAME isomorphic `documentSchemaV1` the server validates
+	// with, so a problem is placed inline at the failing block BEFORE any round-trip.
+	// Guidance, never a gate - the author keeps editing, and the server
+	// validate-on-write stays the only authority (an invalid document is rejected
+	// there even if this passed). Issues are grouped against the LIVE document so
+	// they track the block the author is editing. `optimisticDocumentIssues` reuses
+	// the per-block/section schemas the renderer already ships, so it adds zero bytes
+	// to the reader path (it never imports the server-side validate-on-write helper).
+	const optimisticIssues: EditorIssue[] = $derived(optimisticDocumentIssues($state.snapshot(doc)));
+
+	// What the inline placement renders. After a JS save that FAILED, the server's
+	// authoritative errors (`clientErrors`) take precedence and map against the
+	// submitted document. Otherwise the optimistic client issues guide the live
+	// document. The no-JS fallback (`form?.errors`) stands in before any JS save.
+	const issues: EditorIssue[] = $derived(
+		clientErrors !== null && clientErrors.length > 0
+			? clientErrors
+			: (form?.errors ?? optimisticIssues)
+	);
+	const errorsByKey: ErrorsByKey = $derived(
+		groupErrorsByLocation(
+			issues,
+			clientErrors !== null && clientErrors.length > 0 ? (submittedDoc ?? doc) : doc
+		)
+	);
 	const documentIssues: EditorIssue[] = $derived(errorsByKey['document'] ?? []);
 	const failureMessage: string | null = $derived(
-		saveMessage ?? (clientErrors === null && issues.length === 0 ? (form?.message ?? null) : null)
+		saveMessage ??
+			(clientErrors === null && (form?.errors?.length ?? 0) === 0 ? (form?.message ?? null) : null)
 	);
+
+	// The authoritative live preview (Epic 10.1): a plain snapshot of the in-edit
+	// document, fed to the SAME pure `$lib/render` tier the reader SSR path uses
+	// (through the embedded LivePreview). What the author edits is what the reader
+	// gets - this is the reader render, not a lookalike. The snapshot re-derives on
+	// every edit so the preview tracks the document live; a transiently-invalid
+	// snapshot still renders (LivePreview goes through `toPreviewView`, which renders
+	// valid blocks and flags invalid ones rather than crashing).
+	const previewSnapshot = $derived($state.snapshot(doc));
 
 	/*
 	 * Autosave choice (story 1.5): the save form is a real form action with a
@@ -135,16 +180,38 @@
 		const snapshot = $state.snapshot(doc) as DocumentV1;
 		submittedDoc = snapshot;
 		formData.set('document', JSON.stringify(snapshot));
+		// Assert the loaded/last-saved `updatedAt`: the service rejects a write that
+		// lands after a concurrent edit as a 409 conflict (optimistic concurrency).
+		formData.set('expectedUpdatedAt', expectedUpdatedAt);
 		saving = true;
 		return async ({ result }) => {
 			saving = false;
 			if (result.type === 'success') {
 				dirty = false;
+				conflict = false;
 				clientErrors = [];
 				saveMessage = null;
 				const payload = result.data as { savedAt?: string } | undefined;
-				if (payload?.savedAt) savedAt = payload.savedAt;
+				if (payload?.savedAt) {
+					savedAt = payload.savedAt;
+					// Advance the concurrency token so the NEXT save asserts against the
+					// state this save just wrote, not the stale loaded value.
+					expectedUpdatedAt = payload.savedAt;
+				}
 			} else if (result.type === 'failure') {
+				if (result.status === 409) {
+					// A concurrent write landed between load and save: surface the conflict
+					// and the resolve path (reload). Do NOT advance the token or clear the
+					// in-memory edits - the author reloads to reconcile, never a silent
+					// last-writer-wins overwrite.
+					conflict = true;
+					clientErrors = [];
+					const payload = result.data as { message?: string } | undefined;
+					saveMessage =
+						payload?.message ??
+						'This report changed since you opened it. Reload to get the latest version, then reapply your edits.';
+					return;
+				}
 				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
 				clientErrors = payload?.errors ?? [];
 				saveMessage = clientErrors.length === 0 ? (payload?.message ?? 'Save failed.') : null;
@@ -177,6 +244,11 @@
 				clientErrors = [];
 				saveMessage = null;
 				await invalidateAll();
+				// publish wrote a new `updatedAt`; reconcile the concurrency token so a
+				// later unpublish-then-edit save asserts the latest state, not the stale
+				// pre-publish value.
+				expectedUpdatedAt = report.updatedAt.toISOString();
+				savedAt = expectedUpdatedAt;
 			} else if (result.type === 'failure') {
 				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
 				submittedDoc = $state.snapshot(doc) as DocumentV1;
@@ -196,7 +268,13 @@
 			if (result.type === 'success') {
 				clientErrors = [];
 				saveMessage = null;
+				conflict = false;
 				await invalidateAll();
+				// unpublish wrote a new `updatedAt`; reconcile the concurrency token so
+				// the first edit-and-save after returning to draft asserts the latest
+				// state instead of a stale one (a spurious 409).
+				expectedUpdatedAt = report.updatedAt.toISOString();
+				savedAt = expectedUpdatedAt;
 			} else if (result.type === 'failure') {
 				const payload = result.data as { message?: string } | undefined;
 				saveMessage = payload?.message ?? 'Unpublish failed.';
@@ -259,96 +337,123 @@
 	{/if}
 </div>
 
-<form method="POST" action="?/save" use:enhance={submitSave} bind:this={saveFormElement}>
-	<fieldset class="editor" disabled={!editable}>
-		<div class="editor-header">
-			<input
-				class="report-title"
-				name="title"
-				value={doc.title}
-				oninput={(event) => {
-					doc.title = event.currentTarget.value;
-					onEdit();
-				}}
-				aria-label="Report title"
-			/>
-			<StatusChip status={report.status} />
-			<div class="save-state">
-				{#if editable}
-					<Button type="submit" variant="secondary">Save</Button>
-				{/if}
-				<span class="saved-at" aria-live="polite">
-					{saving ? 'Saving...' : savedAtLabel(savedAt)}
-				</span>
+<div class="editor-layout">
+	<form
+		method="POST"
+		action="?/save"
+		use:enhance={submitSave}
+		bind:this={saveFormElement}
+		class="editor-form"
+	>
+		<fieldset class="editor" disabled={!editable}>
+			<div class="editor-header">
+				<input
+					class="report-title"
+					name="title"
+					value={doc.title}
+					oninput={(event) => {
+						doc.title = event.currentTarget.value;
+						onEdit();
+					}}
+					aria-label="Report title"
+				/>
+				<StatusChip status={report.status} />
+				<div class="save-state">
+					{#if editable}
+						<Button type="submit" variant="secondary">Save</Button>
+					{/if}
+					<span class="saved-at" aria-live="polite">
+						{saving ? 'Saving...' : savedAtLabel(savedAt)}
+					</span>
+				</div>
 			</div>
-		</div>
 
-		<div class="report-settings">
-			<label class="theme-field">
-				<span class="theme-label">Theme</span>
-				<select
-					class="theme-select"
-					value={doc.theme ?? ''}
-					onchange={(event) => onThemeChange(event.currentTarget.value)}
-				>
-					<option value="">Default (Modern Gazette)</option>
-					{#each THEME_OPTIONS as option (option.name)}
-						{#if option.name !== 'default'}
-							<option value={option.name}>{option.label}</option>
-						{/if}
-					{/each}
-				</select>
-			</label>
-			{#if themeWarning}
-				<p class="theme-warning" role="status">{themeWarning.message}</p>
+			<div class="report-settings">
+				<label class="theme-field">
+					<span class="theme-label">Theme</span>
+					<select
+						class="theme-select"
+						value={doc.theme ?? ''}
+						onchange={(event) => onThemeChange(event.currentTarget.value)}
+					>
+						<option value="">Default (Modern Gazette)</option>
+						{#each THEME_OPTIONS as option (option.name)}
+							{#if option.name !== 'default'}
+								<option value={option.name}>{option.label}</option>
+							{/if}
+						{/each}
+					</select>
+				</label>
+				{#if themeWarning}
+					<p class="theme-warning" role="status">{themeWarning.message}</p>
+				{/if}
+			</div>
+
+			{#if !editable}
+				<p class="published-note">
+					This report is published and read-only. Readers see the snapshot taken at publish.
+					Unpublish above to edit or delete it.
+				</p>
 			{/if}
-		</div>
 
-		{#if !editable}
-			<p class="published-note">
-				This report is published and read-only. Readers see the snapshot taken at publish. Unpublish
-				above to edit or delete it.
-			</p>
-		{/if}
+			{#if conflict}
+				<!-- Optimistic-concurrency conflict (Epic 10.1): a concurrent write landed
+			     between load and save. The edits stay in memory; reloading reconciles
+			     against the latest server state so the author reapplies, never a silent
+			     last-writer-wins overwrite. -->
+				<div class="conflict" role="alert">
+					<p class="conflict-message">{saveMessage}</p>
+					<Button type="button" variant="secondary" onclick={() => invalidateAll()}>
+						Reload latest
+					</Button>
+				</div>
+			{:else if failureMessage}
+				<p class="problem" role="alert">{failureMessage}</p>
+			{/if}
 
-		{#if failureMessage}
-			<p class="problem" role="alert">{failureMessage}</p>
-		{/if}
+			<IssueList issues={documentIssues} variant="document" />
 
-		<IssueList issues={documentIssues} variant="document" />
+			{#each doc.sections as section, sectionIndex (section.id)}
+				<SectionEditor
+					bind:section={doc.sections[sectionIndex]}
+					{sectionIndex}
+					count={doc.sections.length}
+					errors={errorsByKey}
+					scales={doc.scales}
+					{matrixBlocks}
+					{onEdit}
+					onRemove={() => {
+						doc.sections.splice(sectionIndex, 1);
+						onEdit();
+					}}
+					onMove={(direction) => {
+						moveItem(doc.sections, sectionIndex, direction);
+						onEdit();
+					}}
+				/>
+			{/each}
 
-		{#each doc.sections as section, sectionIndex (section.id)}
-			<SectionEditor
-				bind:section={doc.sections[sectionIndex]}
-				{sectionIndex}
-				count={doc.sections.length}
-				errors={errorsByKey}
-				scales={doc.scales}
-				{matrixBlocks}
-				{onEdit}
-				onRemove={() => {
-					doc.sections.splice(sectionIndex, 1);
-					onEdit();
-				}}
-				onMove={(direction) => {
-					moveItem(doc.sections, sectionIndex, direction);
-					onEdit();
-				}}
-			/>
-		{/each}
+			<div class="add-section">
+				<Button
+					onclick={() => {
+						doc.sections.push(newSection());
+						onEdit();
+					}}
+				>
+					Add section
+				</Button>
+			</div>
+		</fieldset>
+	</form>
 
-		<div class="add-section">
-			<Button
-				onclick={() => {
-					doc.sections.push(newSection());
-					onEdit();
-				}}
-			>
-				Add section
-			</Button>
-		</div>
-	</fieldset>
-</form>
+	<!-- Authoritative live preview (Epic 10.1): the editor reuses the SAME embedded
+	     LivePreview the /preview route uses, fed the LIVE in-edit snapshot so it
+	     re-renders through the pure `$lib/render` tier on every edit. What the author
+	     edits is what the reader gets - the preview IS the reader render. -->
+	<aside class="editor-preview" aria-label="Live preview">
+		<LivePreview document={previewSnapshot} />
+	</aside>
+</div>
 
 <BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} />
 
@@ -408,11 +513,35 @@
 		color: var(--color-purple);
 	}
 
+	/* Two-pane editor shell (Epic 10.1): the form on the left, the authoritative
+	   live preview on the right. The preview is sticky so it stays in view while the
+	   author scrolls the form. On a narrow viewport the panes stack (the editor is a
+	   desktop surface, NFR27 is a reader requirement, so this is graceful degradation
+	   not a mobile authoring target). */
+	.editor-layout {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: var(--space-5);
+	}
+
+	.editor-form {
+		flex: 1 1 440px;
+		min-width: 0;
+		margin: 0;
+	}
+
+	.editor-preview {
+		flex: 1 1 440px;
+		min-width: 0;
+		position: sticky;
+		top: var(--space-4);
+	}
+
 	.editor {
 		margin: 0;
 		padding: 0;
 		border: 0;
-		max-width: 880px;
 	}
 
 	.editor-header {
@@ -508,6 +637,27 @@
 		color: var(--color-danger);
 		background: var(--color-danger-08);
 		border-radius: var(--radius-sm);
+	}
+
+	/* Optimistic-concurrency conflict (Epic 10.1): an amber, actionable banner with
+	   the resolve path (reload), distinct from the danger-toned validation problem -
+	   the edits are intact, the report just moved on under the author. */
+	.conflict {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		padding: var(--space-3) var(--space-4);
+		color: var(--color-ink);
+		background: var(--color-amber-12);
+		border: 1px solid var(--color-amber);
+		border-radius: var(--radius-sm);
+	}
+
+	.conflict-message {
+		margin: 0;
+		font-size: var(--text-sm);
 	}
 
 	.add-section {

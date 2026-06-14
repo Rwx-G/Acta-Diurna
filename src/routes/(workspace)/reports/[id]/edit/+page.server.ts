@@ -30,6 +30,19 @@ import { runAction } from '$lib/server/action';
 import { parseSlotMapping } from './bind-form';
 import { applyNarrativeFields } from './editor-state';
 
+/**
+ * Parses the editor-posted `expectedUpdatedAt` (an ISO timestamp) into a Date for
+ * the optimistic-concurrency check, or undefined when absent or unparseable. A
+ * caller without JS (the no-JS narrative save) posts no such field, so it stays on
+ * the single-writer path; a malformed value never throws here - it degrades to the
+ * single-writer path rather than failing a save the author cannot diagnose.
+ */
+function parseExpectedUpdatedAt(value: FormDataEntryValue | null): Date | undefined {
+	if (typeof value !== 'string' || value.length === 0) return undefined;
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 export const load: PageServerLoad = async ({ params, locals }) => {
 	try {
 		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
@@ -55,6 +68,14 @@ export const actions: Actions = {
 	save: async ({ params, request, locals }) => {
 		const data = await request.formData();
 		const raw = data.get('document');
+		// Optimistic concurrency (Epic 10.1): the editor posts the `updatedAt` it
+		// loaded so a write that lands after a concurrent edit (a second tab, an API
+		// push, an MCP write) is rejected by the service as a 409 conflict instead of
+		// a silent last-writer-wins overwrite. A malformed or absent value parses to
+		// undefined, which the service treats as the single-writer path (no concurrency
+		// check) - the no-JS baseline, which posts no `expectedUpdatedAt`, keeps its
+		// last-writer-wins semantics unchanged.
+		const expectedUpdatedAt = parseExpectedUpdatedAt(data.get('expectedUpdatedAt'));
 		return runAction(
 			async () => {
 				const scope = await resolveAuthorScope(locals.authorSession?.authorId);
@@ -77,7 +98,12 @@ export const actions: Actions = {
 					const current = await getReport(params.id, scope);
 					documentInput = applyNarrativeFields(current.document, data);
 				}
-				const report = await updateReportDocument(params.id, documentInput, scope);
+				const report = await updateReportDocument(
+					params.id,
+					documentInput,
+					scope,
+					expectedUpdatedAt
+				);
 				return { savedAt: report.updatedAt.toISOString() };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
