@@ -89,10 +89,14 @@ export type BindingDeltaDirection = z.infer<typeof bindingDeltaDirectionSchema>;
 
 export const bindingDeltaSchema = z.object({
 	direction: bindingDeltaDirectionSchema,
-	priorValue: z.number(),
-	absolute: z.number(),
+	// `.finite()` rejects NaN / Infinity: the bake only ever writes finite values
+	// (`computeBindingDelta` gates on `Number.isFinite`), so this guards a hand-authored
+	// or externally-produced snapshot from a non-finite figure the renderer would print
+	// as "∞" - breaking the omit-rather-than-mislead invariant.
+	priorValue: z.number().finite(),
+	absolute: z.number().finite(),
 	/** Signed fraction of the prior value; null when the prior value is zero. */
-	relative: z.number().nullable()
+	relative: z.number().finite().nullable()
 });
 
 export type BindingDelta = z.infer<typeof bindingDeltaSchema>;

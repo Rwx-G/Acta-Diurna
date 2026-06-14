@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeBindingDelta } from './binding-delta.ts';
+import { bindingDeltaSchema } from './blocks/shared.ts';
 
 describe('computeBindingDelta', () => {
 	it('reports an increase as direction up with the signed absolute and relative change', () => {
@@ -44,4 +45,27 @@ describe('computeBindingDelta', () => {
 		const delta = computeBindingDelta(10, -10);
 		expect(delta).toEqual({ direction: 'up', priorValue: -10, absolute: 20, relative: -2 });
 	});
+});
+
+describe('bindingDeltaSchema', () => {
+	const finite = { direction: 'up' as const, priorValue: 100, absolute: 8, relative: 0.08 };
+
+	it('accepts a finite delta', () => {
+		expect(bindingDeltaSchema.safeParse(finite).success).toBe(true);
+	});
+
+	it('accepts a null relative (zero-baseline delta)', () => {
+		expect(bindingDeltaSchema.safeParse({ ...finite, relative: null }).success).toBe(true);
+	});
+
+	it.each([
+		['priorValue', Number.POSITIVE_INFINITY],
+		['absolute', Number.NEGATIVE_INFINITY],
+		['relative', Number.NaN]
+	] as const)(
+		'rejects a non-finite %s so a hand-authored delta never renders "∞"',
+		(field, value) => {
+			expect(bindingDeltaSchema.safeParse({ ...finite, [field]: value }).success).toBe(false);
+		}
+	);
 });
