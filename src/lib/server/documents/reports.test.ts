@@ -252,6 +252,23 @@ function seedDocument(title = 'Quarterly Review'): DocumentV1 {
 	return result.document;
 }
 
+/** A validated single-section document with one text block, content set by `prose`. */
+function proseSnapshot(prose: string): DocumentV1 {
+	const result = validateDocument({
+		version: 1,
+		title: 'Quarterly Review',
+		sections: [
+			{
+				id: 'overview',
+				title: 'Overview',
+				blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: prose }]] }]
+			}
+		]
+	});
+	if (!result.ok) throw new Error('snapshot must be valid');
+	return result.document;
+}
+
 function seedReport(overrides: Partial<ReportRow> = {}): ReportRow {
 	const document = validateDocument(validDocument());
 	if (!document.ok) throw new Error('seed document must be valid');
@@ -1054,22 +1071,7 @@ describe('diffSeriesIssue', () => {
 	const ISSUE_ID = '01970000-0000-7000-8000-000000000010';
 	const PRED_ID = '01970000-0000-7000-8000-000000000011';
 
-	/** A validated single-section document with one text block, content set by `prose`. */
-	function snapshot(prose: string): DocumentV1 {
-		const result = validateDocument({
-			version: 1,
-			title: 'Quarterly Review',
-			sections: [
-				{
-					id: 'overview',
-					title: 'Overview',
-					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: prose }]] }]
-				}
-			]
-		});
-		if (!result.ok) throw new Error('snapshot must be valid');
-		return result.document;
-	}
+	const snapshot = proseSnapshot;
 
 	/** A validated snapshot whose section and block ids are caller-chosen, for disjoint-lineage fixtures. */
 	function snapshotWithIds(sectionId: string, blockId: string): DocumentV1 {
@@ -1202,21 +1204,7 @@ describe('getSeriesDiffView', () => {
 	const ISSUE_ID = '01970000-0000-7000-8000-000000000010';
 	const PRED_ID = '01970000-0000-7000-8000-000000000011';
 
-	function snapshot(prose: string): DocumentV1 {
-		const result = validateDocument({
-			version: 1,
-			title: 'Quarterly Review',
-			sections: [
-				{
-					id: 'overview',
-					title: 'Overview',
-					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: prose }]] }]
-				}
-			]
-		});
-		if (!result.ok) throw new Error('snapshot must be valid');
-		return result.document;
-	}
+	const snapshot = proseSnapshot;
 
 	function seedSeries(): void {
 		dbState.series.push({ id: SERIES_ID, ownerId: TEST_SCOPE.authorId });
@@ -1226,6 +1214,7 @@ describe('getSeriesDiffView', () => {
 		seedSeries();
 		seedReport({
 			id: PRED_ID,
+			title: 'June board pack',
 			seriesId: SERIES_ID,
 			predecessorId: null,
 			status: 'published',
@@ -1235,6 +1224,7 @@ describe('getSeriesDiffView', () => {
 		});
 		seedReport({
 			id: ISSUE_ID,
+			title: 'July board pack',
 			seriesId: SERIES_ID,
 			predecessorId: PRED_ID,
 			status: 'published',
@@ -1245,10 +1235,15 @@ describe('getSeriesDiffView', () => {
 
 		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
 
+		expect(view.state).toBe('ready');
+		if (view.state !== 'ready') throw new Error('expected a ready view');
+		// The title is the ISSUE's own (the page head), read off the issue row.
+		expect(view.title).toBe('July board pack');
 		expect(view.diff.kind).toBe('diff');
-		// The baseline is the PREDECESSOR's display identity, not the issue's own.
+		// The baseline is the PREDECESSOR's display identity, read off the predecessor
+		// row the diff already resolved, not the issue's own.
 		expect(view.baseline).toEqual({
-			title: 'Quarterly Review',
+			title: 'June board pack',
 			issueLabel: '2026-W23',
 			publishedAt: new Date('2026-06-07T09:00:00Z')
 		});
@@ -1266,6 +1261,8 @@ describe('getSeriesDiffView', () => {
 
 		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
 
+		expect(view.state).toBe('ready');
+		if (view.state !== 'ready') throw new Error('expected a ready view');
 		expect(view.diff).toEqual({ kind: 'no-predecessor', reason: 'first-issue' });
 		expect(view.baseline).toBeNull();
 	});
@@ -1283,8 +1280,28 @@ describe('getSeriesDiffView', () => {
 
 		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
 
+		expect(view.state).toBe('ready');
+		if (view.state !== 'ready') throw new Error('expected a ready view');
 		expect(view.diff).toEqual({ kind: 'no-predecessor', reason: 'predecessor-unpublished' });
 		expect(view.baseline).toBeNull();
+	});
+
+	it('returns the publish-first state (with the title) for a draft issue, never a 409', async () => {
+		seedReport({
+			id: ISSUE_ID,
+			title: 'Unpublished issue',
+			seriesId: SERIES_ID,
+			predecessorId: null,
+			status: 'draft'
+		});
+
+		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
+
+		// The view does NOT throw the 409 the engine wiring raises; it returns the
+		// not-published state carrying the issue title for the publish-first prompt.
+		expect(view.state).toBe('not-published');
+		if (view.state !== 'not-published') throw new Error('expected a not-published view');
+		expect(view.title).toBe('Unpublished issue');
 	});
 
 	it('is owner-scoped: an unknown issue is the neutral 404', async () => {
@@ -1294,7 +1311,7 @@ describe('getSeriesDiffView', () => {
 		);
 	});
 
-	it('never exposes a heavy document column on the diff payload (flags and ids only)', async () => {
+	it('never exposes a heavy document column or prior-issue prose on the payload (flags and ids only)', async () => {
 		seedSeries();
 		seedReport({
 			id: PRED_ID,
@@ -1315,8 +1332,12 @@ describe('getSeriesDiffView', () => {
 
 		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
 
-		// The serialized payload carries no notes/body field and no raw prose: the
-		// engine ships only structural/data/content flags plus ids, types, and titles.
+		expect(view.state).toBe('ready');
+		if (view.state !== 'ready') throw new Error('expected a ready view');
+		// A real leak tripwire: the prior AND the new prose live in the seeded
+		// snapshots, yet the serialized payload must carry NEITHER, no `paragraphs`,
+		// and no `notes` - the engine ships only structural/data/content flags plus
+		// ids, types, and titles, and the baseline only cosmetic labels.
 		const serialized = JSON.stringify(view);
 		expect(serialized).not.toContain('Old prose');
 		expect(serialized).not.toContain('New prose');

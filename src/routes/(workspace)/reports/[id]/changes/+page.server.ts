@@ -1,11 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { resolveAuthorScope } from '$lib/server/authors';
-import {
-	getReport,
-	getSeriesDiffView,
-	type SeriesDiffBaseline
-} from '$lib/server/documents/reports';
+import { getSeriesDiffView, type SeriesDiffBaseline } from '$lib/server/documents/reports';
 import type { SeriesDiff } from '$lib/schema';
 import { AppError, errorPageShape } from '$lib/server/problem';
 
@@ -29,9 +25,10 @@ import { AppError, errorPageShape } from '$lib/server/problem';
  * only. So this loader cannot serialize an author-private field or any raw
  * prior-issue content: the heavy document columns never reach this seam.
  *
- * An unpublished issue (no frozen edition to compare) raises the same 409 the rest
- * of the diff path raises; the page maps it to a clear "publish first" state rather
- * than an empty view.
+ * The loader does NO read of its own: {@link getSeriesDiffView} returns the issue
+ * title (for the page head) and gates the draft case in the same two scoped reads the
+ * diff already does, so an unpublished issue surfaces as the `not-published` state
+ * the page renders as a publish-first prompt, never a raw 409 or an empty view.
  */
 export const load: PageServerLoad = async ({
 	params,
@@ -42,12 +39,11 @@ export const load: PageServerLoad = async ({
 > => {
 	try {
 		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
-		const report = await getReport(params.id, scope);
-		if (report.status !== 'published' || report.publishedDocument === null) {
-			return { state: 'not-published', title: report.title };
-		}
 		const view = await getSeriesDiffView(params.id, scope);
-		return { state: 'ready', title: report.title, diff: view.diff, baseline: view.baseline };
+		if (view.state === 'not-published') {
+			return { state: 'not-published', title: view.title };
+		}
+		return { state: 'ready', title: view.title, diff: view.diff, baseline: view.baseline };
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));
 		throw thrown;

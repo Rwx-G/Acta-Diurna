@@ -1,18 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getReport, getSeriesDiffView } from '$lib/server/documents/reports';
+import { getSeriesDiffView } from '$lib/server/documents/reports';
 import { AppError } from '$lib/server/problem';
 import type { SeriesDiff } from '$lib/schema';
 import { load } from './+page.server';
 
 vi.mock('$lib/server/documents/reports', () => ({
-	getReport: vi.fn(),
 	getSeriesDiffView: vi.fn()
 }));
 vi.mock('$lib/server/authors', () => ({
 	resolveAuthorScope: () => Promise.resolve({ authorId: '01970000-0000-7000-8000-0000000000aa' })
 }));
 
-const getReportMock = vi.mocked(getReport);
 const getSeriesDiffViewMock = vi.mocked(getSeriesDiffView);
 const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 
@@ -29,27 +27,6 @@ function loadEvent(id: string) {
 		params: { id },
 		locals: { authorSession: null }
 	} as unknown as Parameters<typeof load>[0];
-}
-
-function publishedReport(): Awaited<ReturnType<typeof getReport>> {
-	return {
-		id: 'r1',
-		title: 'Weekly Status',
-		schemaVersion: 1,
-		document: { version: 1, title: 'draft', sections: [] },
-		publishedDocument: { version: 1, title: 'Weekly Status', sections: [] },
-		publishedAt: new Date('2026-06-14T09:00:00.000Z'),
-		status: 'published',
-		seriesId: '01970000-0000-7000-8000-0000000000c1',
-		predecessorId: '01970000-0000-7000-8000-0000000000d1',
-		issueLabel: '2026-W24',
-		createdAt: new Date(),
-		updatedAt: new Date()
-	} as Awaited<ReturnType<typeof getReport>>;
-}
-
-function draftReport(): Awaited<ReturnType<typeof getReport>> {
-	return { ...publishedReport(), status: 'draft', publishedDocument: null, publishedAt: null };
 }
 
 const COMPUTED_DIFF: SeriesDiff = {
@@ -72,8 +49,9 @@ beforeEach(() => {
 
 describe('what-changed view load', () => {
 	it('serves the computed diff and the predecessor baseline for a published issue', async () => {
-		getReportMock.mockResolvedValueOnce(publishedReport());
 		getSeriesDiffViewMock.mockResolvedValueOnce({
+			state: 'ready',
+			title: 'Weekly Status',
 			diff: COMPUTED_DIFF,
 			baseline: {
 				title: 'Previous issue',
@@ -92,26 +70,35 @@ describe('what-changed view load', () => {
 		}
 	});
 
-	it('is owner-scoped: both reads run with the resolved author scope', async () => {
-		getReportMock.mockResolvedValueOnce(publishedReport());
-		getSeriesDiffViewMock.mockResolvedValueOnce({ diff: COMPUTED_DIFF, baseline: null });
+	it('is owner-scoped: the single read runs with the resolved author scope', async () => {
+		getSeriesDiffViewMock.mockResolvedValueOnce({
+			state: 'ready',
+			title: 'Weekly Status',
+			diff: COMPUTED_DIFF,
+			baseline: null
+		});
 
 		await runLoad('r1');
 
-		expect(getReportMock).toHaveBeenCalledWith('r1', TEST_SCOPE);
+		// The loader does NO read of its own: the view service is the only seam, and it
+		// runs under the resolved scope (it ANDs the owner predicate on every read).
+		expect(getSeriesDiffViewMock).toHaveBeenCalledTimes(1);
 		expect(getSeriesDiffViewMock).toHaveBeenCalledWith('r1', TEST_SCOPE);
 	});
 
 	it('a non-owner or unknown id is the same neutral 404 (tenancy seam)', async () => {
-		getReportMock.mockRejectedValueOnce(
+		getSeriesDiffViewMock.mockRejectedValueOnce(
 			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
 		);
 
 		await expect(runLoad('foreign-or-missing')).rejects.toMatchObject({ status: 404 });
 	});
 
-	it('a draft issue returns the publish-first state without diffing', async () => {
-		getReportMock.mockResolvedValueOnce(draftReport());
+	it('a draft issue returns the publish-first state from the same view read', async () => {
+		getSeriesDiffViewMock.mockResolvedValueOnce({
+			state: 'not-published',
+			title: 'Weekly Status'
+		});
 
 		const data = await runLoad('r1');
 
@@ -119,12 +106,12 @@ describe('what-changed view load', () => {
 		if (data.state === 'not-published') {
 			expect(data.title).toBe('Weekly Status');
 		}
-		expect(getSeriesDiffViewMock).not.toHaveBeenCalled();
 	});
 
 	it('surfaces the first-issue neutral state', async () => {
-		getReportMock.mockResolvedValueOnce(publishedReport());
 		getSeriesDiffViewMock.mockResolvedValueOnce({
+			state: 'ready',
+			title: 'Weekly Status',
 			diff: { kind: 'no-predecessor', reason: 'first-issue' },
 			baseline: null
 		});
@@ -139,8 +126,9 @@ describe('what-changed view load', () => {
 	});
 
 	it('surfaces the predecessor-unpublished neutral state', async () => {
-		getReportMock.mockResolvedValueOnce(publishedReport());
 		getSeriesDiffViewMock.mockResolvedValueOnce({
+			state: 'ready',
+			title: 'Weekly Status',
 			diff: { kind: 'no-predecessor', reason: 'predecessor-unpublished' },
 			baseline: null
 		});
@@ -157,8 +145,9 @@ describe('what-changed view load', () => {
 	});
 
 	it('surfaces the substantial-drift neutral state', async () => {
-		getReportMock.mockResolvedValueOnce(publishedReport());
 		getSeriesDiffViewMock.mockResolvedValueOnce({
+			state: 'ready',
+			title: 'Weekly Status',
 			diff: { kind: 'substantial-drift', overlap: 0.05 },
 			baseline: null
 		});
