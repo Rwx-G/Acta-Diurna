@@ -1,7 +1,11 @@
 /**
  * In-memory token-bucket rate limiter (AR12 / D6): single process, bounded
  * scale, no Redis. Buckets are keyed by the caller (ip + route); state is
- * lost on restart, which is acceptable for a brute-force brake.
+ * lost on restart, which is acceptable for a brute-force brake. The buckets are
+ * PER-PROCESS: a multi-replica deployment gives each replica its own brake, so
+ * the instance-wide ceiling becomes N x capacity. Front the auth/verification
+ * endpoints with a shared limiter (reverse-proxy rate limit or a shared store)
+ * when running more than one process (see docs/ops/deployment.md).
  */
 
 /** Burst allowance before the limiter engages. */

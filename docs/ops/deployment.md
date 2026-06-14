@@ -33,6 +33,23 @@ reader-verification, and API-auth paths. Even when per-IP keying degrades behind
 a proxy, one flood cannot mint unlimited buckets past the global ceiling, and one
 share's flood cannot starve verification on other shares.
 
+### Scaling and rate limiting
+
+The rate limiters (login, reader verification, API auth, and their global brakes)
+are **in-memory and per-process**. They assume a single app process - the
+single-container deploy target. There is no Redis, and the buckets do not
+coordinate across processes.
+
+If you run **multiple replicas** of the app behind a load balancer, each replica
+keeps its own buckets, so the instance-wide guessing ceiling becomes N x capacity
+(N being the replica count): a request that lands on a fresh replica starts with a
+full bucket. This is the documented no-Redis trade-off. If you scale
+horizontally, front the auth and verification endpoints (`/login`,
+`/login/verify`, the reader `/r/*` verification routes, and `/api/*` auth) with a
+**shared limiter** - a rate limit at the reverse proxy (which sees all traffic
+before it fans out to replicas) or a shared store - because the per-process brakes
+cannot enforce a single instance-wide ceiling on their own.
+
 ### Bundled Caddy profile (turnkey)
 
 If you do not already run an ingress, the compose file ships an opt-in Caddy proxy
@@ -158,6 +175,27 @@ and (when configured) aged reader access-audit records.
   retention applies uniformly across authors.
 
 The sweep never runs under `NODE_ENV=test`.
+
+## Reader session lifetime
+
+`READER_SESSION_TTL` (days, OPTIONAL, no default) bounds how long a verified
+reader's session cookie stays valid on its own.
+
+**Unset (the default) means reader sessions do not expire by themselves.** This is
+deliberate (FR23): access is governed by the **share**, not the session - the
+reader gate re-checks the share's liveness (its optional expiry and its revocation
+state) on **every load**, so expiring or revoking a share cuts access promptly
+regardless of how old the reader session is. A reader session is therefore only as
+durable as the share it was minted for.
+
+The trade-off to weigh: with no session TTL, a **leaked reader cookie stays valid
+for as long as the share lives**. The per-load share-liveness re-check is the
+primary mitigation (revoke or expire the share and the stolen cookie is dead on
+the next request), but it only helps if you actually revoke. For **sensitive
+reports**, set `READER_SESSION_TTL` to a small number of days so a leaked cookie
+also ages out on its own, bounding its lifetime even when you never revoke the
+share. Example: `READER_SESSION_TTL=7`. The author session is a fixed 7 days and
+is unaffected by this variable.
 
 ## Database connection pool
 
