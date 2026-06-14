@@ -63,7 +63,14 @@ jobs:
       # reader navigation + axe-core a11y specs. GitHub-hosted runners ship a
       # working Docker daemon, which testcontainers uses out of the box.
       - run: pnpm build
+      # Single-mode harness (no SMTP): the consultation-share + workspace specs.
       - run: pnpm test:e2e
+      # Multi-mode harness (its own config): boots a SECOND, isolated stack - a
+      # Postgres testcontainer PLUS a Mailpit testcontainer (the SMTP double) - in
+      # multi-author mode, then runs the Epic 8 magic-link, tenancy-isolation, and
+      # reader-verification flows end to end against the real SMTP capture. Separate
+      # containers and app port, so it never collides with the single-mode run above.
+      - run: pnpm test:e2e:multi
 
   build:
     runs-on: ubuntu-latest

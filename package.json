@@ -18,6 +18,7 @@
 		"format": "prettier --write .",
 		"test:unit": "vitest",
 		"test:e2e": "playwright test",
+		"test:e2e:multi": "playwright test --config=playwright.multi.config.ts",
 		"test:e2e:build": "vite build && playwright test",
 		"test:setup": "playwright install chromium",
 		"test": "vitest run",
