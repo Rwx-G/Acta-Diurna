@@ -7,13 +7,20 @@
  * the static artifact too.
  */
 import { CURRENT_SCHEMA_VERSION, toJsonSchema } from '$lib/schema';
+import { drilldownDocument } from '$lib/schema/examples/drilldown';
 import { fullDocument } from '$lib/schema/examples/full';
 import { minimalDocument } from '$lib/schema/examples/minimal';
 
 export interface PublishedSchema {
 	version: number;
 	schema: Record<string, unknown>;
-	examples: { minimal: unknown; full: unknown };
+	/**
+	 * The shipped example documents an agent reads to discover the shape. `minimal`
+	 * is the smallest valid document, `full` exercises every block type, and
+	 * `drilldown` shows the Epic 11 in-report drill-down: a detail page reached
+	 * through an internal `linkTo` (Story 11.5, AC3).
+	 */
+	examples: { minimal: unknown; full: unknown; drilldown: unknown };
 }
 
 /**
@@ -33,6 +40,6 @@ export function getPublishedSchema(): PublishedSchema {
 	return (cached ??= {
 		version: CURRENT_SCHEMA_VERSION,
 		schema: toJsonSchema(),
-		examples: { minimal: minimalDocument, full: fullDocument }
+		examples: { minimal: minimalDocument, full: fullDocument, drilldown: drilldownDocument }
 	});
 }

@@ -14,6 +14,7 @@ vi.mock('$lib/schema', () => ({
 }));
 vi.mock('$lib/schema/examples/full', () => ({ fullDocument: { full: true } }));
 vi.mock('$lib/schema/examples/minimal', () => ({ minimalDocument: { minimal: true } }));
+vi.mock('$lib/schema/examples/drilldown', () => ({ drilldownDocument: { drilldown: true } }));
 
 import { getPublishedSchema } from './published';
 
@@ -34,7 +35,11 @@ describe('getPublishedSchema', () => {
 		expect(first).toEqual({
 			version: 1,
 			schema: { derived: true },
-			examples: { minimal: { minimal: true }, full: { full: true } }
+			examples: {
+				minimal: { minimal: true },
+				full: { full: true },
+				drilldown: { drilldown: true }
+			}
 		});
 	});
 });

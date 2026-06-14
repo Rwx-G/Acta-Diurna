@@ -3,8 +3,10 @@ import { validateDocument } from './errors.ts';
 import type { DocumentV1 } from './versions/v1.ts';
 import { fullDocument } from './examples/full.ts';
 import { minimalDocument } from './examples/minimal.ts';
+import { drilldownDocument } from './examples/drilldown.ts';
 import fullJson from './examples/full.json';
 import minimalJson from './examples/minimal.json';
+import drilldownJson from './examples/drilldown.json';
 
 describe('document schema v1 - valid documents', () => {
 	it('validates the minimal example with full type inference', () => {
@@ -412,6 +414,21 @@ describe('document schema v1 - serialized example copies', () => {
 	it('keeps full.json in sync with the typed constant and valid', () => {
 		expect(fullJson).toEqual(fullDocument);
 		expect(validateDocument(fullJson).ok).toBe(true);
+	});
+
+	it('keeps drilldown.json in sync with the typed constant and valid (Story 11.5)', () => {
+		expect(drilldownJson).toEqual(drilldownDocument);
+		const result = validateDocument(drilldownJson);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// The drill-down example reaches a `kind: 'detail'` page through a `linkTo`
+		// (a table rowLink), so an agent reading the examples discovers the shape.
+		const detail = result.document.sections.find((section) => section.kind === 'detail');
+		expect(detail).toBeDefined();
+		const table = result.document.sections
+			.flatMap((section) => section.blocks)
+			.find((block) => block.type === 'table');
+		expect(table?.type === 'table' && table.rowLinks).toContain(detail!.id);
 	});
 
 	it('round-trips through JSON serialization', () => {

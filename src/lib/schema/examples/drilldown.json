@@ -1,0 +1,73 @@
+{
+	"version": 1,
+	"title": "Findings With Drill-Down",
+	"sections": [
+		{
+			"id": "findings",
+			"title": "Findings",
+			"blocks": [
+				{
+					"type": "text",
+					"id": "intro",
+					"paragraphs": [
+						[
+							{
+								"text": "One finding needs a closer look. "
+							},
+							{
+								"text": "Open the weak-password detail",
+								"linkTo": "finding-detail"
+							},
+							{
+								"text": " for the full evidence and remediation."
+							}
+						]
+					]
+				},
+				{
+					"type": "table",
+					"id": "findings-table",
+					"columns": [
+						{
+							"key": "finding",
+							"label": "Finding"
+						},
+						{
+							"key": "severity",
+							"label": "Severity"
+						}
+					],
+					"rows": [
+						{
+							"finding": "Weak password policy",
+							"severity": "High"
+						},
+						{
+							"finding": "Verbose error pages",
+							"severity": "Low"
+						}
+					],
+					"rowLinks": ["finding-detail", null]
+				}
+			]
+		},
+		{
+			"id": "finding-detail",
+			"title": "Detail: Weak password policy",
+			"kind": "detail",
+			"blocks": [
+				{
+					"type": "text",
+					"id": "evidence",
+					"paragraphs": [
+						[
+							{
+								"text": "The password policy enforced neither complexity nor rotation, so accounts could keep a four-character password indefinitely. Remediation: require 12+ characters, block known-breached passwords, and rotate on suspected exposure."
+							}
+						]
+					]
+				}
+			]
+		}
+	]
+}
