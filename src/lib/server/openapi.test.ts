@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildOpenApiDocument } from './openapi';
 import { toJsonSchema } from '$lib/schema';
@@ -14,6 +17,20 @@ type OpenApiDoc = {
 };
 
 const doc = buildOpenApiDocument() as OpenApiDoc;
+
+/** The HTTP-method keys an OpenAPI path item may carry (a `parameters` sibling is not an operation). */
+const OPERATION_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head', 'trace'];
+
+const API_V1_ROUTES = resolve(dirname(fileURLToPath(import.meta.url)), '../../routes/api/v1');
+
+/** Maps an OpenAPI path (`/reports/{id}`) to its SvelteKit route dir (`reports/[id]`). */
+function routeDirForPath(apiPath: string): string {
+	const segments = apiPath
+		.split('/')
+		.filter((segment) => segment !== '')
+		.map((segment) => segment.replace(/^\{(.+)\}$/, '[$1]'));
+	return resolve(API_V1_ROUTES, ...segments);
+}
 
 describe('buildOpenApiDocument (D8)', () => {
 	it('declares OpenAPI 3.1.0', () => {
@@ -114,6 +131,49 @@ describe('buildOpenApiDocument (D8)', () => {
 		for (const ref of refs) {
 			expect(ref.startsWith('#/components/schemas/')).toBe(true);
 			expect(defined.has(ref.replace('#/components/schemas/', ''))).toBe(true);
+		}
+	});
+
+	it('carries every required OpenAPI 3.1 top-level field', () => {
+		// A typo in a top-level key (e.g. `path` for `paths`) would otherwise compile
+		// silently into the hand-assembled record; these assert the document is at
+		// least structurally a well-formed OpenAPI 3.1 object.
+		expect(doc.openapi).toMatch(/^3\.1\.\d+$/);
+		expect(typeof doc.info).toBe('object');
+		expect(typeof doc.info.title).toBe('string');
+		expect(typeof doc.info.version).toBe('string');
+		expect(typeof doc.paths).toBe('object');
+		expect(typeof doc.components).toBe('object');
+		expect(typeof doc.components.schemas).toBe('object');
+		expect(typeof doc.components.securitySchemes).toBe('object');
+	});
+
+	it('gives every path item at least one operation, each with responses', () => {
+		// Drift guard: a path item that lost all its operations (only a `parameters`
+		// sibling), or an operation missing its `responses`, is a structural typo.
+		for (const [apiPath, pathItem] of Object.entries(doc.paths)) {
+			const operations = OPERATION_METHODS.filter((method) => method in pathItem);
+			expect(operations.length, `${apiPath} has no operation`).toBeGreaterThan(0);
+			for (const method of operations) {
+				const operation = pathItem[method] as { responses?: Record<string, unknown> };
+				expect(
+					operation.responses,
+					`${method.toUpperCase()} ${apiPath} has no responses`
+				).toBeDefined();
+				expect(Object.keys(operation.responses ?? {}).length).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	it('documents only paths backed by an actual /api/v1 route file', () => {
+		// Every documented path must map to a real `+server.ts` under
+		// src/routes/api/v1, so a renamed or removed route surfaces as a failing test
+		// rather than a spec that advertises a 404.
+		for (const apiPath of Object.keys(doc.paths)) {
+			const serverFile = resolve(routeDirForPath(apiPath), '+server.ts');
+			expect(existsSync(serverFile), `no route file for ${apiPath} (expected ${serverFile})`).toBe(
+				true
+			);
 		}
 	});
 });
