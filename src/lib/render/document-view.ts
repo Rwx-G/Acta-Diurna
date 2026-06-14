@@ -17,6 +17,7 @@ import {
 	hasAudienceTags,
 	scalesSchema,
 	sectionSchema,
+	validateInternalLinks,
 	type Audience,
 	type Block,
 	type ComparisonMatrixBlock,
@@ -65,6 +66,23 @@ export interface TocEntry {
 	annex: boolean;
 }
 
+/**
+ * One dangling internal link surfaced by the workspace preview (Epic 11, Story
+ * 11.5). The preview tolerates a `linkTo` whose target section does not exist YET
+ * (the author is mid-edit, the detail page is not authored), rendering what it can
+ * and naming the dangling target so the author can fix it before publish. This is
+ * a PREVIEW-ONLY leniency: the validate-on-write path (Story 11.2) still REJECTS a
+ * dangling `linkTo` at save/publish, so a reader never reaches a dead link. The
+ * reader path ({@link toReportView}) only ever sees a validated document, so its
+ * {@link ReportView.danglingLinks} is always empty.
+ */
+export interface DanglingLinkNotice {
+	/** The missing section id the `linkTo` pointed at. */
+	target: string;
+	/** Author-facing, actionable message naming the dangling target. */
+	message: string;
+}
+
 export interface ReportView {
 	title: string;
 	theme: string | undefined;
@@ -99,6 +117,16 @@ export interface ReportView {
 	 */
 	detailSections: SectionView[];
 	toc: TocEntry[];
+	/**
+	 * Dangling internal links the workspace preview tolerated (Epic 11, Story
+	 * 11.5): a `linkTo` naming a section that does not exist in the current
+	 * snapshot. Populated only by {@link toPreviewView}; always empty on the reader
+	 * path ({@link toReportView}), which renders a validated document where every
+	 * `linkTo` resolves. The preview surfaces these as a gentle, non-fatal notice so
+	 * an author mid-edit sees the problem without the preview throwing - the
+	 * validate-on-write path still rejects them at save/publish.
+	 */
+	danglingLinks: DanglingLinkNotice[];
 	/**
 	 * True when any section or block carries an audience tag (Story 6.1). Drives
 	 * the reader level switcher: hidden when false, so a document with no tags
@@ -162,6 +190,9 @@ export function toReportView(document: DocumentV1): ReportView {
 		sections,
 		detailSections,
 		toc: tocFrom(sections),
+		// The reader path renders a validated document: every `linkTo` resolved at
+		// save time (Story 11.2), so there is nothing dangling to surface.
+		danglingLinks: [],
 		// Counts detail-section tags too: a document whose only audience tags are on
 		// detail sections still surfaces the switcher (Epic 11 kickoff default).
 		hasAudiences: hasAudienceTags(document.sections)
@@ -296,8 +327,51 @@ export function toPreviewView(snapshot: unknown): ReportView {
 		sections: flowSections,
 		detailSections,
 		toc: tocFrom(flowSections),
+		// Surface (not throw on) dangling internal links mid-edit (Story 11.5): run
+		// the SAME document-level cross-reference pass the save path runs, over the
+		// raw snapshot. The pass is structural and ignores blocks it does not
+		// recognize, so a transiently-invalid sibling block does not break it; a
+		// `linkTo` whose target section is not authored yet becomes a gentle,
+		// actionable notice the editor renders, while save/publish still rejects it.
+		danglingLinks: previewDanglingLinks(rawSections),
 		hasAudiences: hasAudienceTags(sections)
 	};
+}
+
+/**
+ * The dangling-link notices for the workspace preview: the document-level
+ * cross-reference pass ({@link validateInternalLinks}) over the raw snapshot
+ * sections, deduplicated by target so one missing detail page reached from
+ * several carriers reads as one notice. The pass collects every section id
+ * present in the snapshot, so a detail page the author has already started
+ * (its id exists) resolves; only a truly absent target surfaces.
+ */
+function previewDanglingLinks(rawSections: unknown[]): DanglingLinkNotice[] {
+	const issues = validateInternalLinks({
+		sections: rawSections.map((rawSection) => {
+			const raw = (rawSection ?? {}) as RawSection;
+			return {
+				id: raw.id,
+				blocks: Array.isArray(raw.blocks) ? (raw.blocks as Record<string, unknown>[]) : []
+			};
+		})
+	});
+	const byTarget = new Map<string, DanglingLinkNotice>();
+	for (const issue of issues) {
+		const target = danglingTarget(issue.message);
+		if (target && !byTarget.has(target)) {
+			byTarget.set(target, {
+				target,
+				message: `This link points at "${target}", a section that does not exist yet. Create it (or fix the link) before you publish.`
+			});
+		}
+	}
+	return [...byTarget.values()];
+}
+
+/** Extracts the missing section id from an internal-link issue message. */
+function danglingTarget(message: string): string | undefined {
+	return message.match(/"([^"]+)"/)?.[1];
 }
 
 interface ZodLikeIssue {

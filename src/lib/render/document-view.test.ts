@@ -354,3 +354,139 @@ describe('toPreviewView (transiently-invalid tolerance)', () => {
 		expect(view.sections[0].blocks[0].block?.type).toBe('text');
 	});
 });
+
+describe('toPreviewView - dangling internal links (Story 11.5)', () => {
+	it('surfaces a not-yet-existing linkTo target as a gentle notice, never throwing', () => {
+		// The author wrote an internal link to a detail page they have not authored
+		// yet. The preview must render what it can AND name the dangling target, so
+		// the author keeps editing - it does not blank or throw.
+		const snapshot = {
+			version: 1,
+			title: 'Drill-down in progress',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [
+						{
+							type: 'text',
+							id: 'intro',
+							paragraphs: [[{ text: 'See ' }, { text: 'the finding', linkTo: 'finding-detail' }]]
+						}
+					]
+				}
+			]
+		};
+		let view!: ReturnType<typeof toPreviewView>;
+		expect(() => (view = toPreviewView(snapshot))).not.toThrow();
+		// The prose block still renders (the preview is tolerant, not all-or-nothing).
+		expect(view.sections[0].blocks[0].block?.type).toBe('text');
+		// ...and the dangling target is surfaced, named, actionable.
+		expect(view.danglingLinks).toHaveLength(1);
+		expect(view.danglingLinks[0].target).toBe('finding-detail');
+		expect(view.danglingLinks[0].message).toContain('finding-detail');
+		expect(view.danglingLinks[0].message).toContain('publish');
+	});
+
+	it('surfaces a dangling linkTo from a table row and a matrix finding', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Carriers',
+			scales: [
+				{ key: 'severity', label: 'Severity', entries: [{ key: 'high', label: 'High' }] },
+				{ key: 'sources', label: 'Sources', entries: [{ key: 'siem', label: 'SIEM' }] }
+			],
+			sections: [
+				{
+					id: 'findings',
+					title: 'Findings',
+					blocks: [
+						{
+							type: 'table',
+							id: 'rows',
+							columns: [{ key: 'name', label: 'Name' }],
+							rows: [{ name: 'Row A' }],
+							rowLinks: ['missing-row-detail']
+						},
+						{
+							type: 'comparison-matrix',
+							id: 'matrix',
+							severityScale: 'severity',
+							sourceScale: 'sources',
+							findings: [
+								{
+									category: 'Access',
+									label: 'Weak policy',
+									severity: 'high',
+									sources: { siem: { state: 'found' } },
+									treatment: { before: 'a', after: 'b', status: 'action' },
+									linkTo: 'missing-finding-detail'
+								}
+							]
+						}
+					]
+				}
+			]
+		};
+		const view = toPreviewView(snapshot);
+		const targets = view.danglingLinks.map((notice) => notice.target).sort();
+		expect(targets).toEqual(['missing-finding-detail', 'missing-row-detail']);
+	});
+
+	it('does not surface a linkTo whose target section exists in the snapshot', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Resolved',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [
+						{
+							type: 'text',
+							id: 'intro',
+							paragraphs: [[{ text: 'See ' }, { text: 'the detail', linkTo: 'finding-detail' }]]
+						}
+					]
+				},
+				{
+					id: 'finding-detail',
+					title: 'Finding detail',
+					kind: 'detail',
+					blocks: [{ type: 'text', id: 'evidence', paragraphs: [[{ text: 'Evidence.' }]] }]
+				}
+			]
+		};
+		expect(toPreviewView(snapshot).danglingLinks).toEqual([]);
+	});
+
+	it('deduplicates by target so one missing page reached twice reads as one notice', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Two links one target',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [
+						{
+							type: 'text',
+							id: 'intro',
+							paragraphs: [
+								[{ text: 'A', linkTo: 'finding-detail' }],
+								[{ text: 'B', linkTo: 'finding-detail' }]
+							]
+						}
+					]
+				}
+			]
+		};
+		const view = toPreviewView(snapshot);
+		expect(view.danglingLinks).toHaveLength(1);
+		expect(view.danglingLinks[0].target).toBe('finding-detail');
+	});
+
+	it('reports no dangling links for a snapshot with no linkTo at all', () => {
+		expect(toPreviewView(fullDocument).danglingLinks).toEqual([]);
+	});
+});

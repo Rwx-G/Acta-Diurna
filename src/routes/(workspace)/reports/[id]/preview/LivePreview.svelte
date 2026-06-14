@@ -34,6 +34,25 @@
 		</div>
 	</div>
 
+	{#if view.danglingLinks.length > 0}
+		<!-- Gentle, non-fatal notice for dangling internal links (Story 11.5): the
+		     preview renders what it can and names each missing target so the author can
+		     keep editing. The validate-on-write path still rejects these at save/publish,
+		     so a reader never reaches a dead link. -->
+		<div class="dangling-links" role="status">
+			<p class="dangling-title">
+				{view.danglingLinks.length === 1
+					? 'One internal link has no target yet'
+					: `${view.danglingLinks.length} internal links have no target yet`}
+			</p>
+			<ul>
+				{#each view.danglingLinks as notice (notice.target)}
+					<li>{notice.message}</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+
 	<div class="frame" class:mobile={viewport === 'mobile'}>
 		{#key document}
 			<Report {view} mode="scroll" embedded />
@@ -80,6 +99,25 @@
 	.viewport-toggle button.active {
 		color: var(--color-stone);
 		background: var(--color-purple);
+	}
+
+	.dangling-links {
+		padding: var(--space-3) var(--space-4);
+		font-size: var(--text-sm);
+		color: var(--color-ink);
+		background: var(--color-amber-12, color-mix(in srgb, var(--color-purple) 10%, transparent));
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+	}
+
+	.dangling-title {
+		margin: 0 0 var(--space-2);
+		font-weight: 600;
+	}
+
+	.dangling-links ul {
+		margin: 0;
+		padding-left: var(--space-5);
 	}
 
 	.frame {
