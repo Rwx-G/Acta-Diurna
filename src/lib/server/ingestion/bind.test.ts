@@ -14,11 +14,14 @@ const rows = [
 	{ week: '2026-06-08', incidents: 5, label: 'W23' }
 ];
 
+const DATA_AS_OF = '2026-06-08T00:00:00.000Z';
+
 describe('buildBinding', () => {
-	it('records dataSetId and per-field slots; unmapped fields carry no slot', () => {
+	it('records dataSetId, the FR16 dataAsOf, and per-field slots; unmapped fields carry no slot', () => {
 		const mapping: SlotMapping = { week: { role: 'x' }, incidents: { role: 'y' } };
-		const binding = buildBinding('ds-1', fields, mapping);
+		const binding = buildBinding('ds-1', fields, mapping, DATA_AS_OF);
 		expect(binding.dataSetId).toBe('ds-1');
+		expect(binding.dataAsOf).toBe(DATA_AS_OF);
 		expect(binding.fields[0].slot).toEqual({ role: 'x' });
 		expect(binding.fields[2].slot).toBeUndefined();
 	});
@@ -33,11 +36,12 @@ describe('applyBinding', () => {
 			binding: { fields: [{ name: 'week', type: 'date' }] }
 		};
 		const mapping: SlotMapping = { week: { role: 'column' }, incidents: { role: 'column' } };
-		const bound = applyBinding(block, 'ds-1', fields, mapping, rows);
+		const bound = applyBinding(block, 'ds-1', fields, mapping, rows, DATA_AS_OF);
 		if (bound.type !== 'table') throw new Error('expected table');
 		expect(bound.columns.map((c) => c.key)).toEqual(['week', 'incidents']);
 		expect(bound.rows).toHaveLength(2);
 		expect(bound.binding?.dataSetId).toBe('ds-1');
+		expect(bound.binding?.dataAsOf).toBe(DATA_AS_OF);
 	});
 
 	it('binds a chart block: series resolved from y fields', () => {
@@ -48,7 +52,7 @@ describe('applyBinding', () => {
 			binding: { fields: [{ name: 'week', type: 'date' }] }
 		};
 		const mapping: SlotMapping = { week: { role: 'x' }, incidents: { role: 'y' } };
-		const bound = applyBinding(block, 'ds-1', fields, mapping, rows);
+		const bound = applyBinding(block, 'ds-1', fields, mapping, rows, DATA_AS_OF);
 		if (bound.type !== 'chart') throw new Error('expected chart');
 		expect(bound.series).toHaveLength(1);
 		expect(bound.series?.[0].points).toHaveLength(2);
@@ -61,7 +65,7 @@ describe('applyBinding', () => {
 			binding: { fields: [{ name: 'incidents', type: 'number' }] }
 		};
 		const mapping: SlotMapping = { incidents: { role: 'value' }, label: { role: 'label' } };
-		const bound = applyBinding(block, 'ds-1', fields, mapping, rows);
+		const bound = applyBinding(block, 'ds-1', fields, mapping, rows, DATA_AS_OF);
 		if (bound.type !== 'kpi') throw new Error('expected kpi');
 		expect(bound.items).toEqual([{ label: 'W22', value: 3 }]);
 	});
@@ -74,7 +78,7 @@ describe('applyBinding', () => {
 			binding: { fields: [{ name: 'week', type: 'date' }] }
 		};
 		const mapping: SlotMapping = { week: { role: 'column' }, incidents: { role: 'column' } };
-		const bound = applyBinding(block, 'ds-1', fields, mapping, rows);
+		const bound = applyBinding(block, 'ds-1', fields, mapping, rows, DATA_AS_OF);
 		const result = validateDocument({
 			version: 1,
 			title: 'Bound',

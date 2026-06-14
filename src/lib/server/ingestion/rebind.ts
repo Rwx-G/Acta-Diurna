@@ -29,6 +29,7 @@ import {
 	type BlockDiagnostic
 } from './diagnostics.ts';
 import { ParseError, unparseable } from './errors.ts';
+import { resolveDataAsOf } from './ingestion.ts';
 import { getDataSet, readDataSetTable } from './queries.ts';
 import type { DataRow } from './resolve.ts';
 
@@ -71,7 +72,8 @@ function rebindDocument(
 	document: DocumentV1,
 	dataSetId: string,
 	fields: readonly DataSetField[],
-	rows: readonly DataRow[]
+	rows: readonly DataRow[],
+	dataAsOf: string
 ): string[] {
 	const available = new Set(fields.map((field) => field.name));
 	const rebound: string[] = [];
@@ -87,7 +89,7 @@ function rebindDocument(
 
 			const mapping = recoverSlotMapping(block.binding);
 			try {
-				const bound = applyBinding(block, dataSetId, fields, mapping, rows);
+				const bound = applyBinding(block, dataSetId, fields, mapping, rows, dataAsOf);
 				rebound.push(block.id);
 				return bound;
 			} catch (error) {
@@ -123,7 +125,13 @@ export async function rebindReport(
 
 	const available = dataSet.fields.map((field) => field.name);
 	const document = structuredClone(report.document);
-	const rebound = rebindDocument(document, dataSetId, dataSet.fields, table.rows);
+	const rebound = rebindDocument(
+		document,
+		dataSetId,
+		dataSet.fields,
+		table.rows,
+		resolveDataAsOf(dataSet)
+	);
 
 	// Persist only when something actually re-resolved; a refill that matches
 	// nothing must not churn the draft's updatedAt or risk a 409 on a published
@@ -235,7 +243,14 @@ export async function remapField(
 		mapping[availableField] = target.slot;
 
 		try {
-			section.blocks[index] = applyBinding(block, dataSetId, dataSet.fields, mapping, table.rows);
+			section.blocks[index] = applyBinding(
+				block,
+				dataSetId,
+				dataSet.fields,
+				mapping,
+				table.rows,
+				resolveDataAsOf(dataSet)
+			);
 		} catch (error) {
 			if (error instanceof ParseError) throw unparseable(error);
 			throw error;

@@ -24,11 +24,18 @@ import type { DataSetField } from '$lib/server/db/schema';
 
 export type SlotMapping = Record<string, BindingSlot>;
 
-/** Builds a binding (fields + slots) from a data set's fields and a slot mapping. */
+/**
+ * Builds a binding (fields + slots) from a data set's fields and a slot mapping.
+ * `dataAsOf` is the FR16 data-freshness instant (Story 6.4), an ISO-8601 string
+ * resolved from the data set (its explicit `data_as_of` else its injection time,
+ * via `resolveDataAsOf`); it is baked onto the binding so the pure renderer reads
+ * the "Data as of <date>" caption straight off the validated document.
+ */
 export function buildBinding(
 	dataSetId: string,
 	fields: readonly DataSetField[],
-	slotMapping: SlotMapping
+	slotMapping: SlotMapping,
+	dataAsOf: string
 ): Binding {
 	const bindingFields: BindingField[] = fields.map((field) => {
 		const slot = slotMapping[field.name];
@@ -36,22 +43,24 @@ export function buildBinding(
 			? { name: field.name, type: field.type, slot }
 			: { name: field.name, type: field.type };
 	});
-	return { dataSetId, fields: bindingFields };
+	return { dataSetId, dataAsOf, fields: bindingFields };
 }
 
 /**
  * Applies a data set to a data-bound block. Returns a new block with the binding
- * recorded and the static data resolved from `rows`. Throws via the resolver
- * (ParseError -> 422) when the slot mapping is incoherent for the block type.
+ * recorded (including the FR16 `dataAsOf` freshness instant) and the static data
+ * resolved from `rows`. Throws via the resolver (ParseError -> 422) when the slot
+ * mapping is incoherent for the block type.
  */
 export function applyBinding(
 	block: Block,
 	dataSetId: string,
 	fields: readonly DataSetField[],
 	slotMapping: SlotMapping,
-	rows: readonly DataRow[]
+	rows: readonly DataRow[],
+	dataAsOf: string
 ): Block {
-	const binding = buildBinding(dataSetId, fields, slotMapping);
+	const binding = buildBinding(dataSetId, fields, slotMapping, dataAsOf);
 
 	switch (block.type) {
 		case 'table': {

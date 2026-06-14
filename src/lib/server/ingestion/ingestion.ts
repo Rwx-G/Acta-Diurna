@@ -46,6 +46,18 @@ export interface ParsedTable {
 	rows: Record<string, unknown>[];
 }
 
+/**
+ * The FR16 data-freshness instant for a data set (Story 6.4): the explicit
+ * `data_as_of` when the upload carried one, otherwise the injection time. Both
+ * are always present in practice (`injected_at` is NOT NULL), so a bound data set
+ * always yields a usable timestamp - the "no usable timestamp" case is a binding
+ * with NO data set, handled where the binding is stamped. Returned as an ISO-8601
+ * string so it bakes straight onto the binding the pure renderer reads.
+ */
+export function resolveDataAsOf(dataSet: DataSet): string {
+	return (dataSet.dataAsOf ?? dataSet.injectedAt).toISOString();
+}
+
 /** Maps a stored `data_sets` row to the service `DataSet` shape. Shared by the
  *  write side (here) and the read queries (`queries.ts`). */
 export function toDataSet(row: DataSetRow): DataSet {

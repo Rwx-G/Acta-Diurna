@@ -70,9 +70,19 @@ export type BindingField = z.infer<typeof bindingFieldSchema>;
  * Declares the fields a data-bound block expects so ingestion (Epic 2) can
  * resolve uploaded data against them. `dataSetId` stays optional until
  * uploads exist (Epic 2).
+ *
+ * `dataAsOf` is the FR16 data-freshness timestamp (Story 6.4), an ISO-8601
+ * datetime stamped onto the binding at bind/rebind time: the bound data set's
+ * explicit `data_as_of` when set, otherwise its injection time. It is baked here,
+ * server-side, because the renderer is pure (no `$lib/server`, no DB) - so the
+ * "Data as of <date>" caption reads it straight off the validated document. It
+ * stays optional: a binding authored before an upload, or a data set with no
+ * usable timestamp, simply carries none and the caption is omitted (never a
+ * misleading date).
  */
 export const bindingSchema = z.object({
 	dataSetId: z.string().min(1).max(300, 'Data set id too long: 300 characters maximum.').optional(),
+	dataAsOf: z.iso.datetime({ offset: true }).optional(),
 	fields: z.array(bindingFieldSchema).min(1).max(100, 'Too many binding fields: 100 maximum.')
 });
 
