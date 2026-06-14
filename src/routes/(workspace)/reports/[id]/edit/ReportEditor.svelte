@@ -6,6 +6,7 @@
 	import { formatUtcTime } from '$lib/format';
 	import type { DocumentV1 } from '$lib/schema';
 	import { isBindable } from '$lib/schema';
+	import { THEME_OPTIONS, themeFallbackWarning } from '$lib/render';
 	import Button from '$lib/ui/Button.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
 	import BlockBinder from './BlockBinder.svelte';
@@ -41,6 +42,18 @@
 
 	// svelte-ignore state_referenced_locally
 	let doc = $state(structuredClone(report.document));
+
+	// Theme selection (Story 6.5). The picker offers only known built-in themes;
+	// an empty value means "no selection" and renders the default (FR39). A
+	// stored document whose `theme` references a removed/unknown theme still
+	// loads (the render path falls back to default, AC3) and flags here so the
+	// author sees why the report shows the default theme.
+	const themeWarning = $derived(themeFallbackWarning(doc.theme));
+
+	function onThemeChange(value: string): void {
+		doc.theme = value === '' ? undefined : value;
+		onEdit();
+	}
 
 	// Data-bindable blocks in the live document (table/chart/kpi), labelled for
 	// the binder's block picker. Recomputed as the author adds/removes blocks.
@@ -267,6 +280,27 @@
 			</div>
 		</div>
 
+		<div class="report-settings">
+			<label class="theme-field">
+				<span class="theme-label">Theme</span>
+				<select
+					class="theme-select"
+					value={doc.theme ?? ''}
+					onchange={(event) => onThemeChange(event.currentTarget.value)}
+				>
+					<option value="">Default (Modern Gazette)</option>
+					{#each THEME_OPTIONS as option (option.name)}
+						{#if option.name !== 'default'}
+							<option value={option.name}>{option.label}</option>
+						{/if}
+					{/each}
+				</select>
+			</label>
+			{#if themeWarning}
+				<p class="theme-warning" role="status">{themeWarning.message}</p>
+			{/if}
+		</div>
+
 		{#if !editable}
 			<p class="published-note">
 				This report is published and read-only. Readers see the snapshot taken at publish. Unpublish
@@ -414,6 +448,48 @@
 		color: var(--color-ink-65);
 		font-size: var(--text-sm);
 		white-space: nowrap;
+	}
+
+	.report-settings {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-3) var(--space-4);
+		margin-bottom: var(--space-4);
+	}
+
+	.theme-field {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.theme-label {
+		font-size: var(--text-sm);
+		font-weight: 600;
+		color: var(--color-ink-65);
+	}
+
+	.theme-select {
+		padding: var(--space-1) var(--space-3);
+		font: inherit;
+		font-size: var(--text-sm);
+		color: var(--color-ink);
+		background: var(--color-surface);
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+	}
+
+	/* Theme fallback warning (AC3): the report references a removed/unknown theme,
+	   so the reader sees the default. Amber, not danger - the report still renders
+	   cleanly; this is advisory, not a validation error. */
+	.theme-warning {
+		margin: 0;
+		padding: var(--space-2) var(--space-4);
+		font-size: var(--text-sm);
+		color: var(--color-amber);
+		background: var(--color-amber-12);
+		border-radius: var(--radius-sm);
 	}
 
 	.published-note {
