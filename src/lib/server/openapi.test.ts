@@ -26,7 +26,7 @@ describe('buildOpenApiDocument (D8)', () => {
 		expect(JSON.parse(serialized)).toEqual(doc);
 	});
 
-	it('describes every 4.1/4.2/4.3 path', () => {
+	it('describes every 4.1/4.2/4.3 path plus the generation paths', () => {
 		expect(Object.keys(doc.paths).sort()).toEqual(
 			[
 				'/reports',
@@ -34,11 +34,18 @@ describe('buildOpenApiDocument (D8)', () => {
 				'/reports/{id}/publish',
 				'/reports/{id}/unpublish',
 				'/reports/{id}/duplicate',
+				'/reports/generate/outline',
+				'/reports/generate/fill',
 				'/whoami',
 				'/data-sets',
 				'/schema'
 			].sort()
 		);
+	});
+
+	it('covers the outline-first generation operations', () => {
+		expect(doc.paths['/reports/generate/outline'].post).toBeDefined();
+		expect(doc.paths['/reports/generate/fill'].post).toBeDefined();
 	});
 
 	it('covers the 4.3 data-push and schema operations', () => {

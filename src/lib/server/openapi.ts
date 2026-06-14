@@ -178,6 +178,58 @@ function dataPushResponseSchema(): Record<string, unknown> {
 	};
 }
 
+/**
+ * The outline artifact (item 18): the bounded, reviewable structure
+ * `generate_outline` returns and `generate_report` fills. The block `type` is the
+ * generatable subset; the intents are one-line guidance strings.
+ */
+function outlineSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['title', 'sections'],
+		properties: {
+			title: { type: 'string' },
+			sections: {
+				type: 'array',
+				items: {
+					type: 'object',
+					required: ['title', 'intent', 'blocks'],
+					properties: {
+						title: { type: 'string' },
+						intent: { type: 'string' },
+						blocks: {
+							type: 'array',
+							items: {
+								type: 'object',
+								required: ['type', 'intent'],
+								properties: {
+									type: { type: 'string', enum: ['text', 'kpi', 'table', 'chart'] },
+									intent: { type: 'string' }
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	};
+}
+
+/** The `POST /reports/generate/outline` response: the outline plus its approval hash. */
+function generateOutlineResponseSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		required: ['outline', 'outlineHash'],
+		properties: {
+			outline: { $ref: '#/components/schemas/Outline' },
+			outlineHash: {
+				type: 'string',
+				description: 'The SHA-256 content hash binding a later fill to this exact outline.'
+			}
+		}
+	};
+}
+
 /** The published-schema response (story 4.3): version, schema, examples. */
 function schemaResponseSchema(): Record<string, unknown> {
 	return {
@@ -221,6 +273,11 @@ const VALIDATION = problemResponse(
 	'Document validation failed (422); carries the actionable errors[].'
 );
 const CONFLICT = problemResponse('Concurrency or lifecycle conflict (409).');
+const AI_DISABLED = problemResponse(
+	'AI generation is disabled (503): no LLM endpoint is configured or the opt-in is absent. No outbound call is made.'
+);
+const AI_FAILED = problemResponse('The AI endpoint failed or returned unusable output (502).');
+const RATE_LIMITED = problemResponse('Too many generation requests (429); retry after the hint.');
 
 /** Builds the full OpenAPI 3.1 document. Pure (no I/O), so the validity gate calls it directly. */
 export function buildOpenApiDocument(): Record<string, unknown> {
@@ -252,6 +309,41 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 				BindingSummary: bindingSummarySchema(),
 				DataPushResponse: dataPushResponseSchema(),
 				SchemaResponse: schemaResponseSchema(),
+				Outline: outlineSchema(),
+				GenerateOutlineResponse: generateOutlineResponseSchema(),
+				GenerateOutlineRequest: {
+					type: 'object',
+					required: ['intent'],
+					description:
+						'The narrative intent to draft an outline for, optionally grounded on a skeleton and/or a data set.',
+					properties: {
+						intent: { type: 'string', description: 'What the report should cover.' },
+						skeletonId: { type: 'string', format: 'uuid' },
+						dataSetId: { type: 'string', format: 'uuid' }
+					}
+				},
+				GenerateFillRequest: {
+					type: 'object',
+					required: ['outline', 'outlineHash'],
+					description:
+						'The approved outline and its hash (from /reports/generate/outline). With a `reportId` the matching draft is filled in place; without one a fresh draft is seeded.',
+					properties: {
+						outline: { $ref: '#/components/schemas/Outline' },
+						outlineHash: {
+							type: 'string',
+							description: 'The hash returned alongside the outline; a mismatch is a 409.'
+						},
+						reportId: { type: 'string', format: 'uuid' },
+						skeletonId: { type: 'string', format: 'uuid' },
+						dataSetId: { type: 'string', format: 'uuid' },
+						expectedUpdatedAt: {
+							type: 'string',
+							format: 'date-time',
+							description:
+								'The `updatedAt` the caller last saw on the target report; a mismatch is a 409.'
+						}
+					}
+				},
 				CreateReportRequest: {
 					type: 'object',
 					description:
@@ -424,6 +516,67 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 						'200': reportResponse('The report, reverted to draft.'),
 						'401': UNAUTHORIZED,
 						'404': NOT_FOUND
+					}
+				}
+			},
+			'/reports/generate/outline': {
+				post: {
+					summary: 'Propose a report outline (outline-first generation, stage 1)',
+					operationId: 'generateOutline',
+					description:
+						'From an `intent` (optionally grounded on a skeleton and/or data set) the configured LLM proposes a bounded, reviewable outline (FR32). Returns the outline plus its content hash; approve the outline, then post it back with the hash to `/reports/generate/outline` -> `/reports/generate/fill`. Both AI gates apply: a disabled instance returns 503 and makes NO outbound call. The flow is owner-scoped to the calling token. Writes nothing.',
+					requestBody: {
+						required: true,
+						content: {
+							'application/json': {
+								schema: { $ref: '#/components/schemas/GenerateOutlineRequest' }
+							}
+						}
+					},
+					responses: {
+						'200': {
+							description: 'The proposed outline and its approval hash.',
+							content: {
+								'application/json': {
+									schema: { $ref: '#/components/schemas/GenerateOutlineResponse' }
+								}
+							}
+						},
+						'400': problemResponse('Malformed request body or empty intent.'),
+						'401': UNAUTHORIZED,
+						'429': RATE_LIMITED,
+						'502': AI_FAILED,
+						'503': AI_DISABLED
+					}
+				}
+			},
+			'/reports/generate/fill': {
+				post: {
+					summary: 'Fill an approved outline into a draft (outline-first generation, stage 2)',
+					operationId: 'generateFill',
+					description:
+						'Fills the APPROVED `outline` (with its `outlineHash`) into a schema-valid draft through the same validate-on-write every surface uses. With a `reportId` it replaces that draft (200; a published report or stale `expectedUpdatedAt` is a 409); without one it seeds a fresh draft (201). A mismatched `outlineHash` is a 409 BEFORE any LLM call (the re-approval discipline); an invalid model document is a 422 with actionable errors[] and the draft is untouched. Both AI gates apply (503 when disabled). Owner-scoped to the calling token.',
+					requestBody: {
+						required: true,
+						content: {
+							'application/json': {
+								schema: { $ref: '#/components/schemas/GenerateFillRequest' }
+							}
+						}
+					},
+					responses: {
+						'200': reportResponse('The existing draft, filled in place.'),
+						'201': reportResponse('A fresh draft seeded from the filled outline.'),
+						'400': problemResponse('Malformed request body, or a missing outline / hash.'),
+						'401': UNAUTHORIZED,
+						'404': NOT_FOUND,
+						'409': problemResponse(
+							'A stale/edited outline (the hash no longer matches), a published target, or a stale concurrency token (409).'
+						),
+						'422': VALIDATION,
+						'429': RATE_LIMITED,
+						'502': AI_FAILED,
+						'503': AI_DISABLED
 					}
 				}
 			},
