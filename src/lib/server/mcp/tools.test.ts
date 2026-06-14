@@ -556,9 +556,10 @@ describe('push_data_set tool', () => {
 		expect((payload(result) as { status: number }).status).toBe(409);
 	});
 
-	it('rejects an over-cap content with the 413 tooLarge problem BEFORE encoding or ingest', async () => {
-		// One byte over the cap (ASCII so byte length == char length). The guard must
-		// fire on the cheap byte-length measure, never reaching the encode + ingest.
+	it('rejects an over-cap content with the 413 tooLarge problem BEFORE ingest', async () => {
+		// One byte over the cap (ASCII so byte length == char length). The body is
+		// encoded ONCE and its byte length checked against the cap (E5); the guard
+		// fires on that single measure and never reaches ingestion.
 		const oversize = 'a'.repeat(MAX_UPLOAD_BYTES + 1);
 
 		const result = await pushDataSetTool({ content: oversize, format: 'csv' }, TEST_SCOPE);
@@ -567,7 +568,7 @@ describe('push_data_set tool', () => {
 		const problem = payload(result) as { status: number; type: string };
 		expect(problem.status).toBe(413);
 		expect(problem.type).toBe('/problems/upload-too-large');
-		// The early reject path: no second full copy, no ingestion call.
+		// The early reject path: the single encoding is never handed to ingestion.
 		expect(ingestBytesMock).not.toHaveBeenCalled();
 	});
 

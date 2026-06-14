@@ -225,10 +225,11 @@ export function deleteReportTool(id: string, scope: AuthorScope): Promise<McpToo
  * the REST push parses; an unparseable body is the service 422, a published target
  * the service 409, a foreign/unknown `reportId` the scoped 404.
  *
- * SIZE cap: an oversize `content` is rejected with the REST `tooLarge` 413 BEFORE
- * encoding, via a `Buffer.byteLength` measure that allocates nothing - so an
- * over-cap push never gets a full UTF-8 copy here on top of the one `ingestBytes`
- * would do. The transport `BODY_SIZE_LIMIT` already bounds the body upstream.
+ * SIZE cap: the body is UTF-8 encoded ONCE and its byte length checked against the
+ * cap, so an oversize `content` is rejected with the REST `tooLarge` 413 before the
+ * data set is buffered/persisted - the same single encoding is then handed to
+ * `ingestBytes` (E5: no second measure-then-re-encode). The transport
+ * `BODY_SIZE_LIMIT` already bounds the body upstream.
  */
 export function pushDataSetTool(
 	input: {
@@ -240,15 +241,16 @@ export function pushDataSetTool(
 	scope: AuthorScope
 ): Promise<McpToolResult> {
 	return withProblemMapping(async () => {
-		// Reject an oversize body BEFORE encoding: `Buffer.byteLength` measures the
-		// UTF-8 size without allocating the bytes, so an over-cap push returns the
-		// same 413 the REST path returns without the full encode + copy `ingestBytes`
-		// would otherwise do a second time. The transport `BODY_SIZE_LIMIT` already
-		// bounds the body, so this is a cheap guard, not the only one.
-		if (Buffer.byteLength(input.content, 'utf8') > MAX_UPLOAD_BYTES) {
+		// Encode the body to UTF-8 ONCE, then check the produced bytes' own length
+		// against the cap (E5): the prior path measured with `Buffer.byteLength` AND
+		// then re-encoded with `TextEncoder`, encoding the body twice. The oversize
+		// reject still happens BEFORE the data set is buffered/persisted - an over-cap
+		// push returns the same 413 the REST path returns without ingesting anything -
+		// and the transport `BODY_SIZE_LIMIT` already bounds the body upstream.
+		const bytes = new TextEncoder().encode(input.content);
+		if (bytes.byteLength > MAX_UPLOAD_BYTES) {
 			throw tooLarge(MAX_UPLOAD_BYTES);
 		}
-		const bytes = new TextEncoder().encode(input.content);
 		const reportId = input.reportId ?? null;
 		const dataSet = await ingestBytes({
 			bytes,
