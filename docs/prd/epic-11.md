@@ -139,4 +139,4 @@ So that drill-down is authorable by hand and by agent today, before the Epic 10 
 
 11.1 (detail-section schema: hidden from flow and TOC, addressable) is the foundation every later story reads. 11.2 (the validated `linkTo` reference from the three carriers, with the no-dangling-target cross-reference pass) depends on 11.1's section ids. 11.3 (reader render + navigation to/from a detail page, deep-linkable and accessible) makes the drill-down usable. 11.4 hardens the audience-level and deep-link edges. 11.5 confirms producer parity and previews the Epic 10 editor gesture. A useful in-report drill-down exists after 11.3; 11.4 and 11.5 close the edges. Every story is renderer-pure (no `$lib/server`, no `{@html}`, escaped output, internal anchors only), holds the reader JS budget (NFR3), respects audience levels, and preserves the leak-free, notes-private reader posture - the share, not the link, is the access boundary.
 
-**Status:** Draft
+**Status:** Done
