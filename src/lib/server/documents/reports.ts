@@ -25,6 +25,7 @@ import { reportSeries, reports, type ReportRow } from '$lib/server/db/schema';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
 import { logger } from '$lib/server/logger';
 import { AppError } from '$lib/server/problem';
+import { bakeBindingDeltas } from './bake-delta.ts';
 
 export type ReportStatus = 'draft' | 'published';
 
@@ -810,12 +811,22 @@ export function assertShareable(report: Pick<Report, 'status'>): void {
 export async function publishReport(
 	id: string,
 	scope: AuthorScope,
-	expectedUpdatedAt?: Date
+	expectedUpdatedAt?: Date,
+	migrations?: readonly DocumentMigration[]
 ): Promise<Report> {
 	const row = await getRow(id, scope);
 	if (row.status === 'published') return toReport(row);
 
-	const document = validateOrThrow(row.document);
+	const validated = validateOrThrow(row.document);
+	// Story 9.4: bake the numeric delta against the predecessor's published snapshot
+	// onto each delta-eligible KPI binding, then re-validate so the frozen snapshot is
+	// a valid current-version document. The predecessor is resolved under the SAME
+	// scope (a foreign or unknown predecessor is the neutral 404, never a cross-author
+	// read), and a first issue or an unpublished predecessor bakes no delta. The result
+	// is frozen into the published snapshot, so the reader reads the delta straight off
+	// the validated document with no prior-issue data shipped.
+	const predecessor = await predecessorSnapshot(row.predecessorId, scope, migrations);
+	const document = validateOrThrow(bakeBindingDeltas(validated, predecessor));
 	const now = new Date();
 	const where =
 		expectedUpdatedAt === undefined
@@ -917,6 +928,28 @@ function publishedSnapshotOf(
 	const result = validateStoredDocument(row.publishedDocument, migrations);
 	if (!result.ok) throw validationFailed(result.errors);
 	return result.document;
+}
+
+/**
+ * The predecessor's published snapshot for the Story 9.4 publish-time delta bake, or
+ * null when there is nothing comparable to bake against: no predecessor edge (the
+ * first issue), or a predecessor that is unpublished (no frozen edition). The
+ * predecessor is resolved under the SAME {@link AuthorScope} as the issue being
+ * published, through the narrow {@link getDiffSnapshotRow} projection - so a
+ * cross-author, unknown, or malformed predecessor id is the same neutral 404 the
+ * tenancy layer uses (a delta never spans authors), and the heavy draft `document`
+ * column is never pulled (E1). Returns the validated current-version snapshot via
+ * {@link publishedSnapshotOf}, so a predecessor frozen under an earlier schema version
+ * is lifted before its values feed the delta.
+ */
+async function predecessorSnapshot(
+	predecessorId: string | null,
+	scope: AuthorScope,
+	migrations?: readonly DocumentMigration[]
+): Promise<DocumentV1 | null> {
+	if (predecessorId === null) return null;
+	const predecessorRow = await getDiffSnapshotRow(predecessorId, scope);
+	return publishedSnapshotOf(predecessorRow, migrations);
 }
 
 /**

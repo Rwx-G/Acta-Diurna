@@ -875,6 +875,114 @@ describe('publishReport', () => {
 	it('throws 404 for an unknown id', async () => {
 		await expectAppError(publishReport('01970000-0000-7000-8000-00000000dead', TEST_SCOPE), 404);
 	});
+
+	// Story 9.4: the publish-time numeric delta bake. A bound KPI gets a `delta`
+	// stamped onto its binding from the predecessor's published snapshot, frozen into
+	// this issue's snapshot - the precompute-onto-the-binding pattern of `data_as_of`.
+	function kpiBoundDocument(value: number | string): DocumentV1 {
+		const result = validateDocument({
+			version: 1,
+			title: 'Quarterly Review',
+			sections: [
+				{
+					id: 'metrics',
+					title: 'Metrics',
+					blocks: [
+						{
+							type: 'kpi',
+							id: 'revenue',
+							items: [{ label: 'Revenue', value }],
+							binding: { dataSetId: 'ds-1', fields: [{ name: 'revenue', type: 'number' }] }
+						}
+					]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('kpi fixture must be valid');
+		return result.document;
+	}
+
+	function bakedKpiDelta(document: DocumentV1 | null | undefined) {
+		const block = document?.sections[0].blocks[0];
+		return block?.type === 'kpi' ? block.binding?.delta : undefined;
+	}
+
+	it('bakes the up/down delta against the predecessor snapshot onto the KPI binding', async () => {
+		const predecessor = seedReport({
+			id: '01970000-0000-7000-8000-0000000000f1',
+			status: 'published',
+			publishedDocument: kpiBoundDocument(100),
+			publishedAt: new Date('2026-06-01T09:00:00Z')
+		});
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000f2',
+			document: kpiBoundDocument(108),
+			predecessorId: predecessor.id
+		});
+
+		const report = await publishReport(issue.id, TEST_SCOPE);
+
+		expect(bakedKpiDelta(report.publishedDocument)).toEqual({
+			direction: 'up',
+			priorValue: 100,
+			absolute: 8,
+			relative: 0.08
+		});
+		// The frozen snapshot carries the delta; the draft document is untouched.
+		expect(bakedKpiDelta(dbState.rowsById.get(issue.id)?.publishedDocument as DocumentV1)).toEqual({
+			direction: 'up',
+			priorValue: 100,
+			absolute: 8,
+			relative: 0.08
+		});
+		expect(bakedKpiDelta(report.document)).toBeUndefined();
+	});
+
+	it('omits the delta when the predecessor is unpublished (no comparable snapshot)', async () => {
+		const predecessor = seedReport({
+			id: '01970000-0000-7000-8000-0000000000f3',
+			status: 'draft',
+			document: kpiBoundDocument(100)
+		});
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000f4',
+			document: kpiBoundDocument(108),
+			predecessorId: predecessor.id
+		});
+
+		const report = await publishReport(issue.id, TEST_SCOPE);
+
+		expect(bakedKpiDelta(report.publishedDocument)).toBeUndefined();
+	});
+
+	it('omits the delta on a first issue (no predecessor edge), no predecessor read', async () => {
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000f5',
+			document: kpiBoundDocument(108),
+			predecessorId: null
+		});
+
+		const report = await publishReport(issue.id, TEST_SCOPE);
+
+		expect(bakedKpiDelta(report.publishedDocument)).toBeUndefined();
+	});
+
+	it('404s when the predecessor id does not resolve under the scope (no cross-author bake)', async () => {
+		// The predecessor edge points at an id the publishing author cannot reach. The
+		// bake re-resolves the predecessor through the SAME owner-scoped `getDiffSnapshotRow`
+		// the diff uses, so an unresolvable (foreign, unknown, or corrupted) predecessor id
+		// is the neutral 404 - a delta is never computed across an ownership boundary,
+		// rather than silently skipped.
+		const issue = seedReport({
+			id: '01970000-0000-7000-8000-0000000000f6',
+			document: kpiBoundDocument(108),
+			predecessorId: '01970000-0000-7000-8000-00000000beef'
+		});
+
+		await expectAppError(publishReport(issue.id, TEST_SCOPE), 404);
+		// Nothing was published: the issue stays a draft.
+		expect(dbState.rowsById.get(issue.id)?.status).toBe('draft');
+	});
 });
 
 describe('unpublishToDraft', () => {
