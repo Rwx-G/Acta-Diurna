@@ -9,12 +9,12 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.12.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.13.0-brightgreen.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-planned%20epics%20complete-brightgreen.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
   <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/tests-1613%2B-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1650%2B-brightgreen.svg" alt="Tests">
   <img src="https://img.shields.io/badge/deploy-docker%20compose-2496ED.svg" alt="Docker">
 </p>
 
@@ -55,14 +55,14 @@ The tool carries the skeleton - structure, templates, rendering, sharing, access
 
 ### :robot: AI-native authoring
 
-- **MCP server** at `/api/mcp` - Claude or any MCP-capable agent discovers the schema, skeletons, and reports, then authors natively (create / update / publish / unpublish / delete), at full parity with the REST API over the same service layer
-- **Outline-first generation** - the author states an intent, the model proposes an outline, the author reviews and approves it, then the model fills a schema-valid draft. Approval is bound to the exact outline by a content hash, so content is never generated from an unapproved structure
+- **MCP server** at `/api/mcp` - Claude or any MCP-capable agent discovers the schema, skeletons, and reports, then authors natively (create / update / publish / unpublish / delete), pushes CSV / JSON data and auto-rebinds blocks (`push_data_set`), and runs outline-first generation (`generate_outline` / `generate_report`), at full parity with the REST API over the same service layer
+- **Outline-first generation** - the author (or an agent) states an intent, the model proposes an outline, the outline is reviewed and approved, then the model fills a schema-valid draft. Approval is bound to the exact outline by a content hash, so content is never generated from an unapproved structure. Driveable from the workspace, the REST API (`POST /api/v1/reports/generate/outline` + `/fill`), and MCP, all over the one two-stage generation service
 - **Bring your own endpoint** - point `LLM_BASE_URL` at any OpenAI-compatible base (the OpenAI API, a local Ollama / llama.cpp runtime, or an Anthropic-compatible proxy). **No default cloud endpoint, no phone-home**; the API key is redacted everywhere
 - **Two explicit gates** - the connector makes an outbound call only when the endpoint is configured AND `AI_GENERATION_ENABLED=true`. Untrusted model output is always validated on write and never executed
 
 ### :electric_plug: API & integration
 
-- **REST API** (`/api/v1`) - full report CRUD, publish lifecycle, duplicate, and authenticated data push, behaving identically to the workspace because every endpoint is a thin adapter over the same services
+- **REST API** (`/api/v1`) - full report CRUD, publish lifecycle, duplicate, authenticated data push, and outline-first AI generation (propose an outline, then fill the approved outline into a draft), behaving identically to the workspace because every endpoint is a thin adapter over the same services
 - **Personal access tokens** - `acta_pat_` bearer credentials, shown once, stored as a SHA-256 hash, revoke-only, managed from the workspace
 - **OpenAPI 3.1** spec at `/api/v1/openapi.json` (public) with the document JSON Schema embedded as the single source of truth
 - **Data ingestion** - CSV / JSON file upload (streamed, capped) and authenticated API push; field inspection, binding to table / chart / KPI slots, automatic rebinding with drift diagnostics on the next refill
@@ -124,7 +124,7 @@ docker compose up -d db               # Postgres only
 pnpm dev                              # app on http://localhost:5173
 ```
 
-Useful scripts: `pnpm test` (Vitest), `pnpm test:e2e` (Playwright + ephemeral Postgres), `pnpm check` (svelte-check), `pnpm lint`, `pnpm reader:budget` (reader JS budget gate).
+Useful scripts: `pnpm test` (Vitest), `pnpm test:e2e` (single-mode Playwright + ephemeral Postgres), `pnpm test:e2e:multi` (multi-author mode against an ephemeral Postgres + a Mailpit SMTP container, magic links intercepted over the Mailpit HTTP API), `pnpm check` (svelte-check), `pnpm lint`, `pnpm reader:budget` (reader JS budget gate).
 
 ## Architecture
 
