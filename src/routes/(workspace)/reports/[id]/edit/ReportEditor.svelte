@@ -216,6 +216,8 @@
 	const viewPath = resolve('/(workspace)/reports/[id]/view', { id: report.id });
 	// svelte-ignore state_referenced_locally
 	const sharePath = resolve('/(workspace)/reports/[id]/share', { id: report.id });
+	// svelte-ignore state_referenced_locally
+	const changesPath = resolve('/(workspace)/reports/[id]/changes', { id: report.id });
 </script>
 
 <svelte:head>
@@ -234,6 +236,7 @@
 		<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
 		{#if !editable}
 			<a class="toolbar-link" href={sharePath}>Share</a>
+			<a class="toolbar-link" href={changesPath}>What changed</a>
 		{/if}
 	</nav>
 

@@ -17,6 +17,7 @@ import {
 	duplicateReport,
 	getPublishedDocument,
 	getReport,
+	getSeriesDiffView,
 	listReports,
 	listSeriesIssues,
 	publishReport,
@@ -1193,6 +1194,134 @@ describe('diffSeriesIssue', () => {
 		// The predecessor is re-resolved under the owner scope; an unresolvable edge is
 		// the same neutral 404, never a leak or a crash.
 		await expectAppError(diffSeriesIssue(ISSUE_ID, TEST_SCOPE), 404);
+	});
+});
+
+describe('getSeriesDiffView', () => {
+	const SERIES_ID = '01970000-0000-7000-8000-0000000000c2';
+	const ISSUE_ID = '01970000-0000-7000-8000-000000000010';
+	const PRED_ID = '01970000-0000-7000-8000-000000000011';
+
+	function snapshot(prose: string): DocumentV1 {
+		const result = validateDocument({
+			version: 1,
+			title: 'Quarterly Review',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: prose }]] }]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('snapshot must be valid');
+		return result.document;
+	}
+
+	function seedSeries(): void {
+		dbState.series.push({ id: SERIES_ID, ownerId: TEST_SCOPE.authorId });
+	}
+
+	it('returns the computed diff plus the predecessor display baseline', async () => {
+		seedSeries();
+		seedReport({
+			id: PRED_ID,
+			seriesId: SERIES_ID,
+			predecessorId: null,
+			status: 'published',
+			publishedDocument: snapshot('Old prose'),
+			issueLabel: '2026-W23',
+			publishedAt: new Date('2026-06-07T09:00:00Z')
+		});
+		seedReport({
+			id: ISSUE_ID,
+			seriesId: SERIES_ID,
+			predecessorId: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshot('New prose'),
+			issueLabel: '2026-W24',
+			publishedAt: new Date('2026-06-14T09:00:00Z')
+		});
+
+		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
+
+		expect(view.diff.kind).toBe('diff');
+		// The baseline is the PREDECESSOR's display identity, not the issue's own.
+		expect(view.baseline).toEqual({
+			title: 'Quarterly Review',
+			issueLabel: '2026-W23',
+			publishedAt: new Date('2026-06-07T09:00:00Z')
+		});
+	});
+
+	it('carries no baseline for the first-issue neutral state', async () => {
+		seedReport({
+			id: ISSUE_ID,
+			seriesId: SERIES_ID,
+			predecessorId: null,
+			status: 'published',
+			publishedDocument: snapshot('First edition'),
+			publishedAt: new Date('2026-06-14T09:00:00Z')
+		});
+
+		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
+
+		expect(view.diff).toEqual({ kind: 'no-predecessor', reason: 'first-issue' });
+		expect(view.baseline).toBeNull();
+	});
+
+	it('carries no baseline when the predecessor is unpublished', async () => {
+		seedReport({ id: PRED_ID, seriesId: SERIES_ID, status: 'draft', predecessorId: null });
+		seedReport({
+			id: ISSUE_ID,
+			seriesId: SERIES_ID,
+			predecessorId: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshot('New edition'),
+			publishedAt: new Date('2026-06-14T09:00:00Z')
+		});
+
+		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
+
+		expect(view.diff).toEqual({ kind: 'no-predecessor', reason: 'predecessor-unpublished' });
+		expect(view.baseline).toBeNull();
+	});
+
+	it('is owner-scoped: an unknown issue is the neutral 404', async () => {
+		await expectAppError(
+			getSeriesDiffView('01970000-0000-7000-8000-00000000dead', TEST_SCOPE),
+			404
+		);
+	});
+
+	it('never exposes a heavy document column on the diff payload (flags and ids only)', async () => {
+		seedSeries();
+		seedReport({
+			id: PRED_ID,
+			seriesId: SERIES_ID,
+			predecessorId: null,
+			status: 'published',
+			publishedDocument: snapshot('Old prose'),
+			publishedAt: new Date('2026-06-07T09:00:00Z')
+		});
+		seedReport({
+			id: ISSUE_ID,
+			seriesId: SERIES_ID,
+			predecessorId: PRED_ID,
+			status: 'published',
+			publishedDocument: snapshot('New prose'),
+			publishedAt: new Date('2026-06-14T09:00:00Z')
+		});
+
+		const view = await getSeriesDiffView(ISSUE_ID, TEST_SCOPE);
+
+		// The serialized payload carries no notes/body field and no raw prose: the
+		// engine ships only structural/data/content flags plus ids, types, and titles.
+		const serialized = JSON.stringify(view);
+		expect(serialized).not.toContain('Old prose');
+		expect(serialized).not.toContain('New prose');
+		expect(serialized).not.toContain('paragraphs');
+		expect(serialized).not.toContain('notes');
 	});
 });
 

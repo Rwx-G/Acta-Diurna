@@ -957,3 +957,83 @@ export async function diffSeriesIssue(
 	const oldSnapshot = publishedSnapshotOf(predecessorRow, migrations);
 	return diffSnapshots(newSnapshot, oldSnapshot, 'predecessor-unpublished');
 }
+
+/**
+ * The predecessor's display identity (story 9.3, AC4): the comparison baseline a
+ * "what changed" view labels its diff with. Carries the predecessor's title and its
+ * COSMETIC display labels (`issueLabel`, `publishedAt`) only - never a document
+ * column, never a block body. A diff result has no baseline (a first issue, an
+ * unpublished predecessor, or a substantial-drift pair), so this is `null` there.
+ */
+export interface SeriesDiffBaseline {
+	title: string;
+	issueLabel: string | null;
+	publishedAt: Date | null;
+}
+
+/**
+ * The owner-scoped payload the workspace "what changed" view (story 9.3) loads: the
+ * typed {@link SeriesDiff} from {@link diffSeriesIssue} plus the predecessor's
+ * display baseline ({@link SeriesDiffBaseline}) so the view can label the comparison
+ * ("vs. June board pack, published 2026-06-07"). The diff carries ONLY structural /
+ * data / content CHANGE FLAGS and section/block ids, titles, and types - no notes,
+ * no prior-issue block bodies; the baseline carries only the predecessor's cosmetic
+ * labels. Nothing author-private and no raw prior-issue content crosses this seam.
+ */
+export interface SeriesDiffView {
+	diff: SeriesDiff;
+	/** The predecessor's display baseline, or null when the diff has no predecessor to label. */
+	baseline: SeriesDiffBaseline | null;
+}
+
+/**
+ * Composes the workspace "what changed since last issue" payload (story 9.3): the
+ * {@link diffSeriesIssue} result for `id` plus the predecessor's display baseline,
+ * all resolved under ONE {@link AuthorScope}. The diff is the authoritative engine
+ * output (the same one 9.5 will consume); the baseline is the predecessor's row in
+ * the owner-scoped ordered series ({@link listSeriesIssues}), so it is reachable only
+ * to the owning author - a cross-author or unknown id is the same neutral 404 the
+ * diff itself raises, never an existence oracle.
+ *
+ * The baseline is present ONLY for a computed `diff` (the AC's "comparison baseline
+ * label"). A `no-predecessor` or `substantial-drift` result has no meaningful
+ * baseline to label, so it is `null` and the view renders the neutral state on the
+ * diff `kind` alone.
+ *
+ * `migrations` is injectable for tests, forwarded to {@link diffSeriesIssue}.
+ *
+ * @throws {AppError} 404 when the issue or its predecessor is cross-author, unknown,
+ * or malformed; 409 not-published when the issue itself is unpublished; 422 when a
+ * stored snapshot fails to validate after migration.
+ */
+export async function getSeriesDiffView(
+	id: string,
+	scope: AuthorScope,
+	migrations?: readonly DocumentMigration[]
+): Promise<SeriesDiffView> {
+	const diff = await diffSeriesIssue(id, scope, migrations);
+	if (diff.kind !== 'diff') return { diff, baseline: null };
+
+	// A computed diff means a published predecessor exists; resolve its display
+	// labels from the owner-scoped ordered series. The issue's own row gives the
+	// predecessor edge; the predecessor's `SeriesIssue` carries the baseline labels.
+	const issue = await getReport(id, scope);
+	const baseline = issue.seriesId === null ? null : await predecessorBaseline(issue, scope);
+	return { diff, baseline };
+}
+
+/** The predecessor's display baseline within an owner-scoped series, or null when absent. */
+async function predecessorBaseline(
+	issue: Report,
+	scope: AuthorScope
+): Promise<SeriesDiffBaseline | null> {
+	if (issue.predecessorId === null || issue.seriesId === null) return null;
+	const issues = await listSeriesIssues(issue.seriesId, scope);
+	const predecessor = issues.find((candidate) => candidate.id === issue.predecessorId);
+	if (predecessor === undefined) return null;
+	return {
+		title: predecessor.title,
+		issueLabel: predecessor.issueLabel,
+		publishedAt: predecessor.publishedAt
+	};
+}
