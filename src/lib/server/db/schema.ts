@@ -12,8 +12,12 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { DocumentV1 } from '$lib/schema';
 
-// Both realms (D4) share this table; only the author realm is implemented in
-// 1.4, the reader realm (Epic 3) reuses the same shape with realm='reader'.
+// Author-realm sessions. Originally planned as a shared two-realm table (D4), but
+// reader sessions ended up PHYSICALLY SEPARATE in `reader_sessions` (NFR12, each
+// realm keeps its own NOT NULL/FK shape - see sessions.ts), so this table only
+// ever stores `realm = 'author'`. The `realm` column and its CHECK keep both
+// values as a forward-schema artifact (the original D4 design), but no row here is
+// ever written with `realm = 'reader'`.
 //
 // `author_id` (Epic 8, story 8.3) binds an author-realm session to the author it
 // authenticated, so the workspace resolves the REAL logged-in author (tenancy,

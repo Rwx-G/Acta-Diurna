@@ -28,7 +28,7 @@ import {
 	type BindingSummary,
 	type BlockDiagnostic
 } from './diagnostics.ts';
-import { ParseError, unparseable } from './errors.ts';
+import { blockNotFound, ParseError, unparseable } from './errors.ts';
 import { resolveDataAsOf } from './ingestion.ts';
 import { getDataSet, readDataSetTable } from './queries.ts';
 import type { DataRow } from './resolve.ts';
@@ -141,15 +141,6 @@ export async function rebindReport(
 
 	const diagnostics = diagnoseDocument(persisted.document, available);
 	return { report: persisted, diagnostics, summary: summarize(diagnostics), rebound };
-}
-
-function blockNotFound(): AppError {
-	return new AppError({
-		status: 404,
-		title: 'Block not found',
-		type: '/problems/block-not-found',
-		detail: 'No block in this report matches the requested id.'
-	});
 }
 
 function fieldNotFound(detail: string): AppError {

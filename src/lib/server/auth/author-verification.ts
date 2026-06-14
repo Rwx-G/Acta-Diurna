@@ -21,7 +21,7 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getDb } from '$lib/server/db/client';
 import { uuidv7 } from '$lib/server/db/ids';
 import { hashToken } from '$lib/server/crypto/hash-token';
-import { authorVerificationTokens, type AuthorVerificationTokenRow } from '$lib/server/db/schema';
+import { authorVerificationTokens } from '$lib/server/db/schema';
 
 /** Author verification tokens live 15 minutes, matching the reader flow (NFR6). */
 export const AUTHOR_VERIFICATION_TOKEN_TTL_MS: number = 15 * 60 * 1000;
@@ -122,9 +122,9 @@ export async function consumeAuthorVerificationToken(rawToken: string): Promise<
 
 	// Single round-trip, single-use guarantee: UPDATE ... WHERE consumed_at IS
 	// NULL returns the row only for the first caller; a racing second click sees
-	// zero rows. drizzle's `returning()` gives us the bound email without a second
-	// read.
-	const updated = (await getDb()
+	// zero rows. drizzle's `returning()` gives us the bound email and expiry
+	// (typed as the full table row) without a second read.
+	const updated = await getDb()
 		.update(authorVerificationTokens)
 		.set({ consumedAt: now })
 		.where(
@@ -133,7 +133,7 @@ export async function consumeAuthorVerificationToken(rawToken: string): Promise<
 				isNull(authorVerificationTokens.consumedAt)
 			)
 		)
-		.returning()) as AuthorVerificationTokenRow[];
+		.returning();
 
 	const row = updated[0];
 	if (!row) return null;

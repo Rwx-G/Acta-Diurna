@@ -57,6 +57,20 @@ export function dataSetUnreadable(): AppError {
 	});
 }
 
+/**
+ * 404 problem-details for a binding operation that names a block id absent from
+ * the report. Shared by `bindBlock` (queries.ts) and `remapField` (rebind.ts) so
+ * the same "no such block" miss is one canonical response across the bind paths.
+ */
+export function blockNotFound(): AppError {
+	return new AppError({
+		status: 404,
+		title: 'Block not found',
+		type: '/problems/block-not-found',
+		detail: 'No block in this report matches the requested id.'
+	});
+}
+
 /** 415 problem-details for an unsupported upload type. */
 export function unsupportedFormat(detail: string): AppError {
 	return new AppError({

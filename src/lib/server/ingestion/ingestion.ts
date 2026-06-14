@@ -24,7 +24,18 @@ import { excelNotEnabled, ParseError, tooLarge, unparseable, unsupportedFormat }
 import { inspectFields } from './inspect.ts';
 import { parseJson } from './json.ts';
 
-/** Hard upload cap (NFR4): 50 MB, checked before the file is buffered/parsed. */
+/**
+ * Hard upload cap (NFR4): 50 MB, checked before the file is buffered/parsed. The
+ * one budget enforced at every ingest entry point, so no surface can sneak a
+ * larger payload past it:
+ *   - `ingestBytes` / `ingestFile` here (the service-layer re-check on the
+ *     assembled length / `file.size`),
+ *   - `readStreamToCap` (stream.ts), which aborts mid-stream so an oversized body
+ *     is never fully buffered (the DoS guard),
+ *   - the workspace upload (`data-sets/+page.server.ts`) and the API push
+ *     (`api/v1/data-sets/body.ts`), each a cheap `Content-Length` fast-reject,
+ *   - the MCP `inject_data` tool (`mcp/tools.ts`), on the decoded content length.
+ */
 export const MAX_UPLOAD_BYTES = 50_000_000;
 
 export type SourceFormat = 'csv' | 'json' | 'xlsx';
