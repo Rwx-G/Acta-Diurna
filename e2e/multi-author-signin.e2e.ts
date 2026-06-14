@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { clearMailbox, expectNoMail, getLatestMagicLink } from './mailpit.ts';
+import { actorContext } from './multi-auth.ts';
 
 // Multi-mode author sign-in (Epic 8, story 8.3), end to end against the real build
 // + a real SMTP capture (Mailpit). The single-mode harness can only unit-test this
@@ -40,10 +41,14 @@ test('an in-domain author signs in via the emailed magic link', async ({ page })
 	// The form always returns the same neutral confirmation (enumeration-safe).
 	await expect(page.getByRole('status')).toContainText('Check your email');
 
-	// Mailpit captured the sign-in link; clicking it opens the workspace. The author
+	// Mailpit captured the sign-in link. Visiting it lands on the prefetch-safe
+	// interstitial (A1): the GET peeks WITHOUT consuming, so a mail-gateway link
+	// scanner that prefetches the link cannot burn the token. The author confirms with
+	// a same-origin POST, which consumes the token and opens the workspace. The author
 	// row is minted on this first verified sign-in (self-service provisioning).
 	const magicLink = await getLatestMagicLink(email);
 	await page.goto(magicLink);
+	await page.getByRole('button', { name: 'Confirm sign-in' }).click();
 	await expect(page).toHaveURL(/\/reports$/);
 
 	// The session is real and carries the author identity: the workspace surfaces
@@ -54,6 +59,42 @@ test('an in-domain author signs in via the emailed magic link', async ({ page })
 	// bounced to /login).
 	await page.goto('/settings');
 	await expect(page).toHaveURL(/\/settings$/);
+});
+
+test('prefetch-safe: a scanner GET on the sign-in link does not consume the token; the confirm still works', async ({
+	browser
+}) => {
+	// A distinct author AND a distinct actor context (its own forwarded IP, its own
+	// per-IP author-verification bucket) so this live sign-in plus the simulated
+	// prefetch GET never drain the default context's burst window.
+	const email = 'frank@example.com';
+	const context = await actorContext(browser);
+	const page = await context.newPage();
+	try {
+		await clearMailbox();
+		await page.goto('/login');
+		await page.getByLabel('Email').fill(email);
+		await page.getByRole('button', { name: 'Send sign-in link' }).click();
+		await expect(page.getByRole('status')).toContainText('Check your email');
+
+		const magicLink = await getLatestMagicLink(email);
+
+		// Simulate a mail-gateway link scanner (Defender SafeLinks, Proofpoint, Mimecast)
+		// GET-prefetching the delivered link. The GET renders the interstitial but must
+		// NOT consume the token (the old GET-consume bug would burn it here).
+		const prefetch = await page.request.get(magicLink, { failOnStatusCode: false });
+		expect(prefetch.status()).toBe(200);
+
+		// The human then clicks: the token is still live, so the confirm POST consumes
+		// it and opens the workspace. If the prefetch had consumed the token, this would
+		// have bounced to the expired state instead.
+		await page.goto(magicLink);
+		await page.getByRole('button', { name: 'Confirm sign-in' }).click();
+		await expect(page).toHaveURL(/\/reports$/);
+		await expect(page.getByText(email)).toBeVisible();
+	} finally {
+		await context.close();
+	}
 });
 
 test('an off-domain email is refused: no mail, neutral confirmation', async ({ page }) => {

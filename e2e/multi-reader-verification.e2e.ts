@@ -81,10 +81,48 @@ test('multi mode gates a share behind reader verification, not a bare consultati
 		await readerPage.getByRole('button', { name: 'Send my link' }).click();
 		await expect(readerPage.getByRole('heading', { name: /check your email/i })).toBeVisible();
 
-		// Mailpit captured the reader magic link; clicking it opens a reader session
+		// Mailpit captured the reader magic link. Visiting it lands on the prefetch-safe
+		// interstitial (A1): the GET peeks WITHOUT consuming, so a mail-gateway link
+		// scanner that prefetches the link cannot burn the token. The reader confirms
+		// with a same-origin POST, which consumes the token, opens the reader session,
 		// and serves the report.
 		const magicLink = await getLatestMagicLink(inWhitelistReader);
 		await readerPage.goto(magicLink);
+		await readerPage.getByRole('button', { name: 'Confirm and view report' }).click();
+		await expect(readerPage.getByRole('application')).toBeVisible();
+	} finally {
+		await readerContext.close();
+	}
+});
+
+test('prefetch-safe: a scanner GET on the reader link does not consume the token; the confirm still works', async ({
+	browser
+}) => {
+	await clearMailbox();
+	const shareUrl = await createOpenShare(browser);
+	const inWhitelistReader = 'grace@reader.example.com';
+
+	const readerContext = await actorContext(browser);
+	const readerPage = await readerContext.newPage();
+	try {
+		await readerPage.goto(shareUrl);
+		await readerPage.getByRole('textbox', { name: 'Your email' }).fill(inWhitelistReader);
+		await readerPage.getByRole('button', { name: 'Send my link' }).click();
+		await expect(readerPage.getByRole('heading', { name: /check your email/i })).toBeVisible();
+
+		const magicLink = await getLatestMagicLink(inWhitelistReader);
+
+		// Simulate a mail-gateway link scanner GET-prefetching the delivered link. The
+		// GET renders the interstitial but must NOT consume the token (the old
+		// GET-consume bug would burn it here).
+		const prefetch = await readerPage.request.get(magicLink, { failOnStatusCode: false });
+		expect(prefetch.status()).toBe(200);
+
+		// The reader then clicks: the token is still live, so the confirm POST consumes
+		// it and serves the report. If the prefetch had consumed the token, this would
+		// have bounced to the expired state instead.
+		await readerPage.goto(magicLink);
+		await readerPage.getByRole('button', { name: 'Confirm and view report' }).click();
 		await expect(readerPage.getByRole('application')).toBeVisible();
 	} finally {
 		await readerContext.close();

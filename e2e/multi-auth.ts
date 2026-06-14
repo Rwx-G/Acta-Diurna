@@ -48,8 +48,12 @@ export async function signInAsAuthor(page: Page, email: string): Promise<void> {
 	await page.getByRole('button', { name: 'Send sign-in link' }).click();
 	await expect(page.getByRole('status')).toContainText('Check your email');
 
+	// The emailed link lands on the prefetch-safe interstitial (A1): the GET peeks
+	// without consuming, so the author confirms with a same-origin POST to consume the
+	// token and open the workspace.
 	const magicLink = await getLatestMagicLink(email);
 	await page.goto(magicLink);
+	await page.getByRole('button', { name: 'Confirm sign-in' }).click();
 	await expect(page).toHaveURL(/\/reports$/);
 }
 
