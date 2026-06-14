@@ -91,8 +91,17 @@ vi.mock('$lib/server/mode', () => ({
 	isMultiAuthor: () => false
 }));
 
-vi.mock('$lib/server/db/client', () => ({
-	getDb: () => ({
+// A forked series is logged as a warning by orderByPredecessorChain; mock the
+// logger so the warn is assertable and never spams the test output.
+const loggerState = vi.hoisted(() => ({ warn: vi.fn() }));
+vi.mock('$lib/server/logger', () => ({ logger: loggerState }));
+
+vi.mock('$lib/server/db/client', () => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const db: any = {
+		// create/duplicate run their series + report writes in one transaction; the
+		// mock models it as a pass-through so the same builder serves tx and db.
+		transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
 		insert: (table: unknown) => ({
 			values: (row: Record<string, unknown>) => {
 				// A report-series insert is tracked separately so the report-count
@@ -151,23 +160,24 @@ vi.mock('$lib/server/db/client', () => ({
 					orderBy: (order: SQL) => {
 						ordered = true;
 						dbState.orderBys.push(decodeOrderBy(order));
-						// The series-issues read ends at orderBy (no limit); resolve to the
-						// reports of that series so the predecessor chain assembles.
-						if (seriesId !== null) {
-							const rows = [...dbState.rowsById.values()].filter(
-								(row) => String(row.seriesId) === String(seriesId!.value)
-							);
-							return Promise.resolve(rows);
-						}
+						// The series-issues read is .where(series_id).orderBy().limit(1000):
+						// stay chainable so the trailing .limit() resolves to the series rows.
 						return builder;
 					},
 					limit: (count: number) => {
-						// A lookup short-circuits to the keyed row; a list (an orderBy ran)
-						// returns the ordered rows up to the requested count (limit + 1).
+						// A lookup short-circuits to the keyed row; the series-issues read
+						// (an eq(series_id) where + orderBy) resolves to that series' reports
+						// up to the cap; a plain list returns the ordered rows up to limit + 1.
 						if (lookup !== null && !ordered) {
 							if (lookup.column !== 'id') return Promise.resolve([]);
 							const row = dbState.rowsById.get(String(lookup.value));
 							return Promise.resolve(row ? [row] : []);
+						}
+						if (seriesId !== null) {
+							const rows = [...dbState.rowsById.values()].filter(
+								(row) => String(row.seriesId) === String(seriesId!.value)
+							);
+							return Promise.resolve(rows.slice(0, count));
 						}
 						dbState.listLimits.push(count);
 						return Promise.resolve([...dbState.rowsById.values()].slice(0, count));
@@ -211,8 +221,9 @@ vi.mock('$lib/server/db/client', () => ({
 				return Promise.resolve();
 			}
 		})
-	})
-}));
+	};
+	return { getDb: () => db };
+});
 
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -283,6 +294,7 @@ beforeEach(() => {
 	dbState.updates = [];
 	dbState.deleteFilters = [];
 	dbState.selectProjections = [];
+	loggerState.warn.mockClear();
 });
 
 describe('createReport', () => {
@@ -493,6 +505,29 @@ describe('listSeriesIssues', () => {
 		]);
 		expect(issues[0].predecessorId).toBeNull();
 		expect(issues[1].predecessorId).toBe(issues[0].id);
+	});
+
+	it('keeps every branch of a forked series (two issues sharing a predecessor), no silent drop', async () => {
+		seedSeries();
+		// A corrupted fork: issue2 AND issue3 both point back at issue1. A
+		// Map<predecessor, issue> would let the later sibling overwrite the earlier
+		// and drop a branch; the chain walk must keep BOTH, deterministically in
+		// input order (the issues query orders by created_at, id).
+		seedIssue('01970000-0000-7000-8000-000000000001', null);
+		seedIssue('01970000-0000-7000-8000-000000000002', '01970000-0000-7000-8000-000000000001');
+		seedIssue('01970000-0000-7000-8000-000000000003', '01970000-0000-7000-8000-000000000001');
+
+		const issues = await listSeriesIssues(SERIES_ID, TEST_SCOPE);
+
+		// All three issues are present (none dropped), head first, then both branches
+		// in input order.
+		expect(issues.map((issue) => issue.id)).toEqual([
+			'01970000-0000-7000-8000-000000000001',
+			'01970000-0000-7000-8000-000000000002',
+			'01970000-0000-7000-8000-000000000003'
+		]);
+		// The corrupted fork is observable in the logs, not silently swallowed.
+		expect(loggerState.warn).toHaveBeenCalled();
 	});
 
 	it('returns a single-issue series as a one-element chain', async () => {

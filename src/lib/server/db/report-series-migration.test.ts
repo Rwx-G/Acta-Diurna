@@ -18,8 +18,11 @@ const MIGRATION = '0017_report_series_lineage';
 describe('report series lineage migration (story 9.1)', () => {
 	const sql = readFileSync(join(DRIZZLE_DIR, `${MIGRATION}.sql`), 'utf8');
 
-	it('creates the report_series table with an owner FK', () => {
+	it('creates the report_series table with a NOT NULL owner FK', () => {
 		expect(sql).toContain('CREATE TABLE "report_series"');
+		// A series ALWAYS has an owner: the row is app-inserted with one (backfill or
+		// createSeries), never a transient null, so owner_id is NOT NULL on create.
+		expect(sql).toContain('"owner_id" uuid NOT NULL');
 		expect(sql).toContain(
 			'ALTER TABLE "report_series" ADD CONSTRAINT "report_series_owner_id_authors_id_fk"'
 		);

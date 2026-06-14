@@ -42,6 +42,9 @@ function uniqueViolation(): Error & { code: string } {
 // ANDs in. The skeletons insert enforces the (owner_id, name) unique index.
 const skeletonStore = vi.hoisted(() => ({ rows: new Map<string, Record<string, unknown>>() }));
 const reportStore = vi.hoisted(() => ({ rows: new Map<string, Record<string, unknown>>() }));
+// instantiateReport mints a report_series row (story 9.1); tracked apart so it
+// never lands in the report store.
+const seriesStore = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[] }));
 
 function decodeEqFilters(filter: unknown): { column: string; value: unknown }[] {
 	const chunks = (filter as { queryChunks?: unknown[] }).queryChunks ?? [];
@@ -68,20 +71,28 @@ function matches(
 	);
 }
 
-vi.mock('$lib/server/db/client', () => ({
-	getDb: () => ({
+vi.mock('$lib/server/db/client', () => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const db: any = {
+		// instantiateReport -> createReportWithDocument runs its series + report
+		// writes in one transaction; model it as a pass-through over the same builder.
+		transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
 		insert: () => ({
 			values: (row: Record<string, unknown>) => {
-				// A document column distinguishes the two tables; the skeleton insert
-				// enforces (owner_id, name) uniqueness, the report insert does not.
+				// A document column distinguishes the tables; the skeleton insert enforces
+				// (owner_id, name) uniqueness, the report insert does not, and a series row
+				// (id + ownerId only, no document) is tracked separately so it never
+				// pollutes the report store.
 				if ('schemaVersion' in row && !('status' in row)) {
 					const clash = [...skeletonStore.rows.values()].some(
 						(existing) => existing.name === row.name && existing.ownerId === row.ownerId
 					);
 					if (clash) return Promise.reject(uniqueViolation());
 					skeletonStore.rows.set(String(row.id), row);
-				} else {
+				} else if ('document' in row) {
 					reportStore.rows.set(String(row.id), row);
+				} else {
+					seriesStore.rows.push(row);
 				}
 				return Promise.resolve();
 			}
@@ -121,8 +132,9 @@ vi.mock('$lib/server/db/client', () => ({
 				return Promise.resolve();
 			}
 		})
-	})
-}));
+	};
+	return { getDb: () => db };
+});
 
 function draftFrom(title: string, ...brickIds: string[]) {
 	return {
@@ -140,6 +152,7 @@ async function expectNotFound(promise: Promise<unknown>): Promise<void> {
 beforeEach(() => {
 	skeletonStore.rows.clear();
 	reportStore.rows.clear();
+	seriesStore.rows = [];
 });
 
 describe('skeleton tenancy (multi mode)', () => {

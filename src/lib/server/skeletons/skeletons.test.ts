@@ -63,8 +63,13 @@ vi.mock('$lib/server/mode', () => ({
 
 const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 
-vi.mock('$lib/server/db/client', () => ({
-	getDb: () => ({
+vi.mock('$lib/server/db/client', () => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const db: any = {
+		// instantiateReport -> createReportWithDocument runs its series + report
+		// writes in one transaction; model it as a pass-through so the same builder
+		// serves tx and db.
+		transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
 		insert: (table: unknown) => ({
 			values: (row: Record<string, unknown>) => {
 				const tableName = getTableName(table as never);
@@ -141,8 +146,9 @@ vi.mock('$lib/server/db/client', () => ({
 				return Promise.resolve();
 			}
 		})
-	})
-}));
+	};
+	return { getDb: () => db };
+});
 
 const UUIDV7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 

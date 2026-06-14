@@ -77,8 +77,14 @@ vi.mock('$lib/server/db/client', () => {
 				})
 			}),
 			insert: (table: unknown) => ({
-				values: (row: { id: string; ownerId: string | null }) => {
-					if (nameOf(table) === 'report_series') dbState.series.push(row);
+				// The series backfill batches a multi-row insert (one row per orphan);
+				// createSeries paths pass a single row. Accept both shapes.
+				values: (
+					rows: { id: string; ownerId: string | null } | { id: string; ownerId: string | null }[]
+				) => {
+					if (nameOf(table) === 'report_series') {
+						for (const row of Array.isArray(rows) ? rows : [rows]) dbState.series.push(row);
+					}
 					return Promise.resolve();
 				}
 			}),

@@ -69,8 +69,12 @@ function reportMatches(filters: { column: string; value: unknown }[]): Record<st
 	);
 }
 
-vi.mock('$lib/server/db/client', () => ({
-	getDb: () => ({
+vi.mock('$lib/server/db/client', () => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const db: any = {
+		// create/duplicate run their series + report writes in one transaction; model
+		// it as a pass-through so the same owner-aware builder serves tx and db.
+		transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
 		insert: () => ({
 			values: (row: Record<string, unknown>) => {
 				if ('document' in row) reportStore.rows.set(String(row.id), row);
@@ -112,25 +116,29 @@ vi.mock('$lib/server/db/client', () => ({
 								.slice(0, count);
 						}
 						if (seriesFilter) {
+							// The issues query is owner-scoped (story 9.1 fix): honour an owner_id
+							// predicate so a foreign-owned issue carrying this series id is filtered
+							// out, not leaked. In single mode there is no owner predicate (no-op).
+							const ownerFilterEntry = filters.find((f) => f.column === 'owner_id');
 							return [...reportStore.rows.values()]
-								.filter((r) => r.seriesId === seriesFilter.value)
+								.filter(
+									(r) =>
+										r.seriesId === seriesFilter.value &&
+										(ownerFilterEntry === undefined || r.ownerId === ownerFilterEntry.value)
+								)
 								.slice(0, count);
 						}
 						return reportMatches(filters).slice(0, count);
 					};
-					return {
+					const chain = {
 						limit: (count: number) => Promise.resolve(resolve(count)),
-						// The series-issues read ends at orderBy (no limit); resolve there too.
-						orderBy: () => {
-							const seriesFilter2 = filters.find((f) => f.column === 'series_id');
-							if (seriesFilter2) {
-								return Promise.resolve(
-									[...reportStore.rows.values()].filter((r) => r.seriesId === seriesFilter2.value)
-								);
-							}
-							return { limit: (count: number) => Promise.resolve(resolve(count)) };
-						}
+						// The series-issues read is .where(series_id[, owner]).orderBy().limit():
+						// stay chainable so the trailing .limit() resolves the series rows. The
+						// owner predicate already AND'd into `filters`, so a cross-author owner
+						// yields no match (the issues query is owner-scoped, story 9.1 fix).
+						orderBy: () => chain
 					};
+					return chain;
 				};
 				const builder = {
 					// The list path is now .$dynamic() -> .where(owner[, keyset]) ->
@@ -164,8 +172,9 @@ vi.mock('$lib/server/db/client', () => ({
 				return Promise.resolve();
 			}
 		})
-	})
-}));
+	};
+	return { getDb: () => db };
+});
 
 function validDocument(title: string): DocumentV1Input {
 	return {
@@ -277,6 +286,25 @@ describe('series tenancy (multi mode, story 9.1)', () => {
 		const issues = await listSeriesIssues(B_SERIES, AUTHOR_B);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].id).toBe('01970000-0000-7000-8000-0000000000b1');
+	});
+
+	it("does not leak a foreign-owned issue that carries the owner's series id (issues query owner-scoped)", async () => {
+		// B owns the series and a legitimate issue in it; a corrupted row owned by A
+		// somehow carries B's series id. The issues query ANDs the owner predicate, so
+		// B's read returns only B's issues - the foreign-owned row never leaks even
+		// though it points at B's series.
+		seriesStore.rows.push({ id: B_SERIES, ownerId: AUTHOR_B.authorId });
+		seedSeriesIssue('01970000-0000-7000-8000-0000000000b1', AUTHOR_B.authorId, B_SERIES, null);
+		seedSeriesIssue(
+			'01970000-0000-7000-8000-0000000000a9',
+			AUTHOR_A.authorId,
+			B_SERIES,
+			'01970000-0000-7000-8000-0000000000b1'
+		);
+
+		const issues = await listSeriesIssues(B_SERIES, AUTHOR_B);
+
+		expect(issues.map((issue) => issue.id)).toEqual(['01970000-0000-7000-8000-0000000000b1']);
 	});
 });
 
