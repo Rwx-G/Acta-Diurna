@@ -12,12 +12,12 @@
  * revocation/expiry neutral page (story 3.5) build on one status function; this
  * story does NOT yet enforce that status at the route.
  */
-import { and, desc, eq, isNull } from 'drizzle-orm';
-import type { AuthorScope } from '$lib/server/authors';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { ownerFilter, type AuthorScope } from '$lib/server/authors';
 import { destroyReaderSessionsForShare } from '$lib/server/auth/sessions';
 import { getDb } from '$lib/server/db/client';
 import { UUID_PATTERN, uuidv7 } from '$lib/server/db/ids';
-import { shares, type ShareRow } from '$lib/server/db/schema';
+import { reports, shares, type ShareRow } from '$lib/server/db/schema';
 import { assertShareable, getReport } from '$lib/server/documents/reports';
 import { isMultiAuthor } from '$lib/server/mode';
 import { AppError } from '$lib/server/problem';
@@ -256,19 +256,22 @@ export async function getShareByToken(rawToken: string): Promise<ResolvedShare |
  */
 export async function ownsShare(shareId: string, scope: AuthorScope): Promise<boolean> {
 	if (!UUID_PATTERN.test(shareId)) return false;
+	// One guarded JOIN replaces the prior two round-trips (resolve report id, then a
+	// scoped getReport): shares JOIN reports ON report_id, filtered on the share id
+	// AND the owner predicate (E4). In single mode `ownerFilter` is undefined and the
+	// WHERE is the bare share-id match through the join (any existing share is owned),
+	// byte-identical in result to the prior single-mode behavior. In multi mode the
+	// owner predicate ANDs in, so a foreign share misses and this is false - the same
+	// no-existence-oracle result the scoped getReport raised.
+	const owner = ownerFilter(scope, reports.ownerId);
+	const where = owner ? and(eq(shares.id, shareId), owner) : eq(shares.id, shareId);
 	const rows = await getDb()
-		.select({ reportId: shares.reportId })
+		.select({ id: shares.id })
 		.from(shares)
-		.where(eq(shares.id, shareId))
+		.innerJoin(reports, eq(shares.reportId, reports.id))
+		.where(where)
 		.limit(1);
-	const row = rows[0];
-	if (!row) return false;
-	try {
-		await getReport(row.reportId, scope);
-		return true;
-	} catch {
-		return false;
-	}
+	return rows.length > 0;
 }
 
 /**
@@ -322,11 +325,25 @@ export async function setShareMode(
  * existing share is owned by the one implicit author, so behavior is unchanged.
  */
 export async function revokeShare(shareId: string, scope: AuthorScope): Promise<void> {
+	// Ownership gates BOTH the revoke and the session sweep (story 8.2): a foreign
+	// share must be a full no-op, never a sweep that disrupts another author's
+	// readers. The gate is now ONE JOIN query (E4); it stays the gate so the sweep
+	// runs ONLY for an owned share - the same per-load tenancy guarantee as before.
 	if (!(await ownsShare(shareId, scope))) return;
-	await getDb()
-		.update(shares)
-		.set({ revokedAt: new Date() })
-		.where(and(eq(shares.id, shareId), isNull(shares.revokedAt)));
+	// The guarded UPDATE is owner-scoped too (defense in depth, E4): `report_id IN
+	// (owned reports)` ANDs in only in multi mode. Single mode omits it (ownerFilter
+	// undefined), keeping the UPDATE WHERE byte-identical to the prior `and(eq(id),
+	// isNull(revoked_at))`. The isNull guard preserves idempotency: a second revoke
+	// matches zero rows and keeps the original instant.
+	const owner = ownerFilter(scope, reports.ownerId);
+	const guard = owner
+		? and(
+				eq(shares.id, shareId),
+				isNull(shares.revokedAt),
+				inArray(shares.reportId, getDb().select({ id: reports.id }).from(reports).where(owner))
+			)
+		: and(eq(shares.id, shareId), isNull(shares.revokedAt));
+	await getDb().update(shares).set({ revokedAt: new Date() }).where(guard);
 	await destroyReaderSessionsForShare(shareId);
 }
 

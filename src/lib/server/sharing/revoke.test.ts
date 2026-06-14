@@ -14,8 +14,8 @@ const dbState = vi.hoisted(() => ({
 
 const sweep = vi.hoisted(() => vi.fn());
 
-// Decode `and(eq(id, value), isNull(revoked_at))` into the id it filters on.
-function decodeUpdateFilter(filter: unknown): string {
+/** Flattens a (possibly nested) drizzle SQL filter into its leaf chunks. */
+function flattenChunks(filter: unknown): unknown[] {
 	const chunks = (filter as { queryChunks: unknown[] }).queryChunks;
 	const flat: unknown[] = [];
 	const walk = (node: unknown): void => {
@@ -26,13 +26,25 @@ function decodeUpdateFilter(filter: unknown): string {
 		}
 	};
 	for (const chunk of chunks) walk(chunk);
-	const idParam = flat.find((node): node is Param => node instanceof Param);
+	return flat;
+}
+
+/** The first `eq(column, value)` param value in a filter - the share id both filters carry. */
+function decodeShareId(filter: unknown): string {
+	const idParam = flattenChunks(filter).find((node): node is Param => node instanceof Param);
+	if (!idParam) throw new Error('mock expected an eq(id, value) in the filter');
+	return idParam.value as string;
+}
+
+// Decode `and(eq(id, value), isNull(revoked_at))` into the id it filters on,
+// asserting the isNull(revoked_at) idempotency guard is still present.
+function decodeUpdateFilter(filter: unknown): string {
+	const flat = flattenChunks(filter);
 	const columns = flat.filter((node): node is Column => node instanceof Column);
 	// The filter must reference both `id` (the eq) and `revoked_at` (the isNull
 	// guard); a regression dropping the guard would not reference revoked_at.
 	expect(columns.map((c) => c.name)).toEqual(expect.arrayContaining(['id', 'revoked_at']));
-	if (!idParam) throw new Error('mock expected an eq(id, value) in the update filter');
-	return idParam.value as string;
+	return decodeShareId(filter);
 }
 
 vi.mock('$lib/server/mode', () => ({
@@ -42,18 +54,23 @@ vi.mock('$lib/server/mode', () => ({
 
 const TEST_SCOPE = { authorId: '01970000-0000-7000-8000-0000000000aa' };
 
-const REPORT_ID = '0197b300-0000-7000-8000-000000000aaa';
-
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
-		// `ownsShare` (story 8.2) resolves the share's report id, then runs the
-		// SCOPED getReport. In single mode the scoped read is a no-op, so any existing
-		// share resolves as owned; the lookup returns a reportId for any share id so
-		// the ownership gate passes and the revoke/sweep behavior is unchanged.
+		// `ownsShare` (story 8.2, E4) is now ONE guarded JOIN: shares JOIN reports
+		// ON report_id, filtered on the share id (single mode: no owner predicate).
+		// The mock resolves to a row only when the share id is a SEEDED row, so an
+		// unknown share id misses the JOIN and `ownsShare` is false - the real
+		// tenancy behavior the prior simplistic always-found mock masked.
 		select: () => ({
 			from: () => ({
-				where: () => ({
-					limit: () => Promise.resolve([{ reportId: REPORT_ID }])
+				innerJoin: () => ({
+					where: (filter: SQL) => ({
+						limit: () => {
+							const id = decodeShareId(filter);
+							const exists = dbState.rows.some((r) => r.id === id);
+							return Promise.resolve(exists ? [{ id }] : []);
+						}
+					})
 				})
 			})
 		}),
@@ -118,11 +135,26 @@ describe('revokeShare', () => {
 		expect(sweep).toHaveBeenCalledTimes(2);
 	});
 
-	it('sweeps sessions even for an unknown share id (silent, no throw)', async () => {
+	it('is a silent no-op for an unknown share id (no update, no sweep)', async () => {
+		// E4: ownership now gates via a JOIN, so an unknown share id misses the JOIN
+		// and is a full no-op - neither the guarded UPDATE nor the session sweep runs.
+		// This is the real tenancy behavior the prior always-found mock masked.
 		await expect(
 			revokeShare('00000000-0000-7000-8000-00000000ffff', TEST_SCOPE)
 		).resolves.toBeUndefined();
-		expect(dbState.updateCalls[0].matched).toBe(0);
-		expect(sweep).toHaveBeenCalledOnce();
+		expect(dbState.updateCalls).toHaveLength(0);
+		expect(sweep).not.toHaveBeenCalled();
+	});
+
+	it('is a silent no-op for a share the author does not own (no update, no sweep)', async () => {
+		// A foreign share never appears in this author's owned set, so the JOIN gate
+		// is false: no revoke, no session sweep - an author can never disrupt another
+		// author's share (story 8.2 tenancy, preserved by E4's single-query gate).
+		// Modeled here as a share id absent from the seeded (owned) rows.
+		await expect(
+			revokeShare('0197b300-0000-7000-8000-0000000000ff', TEST_SCOPE)
+		).resolves.toBeUndefined();
+		expect(dbState.updateCalls).toHaveLength(0);
+		expect(sweep).not.toHaveBeenCalled();
 	});
 });

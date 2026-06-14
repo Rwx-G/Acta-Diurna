@@ -141,21 +141,27 @@ function isSharesQuery(filter: unknown): boolean {
 }
 
 vi.mock('$lib/server/db/client', () => ({
-	getDb: () => ({
-		transaction: (fn: (t: typeof tx) => Promise<void>) => fn(tx),
-		select: () => ({
-			from: () => ({
-				where: (filter: unknown) => ({
-					limit: () =>
-						Promise.resolve(
-							isSharesQuery(filter) ? matchesShares(filter) : matches(filter).slice(0, 1)
-						),
-					orderBy: () =>
-						Promise.resolve(matches(filter).sort((a, b) => a.email.localeCompare(b.email)))
-				})
+	getDb: () => {
+		// `ownsShare` (E4) is now a JOIN: shares JOIN reports ON report_id, filtered on
+		// the share id AND (multi mode) the owner predicate. The recipients reads do
+		// NOT join, so `innerJoin` is an optional passthrough that returns the same
+		// `where` builder either way.
+		const fromBuilder = {
+			innerJoin: () => fromBuilder,
+			where: (filter: unknown) => ({
+				limit: () =>
+					Promise.resolve(
+						isSharesQuery(filter) ? matchesShares(filter) : matches(filter).slice(0, 1)
+					),
+				orderBy: () =>
+					Promise.resolve(matches(filter).sort((a, b) => a.email.localeCompare(b.email)))
 			})
-		})
-	})
+		};
+		return {
+			transaction: (fn: (t: typeof tx) => Promise<void>) => fn(tx),
+			select: () => ({ from: () => fromBuilder })
+		};
+	}
 }));
 
 const SHARE_ID = '0197b300-0000-7000-8000-000000000001';
