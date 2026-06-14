@@ -1,7 +1,8 @@
 <script lang="ts" module>
 	import type { BindingDelta } from '$lib/schema';
 
-	const DIRECTION_GLYPH = { up: '▲', down: '▼', flat: '▬' } as const;
+	import { DIRECTION_GLYPH } from './direction.ts';
+
 	const DIRECTION_LABEL = { up: 'up', down: 'down', flat: 'no change' } as const;
 
 	// Fixed locale + sign so the figure is byte-identical on the server and any
@@ -43,7 +44,12 @@
 	// change") for assistive tech. When the binding carries no `delta` (a first issue,
 	// no comparable prior value, a non-numeric value) the indicator is OMITTED
 	// entirely - never a placeholder or a misleading zero.
-	let { delta, baselineLabel }: { delta?: BindingDelta; baselineLabel?: string } = $props();
+	//
+	// The baseline label is the fixed "vs previous issue": a series compares each issue
+	// to its predecessor by construction. A dynamic label (the predecessor's issue label
+	// or publish date) needs a schema field to back it and is not in 9.4 scope, so it is
+	// not exposed as a prop until that field exists.
+	let { delta }: { delta?: BindingDelta } = $props();
 </script>
 
 {#if delta !== undefined}
@@ -51,7 +57,7 @@
 		<span class="glyph" aria-hidden="true">{DIRECTION_GLYPH[delta.direction]}</span>
 		<span class="sr-only">{DIRECTION_LABEL[delta.direction]}</span>
 		<span class="figure">{formatDelta(delta)}</span>
-		<span class="baseline">{baselineLabel ?? 'vs previous issue'}</span>
+		<span class="baseline">vs previous issue</span>
 	</p>
 {/if}
 

@@ -3,10 +3,10 @@
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
 	import DataAsOf from './DataAsOf.svelte';
 	import KpiDelta from './KpiDelta.svelte';
+	import { DIRECTION_GLYPH } from './direction.ts';
 
 	let { block }: { block: KpiBlock } = $props();
 
-	const TREND_GLYPH = { up: '▲', down: '▼', flat: '▬' } as const;
 	const TREND_LABEL = { up: 'trending up', down: 'trending down', flat: 'unchanged' } as const;
 
 	// A binding-only KPI block (no static items, awaiting Epic 2 data) renders a
@@ -28,7 +28,7 @@
 							>{/if}
 						{#if item.trend}
 							<span class="trend trend-{item.trend}">
-								<span aria-hidden="true">{TREND_GLYPH[item.trend]}</span>
+								<span aria-hidden="true">{DIRECTION_GLYPH[item.trend]}</span>
 								<span class="sr-only">{TREND_LABEL[item.trend]}</span>
 							</span>
 						{/if}

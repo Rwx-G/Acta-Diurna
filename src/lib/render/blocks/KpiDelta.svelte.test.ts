@@ -54,28 +54,9 @@ describe('KpiDelta render', () => {
 		}
 	);
 
-	it('renders the signed figure and the default baseline label', () => {
+	it('renders the signed figure and the fixed baseline label', () => {
 		const { container } = render(KpiDelta, { delta: delta() });
 		expect(container.querySelector('.figure')?.textContent?.trim()).toBe('+8 (+8%)');
 		expect(container.querySelector('.baseline')?.textContent?.trim()).toBe('vs previous issue');
-	});
-
-	it('uses a supplied baseline label when given', () => {
-		const { container } = render(KpiDelta, {
-			delta: delta(),
-			baselineLabel: 'vs 2026-W23'
-		});
-		expect(container.querySelector('.baseline')?.textContent?.trim()).toBe('vs 2026-W23');
-	});
-
-	it('escapes an HTML-looking baseline label instead of rendering it (XSS rule)', () => {
-		const { container } = render(KpiDelta, {
-			delta: delta(),
-			baselineLabel: '<script>alert(1)</script>'
-		});
-		expect(container.querySelector('script')).toBeNull();
-		expect(container.querySelector('.baseline')?.textContent).toContain(
-			'<script>alert(1)</script>'
-		);
 	});
 });
