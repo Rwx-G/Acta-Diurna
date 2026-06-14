@@ -6,7 +6,8 @@ import { deleteDraft, duplicateReport, listReports } from '$lib/server/documents
 import { AppError } from '$lib/server/problem';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	return { reports: await listReports(await resolveAuthorScope(locals.authorSession?.authorId)) };
+	const page = await listReports(await resolveAuthorScope(locals.authorSession?.authorId));
+	return { reports: page.items };
 };
 
 export const actions: Actions = {

@@ -113,6 +113,22 @@
 			{/each}
 		</tbody>
 	</table>
+
+	<!-- A non-null nextCursor means older accesses remain past this page: surface a
+	     "Load older" control so the trail is never silently cut off. It carries the
+	     active report/reader filters so paging composes with filtering. -->
+	{#if data.nextCursor}
+		<form method="GET" class="load-older">
+			{#if data.filter.reportId}
+				<input type="hidden" name="report" value={data.filter.reportId} />
+			{/if}
+			{#if data.filter.readerId}
+				<input type="hidden" name="reader" value={data.filter.readerId} />
+			{/if}
+			<input type="hidden" name="cursor" value={data.nextCursor} />
+			<button type="submit">Load older</button>
+		</form>
+	{/if}
 {/if}
 
 <style>
@@ -240,5 +256,27 @@
 		font-size: var(--text-sm);
 		color: var(--color-ink-65);
 		white-space: nowrap;
+	}
+
+	.load-older {
+		display: flex;
+		justify-content: center;
+		max-width: var(--content-width);
+		margin: var(--space-4) auto 0;
+	}
+
+	.load-older button {
+		padding: var(--space-2) var(--space-4);
+		font: inherit;
+		color: var(--color-ink);
+		background: var(--color-surface);
+		border: 1px solid var(--color-ink-25);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+	}
+
+	.load-older button:hover {
+		border-color: var(--color-purple);
+		color: var(--color-purple);
 	}
 </style>

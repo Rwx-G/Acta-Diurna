@@ -26,7 +26,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		ai: ai
 			? { configured: true as const, baseUrl: ai.baseUrl, model: ai.model, enabled: isAiEnabled() }
 			: null,
-		tokens: await listApiTokens(await resolveAuthorScope(locals.authorSession?.authorId))
+		tokens: (await listApiTokens(await resolveAuthorScope(locals.authorSession?.authorId))).items
 	};
 };
 

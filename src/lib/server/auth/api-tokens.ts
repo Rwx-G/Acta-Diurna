@@ -20,10 +20,18 @@
  * no expiry.
  */
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
 import { ownerFilter, ownerForInsert, type AuthorScope } from '../authors';
 import { hashToken } from '../crypto/hash-token';
 import { getDb } from '../db/client';
+import {
+	cursorPredicate,
+	decodeCursor,
+	pageSize,
+	toPage,
+	type Page,
+	type PageRequest
+} from '../db/cursor';
 import { uuidv7 } from '../db/ids';
 import { apiTokens, type ApiTokenRow } from '../db/schema';
 
@@ -35,14 +43,6 @@ const PAT_BYTES = 32;
 
 /** Length of the non-secret display fragment kept for the list UI (last N chars of the raw token). */
 const DISPLAY_FRAGMENT_LENGTH = 4;
-
-/**
- * Safety ceiling on the token-management list (1.5 performance audit). A revoke-only
- * V1 keeps revoked rows for the audit trail, so the table grows over a long-lived
- * instance; this bounds the query so the settings page load stays flat. Tokens are
- * minted by hand and sit far below this, so truncation is not reachable in practice.
- */
-const MAX_TOKENS_LISTED = 100;
 
 /** A token's lifecycle state, derived from `revokedAt`. V1 has no expiry, so a token is active until revoked. */
 export type ApiTokenStatus = 'active' | 'revoked';
@@ -120,19 +120,31 @@ export async function createApiToken(name: string, scope: AuthorScope): Promise<
 }
 
 /**
- * Lists the author's tokens, newest first, for the management UI, capped at
- * {@link MAX_TOKENS_LISTED}. Returns id, name, display fragment, timestamps, and
- * the derived status - NEVER the raw token (it is gone after creation) and never
- * the hash. The cap is a safety ceiling, not pagination.
+ * Lists a page of the author's tokens, newest first, for the management UI, with
+ * keyset (cursor) pagination ({@link Page}). Returns id, name, display fragment,
+ * timestamps, and the derived status - NEVER the raw token (it is gone after
+ * creation) and never the hash. The keyset is `(created_at DESC, id DESC)`; an
+ * absent cursor starts from the newest, `nextCursor` signals a further page
+ * (full-audit C2). A revoke-only V1 keeps revoked rows for the audit trail, so the
+ * table grows over a long-lived instance and paging keeps the settings load flat.
  */
-export async function listApiTokens(scope: AuthorScope): Promise<ApiTokenSummary[]> {
-	const rows = await getDb()
-		.select()
-		.from(apiTokens)
-		.where(ownerFilter(scope, apiTokens.ownerId))
-		.orderBy(desc(apiTokens.createdAt))
-		.limit(MAX_TOKENS_LISTED);
-	return rows.map(toSummary);
+export async function listApiTokens(
+	scope: AuthorScope,
+	page: PageRequest = {}
+): Promise<Page<ApiTokenSummary>> {
+	const limit = pageSize(page.limit);
+	const predicates: SQL[] = [];
+	const owner = ownerFilter(scope, apiTokens.ownerId);
+	if (owner) predicates.push(owner);
+	const keyset = cursorPredicate(decodeCursor(page.cursor), apiTokens.createdAt, apiTokens.id);
+	if (keyset) predicates.push(keyset);
+
+	let query = getDb().select().from(apiTokens).$dynamic();
+	if (predicates.length > 0) {
+		query = query.where(predicates.length === 1 ? predicates[0] : and(...predicates));
+	}
+	const rows = await query.orderBy(desc(apiTokens.createdAt), desc(apiTokens.id)).limit(limit + 1);
+	return toPage(rows.map(toSummary), limit, (row) => ({ timestamp: row.createdAt, id: row.id }));
 }
 
 /**

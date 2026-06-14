@@ -382,18 +382,43 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 				get: {
 					summary: 'List reports',
 					operationId: 'listReports',
+					description:
+						'Lists a page of reports, newest first. Keyset (cursor) paginated: pass the prior ' +
+						'response `nextCursor` back as `?cursor=` to fetch the next page; a null `nextCursor` ' +
+						'is the last page. `?limit=` sets the page size (clamped server-side).',
+					parameters: [
+						{
+							name: 'cursor',
+							in: 'query',
+							required: false,
+							description: 'An opaque page cursor from a prior response `nextCursor`.',
+							schema: { type: 'string' }
+						},
+						{
+							name: 'limit',
+							in: 'query',
+							required: false,
+							description: 'The page size; clamped to the server maximum.',
+							schema: { type: 'integer', minimum: 1, maximum: 500 }
+						}
+					],
 					responses: {
 						'200': {
-							description: 'The reports, newest first, in a forward-compatible envelope.',
+							description: 'A page of reports, newest first, with the cursor for the next page.',
 							content: {
 								'application/json': {
 									schema: {
 										type: 'object',
-										required: ['items'],
+										required: ['items', 'nextCursor'],
 										properties: {
 											items: {
 												type: 'array',
 												items: { $ref: '#/components/schemas/ReportSummary' }
+											},
+											nextCursor: {
+												type: ['string', 'null'],
+												description:
+													'The cursor to fetch the next page, or null when this is the last page.'
 											}
 										}
 									}

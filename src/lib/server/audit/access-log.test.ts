@@ -114,7 +114,8 @@ vi.mock('$lib/server/db/client', () => ({
 	})
 }));
 
-const { listAccessRecords, MAX_ACCESS_RECORDS_LISTED } = await import('./access-log.ts');
+const { listAccessRecords } = await import('./access-log.ts');
+const { DEFAULT_PAGE_SIZE } = await import('$lib/server/db/cursor');
 
 const AUTHOR = '01970000-0000-7000-8000-0000000000aa';
 const REPORT_A = '01970000-0000-7000-8000-0000000000b1';
@@ -125,7 +126,7 @@ describe('listAccessRecords', () => {
 		reset();
 		rows = [
 			{
-				id: 'r1',
+				id: '01970000-0000-7000-8000-0000000000d1',
 				reportId: REPORT_A,
 				reportTitle: 'Weekly',
 				readerIdentityId: READER_A,
@@ -134,7 +135,7 @@ describe('listAccessRecords', () => {
 			}
 		];
 
-		const entries = await listAccessRecords({ authorId: AUTHOR });
+		const page = await listAccessRecords({ authorId: AUTHOR });
 
 		expect(captured.joins).toBe(2);
 		expect(captured.projection).toEqual([
@@ -146,8 +147,61 @@ describe('listAccessRecords', () => {
 			'accessed_at'
 		]);
 		expect(captured.orderByDesc).toBe('accessed_at');
-		expect(captured.limit).toBe(MAX_ACCESS_RECORDS_LISTED);
-		expect(entries).toEqual(rows);
+		// limit + 1 over the default page size: the over-fetch is how a further page
+		// is detected so the audit trail is never silently truncated.
+		expect(captured.limit).toBe(DEFAULT_PAGE_SIZE + 1);
+		// A single row is under the page size, so this is the last page.
+		expect(page).toEqual({ items: rows, nextCursor: null });
+	});
+
+	it('signals a further page: an over-fetch yields a non-null nextCursor and drops the surplus', async () => {
+		reset();
+		// Two rows returned for a requested page of 1 (the service fetches limit + 1):
+		// the surplus row tells the caller older accesses remain and is dropped.
+		const newer = {
+			id: '01970000-0000-7000-8000-0000000000d2',
+			reportId: REPORT_A,
+			reportTitle: 'Weekly',
+			readerIdentityId: READER_A,
+			readerEmail: 'reader@example.com',
+			accessedAt: new Date('2026-06-12T10:00:00.000Z')
+		};
+		const older = {
+			id: '01970000-0000-7000-8000-0000000000d1',
+			reportId: REPORT_A,
+			reportTitle: 'Weekly',
+			readerIdentityId: READER_A,
+			readerEmail: 'reader@example.com',
+			accessedAt: new Date('2026-06-12T09:00:00.000Z')
+		};
+		rows = [newer, older];
+
+		const page = await listAccessRecords({ authorId: AUTHOR }, {}, { limit: 1 });
+
+		expect(captured.limit).toBe(2);
+		expect(page.items).toEqual([newer]);
+		// The cursor encodes the last KEPT row so a second page continues without
+		// overlap or gap.
+		expect(page.nextCursor).not.toBeNull();
+		expect(page.nextCursor).toBe(
+			Buffer.from(`${newer.accessedAt.toISOString()}|${newer.id}`, 'utf8').toString('base64url')
+		);
+	});
+
+	it('resuming with a cursor ANDs the keyset predicate into the WHERE (no overlap, no gap)', async () => {
+		reset();
+		const cursor = Buffer.from(
+			`2026-06-12T09:00:00.000Z|01970000-0000-7000-8000-0000000000d9`,
+			'utf8'
+		).toString('base64url');
+
+		await listAccessRecords({ authorId: AUTHOR }, {}, { cursor });
+
+		// The keyset predicate is `accessed_at < t OR (accessed_at = t AND id < id)`,
+		// so the WHERE carries the accessed_at and id columns of the cursor position.
+		const columns = (captured.wherePredicates ?? []).map((entry) => entry.column);
+		expect(columns).toContain('accessed_at');
+		expect(columns).toContain('id');
 	});
 
 	it('single mode adds NO owner predicate (the no-op: one implicit author)', async () => {
@@ -200,18 +254,18 @@ describe('listAccessRecords', () => {
 	it('a malformed report filter id short-circuits to empty WITHOUT querying', async () => {
 		reset();
 
-		const entries = await listAccessRecords({ authorId: AUTHOR }, { reportId: 'not-a-uuid' });
+		const page = await listAccessRecords({ authorId: AUTHOR }, { reportId: 'not-a-uuid' });
 
-		expect(entries).toEqual([]);
+		expect(page).toEqual({ items: [], nextCursor: null });
 		expect(captured.queried).toBe(false);
 	});
 
 	it('a malformed reader filter id short-circuits to empty WITHOUT querying', async () => {
 		reset();
 
-		const entries = await listAccessRecords({ authorId: AUTHOR }, { readerId: 'nope' });
+		const page = await listAccessRecords({ authorId: AUTHOR }, { readerId: 'nope' });
 
-		expect(entries).toEqual([]);
+		expect(page).toEqual({ items: [], nextCursor: null });
 		expect(captured.queried).toBe(false);
 	});
 });

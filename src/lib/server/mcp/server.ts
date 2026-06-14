@@ -108,10 +108,18 @@ export function buildMcpServer(scope: AuthorScope): McpServer {
 		{
 			title: 'List reports',
 			description:
-				'Lists every report (id, title, status, updatedAt), most recently updated first.',
+				'Lists a page of reports (id, title, status, updatedAt), most recently updated first. ' +
+				'Returns { items, nextCursor }; pass a non-null nextCursor back as `cursor` to fetch ' +
+				'the next page (null means the last page).',
+			inputSchema: {
+				cursor: z
+					.string()
+					.optional()
+					.describe('The nextCursor from a prior page; omit to start from the newest.')
+			},
 			annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
 		},
-		() => listReportsTool(scope)
+		(input) => listReportsTool(input, scope)
 	);
 
 	server.registerTool(

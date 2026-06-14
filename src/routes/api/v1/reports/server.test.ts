@@ -48,17 +48,35 @@ beforeEach(() => {
 });
 
 describe('GET /api/v1/reports', () => {
-	it('returns the listReports projection in a { items } envelope', async () => {
-		listReportsMock.mockResolvedValue([SUMMARY]);
+	function getEvent(query = ''): Parameters<typeof GET>[0] {
+		return {
+			locals: LOCALS,
+			url: new URL(`http://localhost/api/v1/reports${query}`)
+		} as unknown as Parameters<typeof GET>[0];
+	}
 
-		const response = await GET({ locals: LOCALS } as unknown as Parameters<typeof GET>[0]);
+	it('returns the listReports projection in an { items, nextCursor } envelope', async () => {
+		listReportsMock.mockResolvedValue({ items: [SUMMARY], nextCursor: null });
+
+		const response = await GET(getEvent());
 
 		expect(response.status).toBe(200);
-		const body = (await response.json()) as { items: unknown[] };
-		expect(Object.keys(body)).toEqual(['items']);
+		const body = (await response.json()) as { items: unknown[]; nextCursor: string | null };
+		expect(Object.keys(body)).toEqual(['items', 'nextCursor']);
 		expect(body.items).toHaveLength(1);
 		expect((body.items[0] as ReportSummary).id).toBe(SUMMARY.id);
+		expect(body.nextCursor).toBeNull();
 		expect(listReportsMock).toHaveBeenCalledOnce();
+	});
+
+	it('surfaces the page cursor and threads ?cursor / ?limit through to the service', async () => {
+		listReportsMock.mockResolvedValue({ items: [SUMMARY], nextCursor: 'page-2' });
+
+		const response = await GET(getEvent('?cursor=page-1&limit=25'));
+		const body = (await response.json()) as { nextCursor: string | null };
+
+		expect(body.nextCursor).toBe('page-2');
+		expect(listReportsMock).toHaveBeenCalledWith(TEST_SCOPE, { cursor: 'page-1', limit: 25 });
 	});
 });
 

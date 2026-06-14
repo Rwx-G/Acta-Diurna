@@ -110,7 +110,7 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 	// A fresh generation bucket per test so the cost brake never bleeds across cases.
 	(aiGenerationLimiter as unknown as { buckets: Map<string, unknown> }).buckets.clear();
-	listReportsMock.mockResolvedValue([]);
+	listReportsMock.mockResolvedValue({ items: [], nextCursor: null });
 	listSkeletonsMock.mockResolvedValue([]);
 
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -168,8 +168,13 @@ describe('buildMcpServer', () => {
 	});
 
 	it('list_reports calls the documents service', async () => {
-		await client.callTool({ name: 'list_reports' });
+		await client.callTool({ name: 'list_reports', arguments: {} });
 		expect(listReportsMock).toHaveBeenCalledOnce();
+	});
+
+	it('list_reports threads a cursor argument through to the service', async () => {
+		await client.callTool({ name: 'list_reports', arguments: { cursor: 'page-2' } });
+		expect(listReportsMock).toHaveBeenCalledWith(TEST_SCOPE, { cursor: 'page-2' });
 	});
 
 	it('list_skeletons calls the skeletons service', async () => {

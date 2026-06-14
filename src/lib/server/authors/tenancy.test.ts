@@ -84,7 +84,10 @@ vi.mock('$lib/server/db/client', () => ({
 						orderBy: () => ({ limit: (count: number) => Promise.resolve(resolve(count)) })
 					};
 				};
-				return {
+				const builder = {
+					// The list path is now .$dynamic() -> .where(owner[, keyset]) ->
+					// .orderBy().limit(); the id lookup / token auth is .where().limit().
+					$dynamic: () => builder,
 					where: (filter: SQL) => makeChain(decodeEqFilters(filter)),
 					// listReports in SINGLE mode would call orderBy() directly (no where);
 					// this multi-mode test always goes through where(owner).
@@ -93,6 +96,7 @@ vi.mock('$lib/server/db/client', () => ({
 							Promise.resolve([...reportStore.rows.values()].slice(0, count))
 					})
 				};
+				return builder;
 			}
 		}),
 		update: () => ({
@@ -164,8 +168,8 @@ describe('report tenancy (multi mode)', () => {
 
 		const list = await listReports(AUTHOR_A);
 
-		expect(list).toHaveLength(1);
-		expect(list[0].title).toBe('A report');
+		expect(list.items).toHaveLength(1);
+		expect(list.items[0].title).toBe('A report');
 	});
 
 	it("returns the same 404 on a direct read of another author's report (no existence oracle)", async () => {

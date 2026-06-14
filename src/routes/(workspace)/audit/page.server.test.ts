@@ -34,7 +34,7 @@ function event(searchParams: Record<string, string>, authorId?: string): Paramet
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	listAccessRecordsMock.mockResolvedValue([]);
+	listAccessRecordsMock.mockResolvedValue({ items: [], nextCursor: null });
 	listOwnedReportOptionsMock.mockResolvedValue([]);
 });
 
@@ -43,34 +43,57 @@ describe('audit load', () => {
 		await load(event({}, 'author-1'));
 
 		expect(resolveAuthorScope).toHaveBeenCalledWith('author-1');
-		expect(listAccessRecordsMock).toHaveBeenCalledWith(SCOPE, {
-			reportId: undefined,
-			readerId: undefined
-		});
+		expect(listAccessRecordsMock).toHaveBeenCalledWith(
+			SCOPE,
+			{ reportId: undefined, readerId: undefined },
+			{ cursor: undefined }
+		);
 		expect(listOwnedReportOptionsMock).toHaveBeenCalledWith(SCOPE);
 	});
 
 	it('passes the report and reader query filters through to the scoped query', async () => {
 		await load(event({ report: 'report-9', reader: 'reader-3' }, 'author-1'));
 
-		expect(listAccessRecordsMock).toHaveBeenCalledWith(SCOPE, {
-			reportId: 'report-9',
-			readerId: 'reader-3'
-		});
+		expect(listAccessRecordsMock).toHaveBeenCalledWith(
+			SCOPE,
+			{ reportId: 'report-9', readerId: 'reader-3' },
+			{ cursor: undefined }
+		);
+	});
+
+	it('threads the cursor query param through to the paginated query', async () => {
+		await load(event({ cursor: 'page-2' }, 'author-1'));
+
+		expect(listAccessRecordsMock).toHaveBeenCalledWith(
+			SCOPE,
+			{ reportId: undefined, readerId: undefined },
+			{ cursor: 'page-2' }
+		);
+	});
+
+	it('echoes the page cursor back to the view as nextCursor for a "load older" affordance', async () => {
+		listAccessRecordsMock.mockResolvedValue({ items: [], nextCursor: 'older' });
+
+		const result = (await load(event({}, 'author-1'))) as { nextCursor: string | null };
+
+		expect(result.nextCursor).toBe('older');
 	});
 
 	it('projects the access rows and echoes the active filter back to the view', async () => {
 		const accessedAt = new Date('2026-06-12T09:00:00.000Z');
-		listAccessRecordsMock.mockResolvedValue([
-			{
-				id: 'a1',
-				reportId: 'report-9',
-				reportTitle: 'Weekly',
-				readerIdentityId: 'reader-3',
-				readerEmail: 'reader@example.com',
-				accessedAt
-			}
-		]);
+		listAccessRecordsMock.mockResolvedValue({
+			items: [
+				{
+					id: 'a1',
+					reportId: 'report-9',
+					reportTitle: 'Weekly',
+					readerIdentityId: 'reader-3',
+					readerEmail: 'reader@example.com',
+					accessedAt
+				}
+			],
+			nextCursor: null
+		});
 		listOwnedReportOptionsMock.mockResolvedValue([{ id: 'report-9', title: 'Weekly' }]);
 
 		const result = (await load(event({ report: 'report-9' }, 'author-1'))) as {
@@ -99,9 +122,10 @@ describe('audit load', () => {
 		// resolveAuthorScope receives undefined and yields the implicit-author scope;
 		// the queries are still owner-scoped through it.
 		expect(resolveAuthorScope).toHaveBeenCalledWith(undefined);
-		expect(listAccessRecordsMock).toHaveBeenCalledWith(SCOPE, {
-			reportId: undefined,
-			readerId: undefined
-		});
+		expect(listAccessRecordsMock).toHaveBeenCalledWith(
+			SCOPE,
+			{ reportId: undefined, readerId: undefined },
+			{ cursor: undefined }
+		);
 	});
 });

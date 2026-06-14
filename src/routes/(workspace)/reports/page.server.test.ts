@@ -60,12 +60,13 @@ describe('load', () => {
 				updatedAt: new Date('2026-06-12T09:00:00Z')
 			}
 		];
-		listReportsMock.mockResolvedValue(summaries);
+		listReportsMock.mockResolvedValue({ items: summaries, nextCursor: null });
 
 		const result = await load({
 			locals: { authorSession: null }
 		} as Parameters<typeof load>[0]);
 
+		// The load unwraps the page to the items the list view renders.
 		expect(result).toEqual({ reports: summaries });
 	});
 });

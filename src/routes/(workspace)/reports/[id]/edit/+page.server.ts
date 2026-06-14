@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
 		return {
 			report: await getReport(params.id, scope),
-			dataSets: await listDataSets(scope),
+			dataSets: (await listDataSets(scope)).items,
 			// FR33/FR32: the Generate-with-AI entry point is offered only when the
 			// connector is configured AND opted-in. When disabled the workspace hides
 			// the trigger (no offer of a capability that 503s); the panel renders the

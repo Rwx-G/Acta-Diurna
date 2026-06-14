@@ -68,6 +68,7 @@ vi.mock('$lib/server/db/client', () => ({
 			};
 			return {
 				from: () => ({
+					$dynamic: () => listChain,
 					where: (filter: SQL | undefined) => {
 						if (filter === undefined) return listChain;
 						const decoded = decodeEqFilter(filter);
@@ -197,37 +198,42 @@ describe('createApiToken', () => {
 });
 
 describe('listApiTokens', () => {
-	it('projects each token, never exposing the raw token or hash', async () => {
+	it('projects each token in a page envelope, never exposing the raw token or hash', async () => {
 		const { token } = await createApiToken('first', TEST_SCOPE);
 		seedToken({ tokenHash: sha256('second'), name: 'second' });
 
-		const summaries = await listApiTokens(TEST_SCOPE);
+		const page = await listApiTokens(TEST_SCOPE);
 
-		expect(summaries.length).toBe(2);
-		const serialized = JSON.stringify(summaries);
+		expect(page.items.length).toBe(2);
+		// Two rows under the default page size: the last page, no further cursor.
+		expect(page.nextCursor).toBeNull();
+		const serialized = JSON.stringify(page.items);
 		expect(serialized).not.toContain(token);
 		expect(serialized).not.toContain('tokenHash');
-		for (const summary of summaries) {
+		for (const summary of page.items) {
 			expect(summary).not.toHaveProperty('tokenHash');
 			expect(summary).toHaveProperty('status');
 			expect(summary).toHaveProperty('displayFragment');
 		}
 	});
 
-	it('returns an empty list when there are no tokens', async () => {
-		await expect(listApiTokens(TEST_SCOPE)).resolves.toEqual([]);
+	it('returns an empty page when there are no tokens', async () => {
+		await expect(listApiTokens(TEST_SCOPE)).resolves.toEqual({ items: [], nextCursor: null });
 	});
 
 	it('marks a revoked token revoked', async () => {
 		seedToken({ revokedAt: new Date() });
-		const [summary] = await listApiTokens(TEST_SCOPE);
+		const {
+			items: [summary]
+		} = await listApiTokens(TEST_SCOPE);
 		expect(summary.status).toBe('revoked');
 	});
 
-	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
+	it('bounds the query: it fetches one more than the page size to detect a further page', async () => {
 		seedToken();
-		await listApiTokens(TEST_SCOPE);
-		expect(dbState.listLimits).toEqual([100]);
+		await listApiTokens(TEST_SCOPE, { limit: 100 });
+		// limit + 1, so the list signals a further page rather than dropping rows.
+		expect(dbState.listLimits).toEqual([101]);
 	});
 });
 

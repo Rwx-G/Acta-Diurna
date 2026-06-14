@@ -155,7 +155,7 @@ describe('list_skeletons tool', () => {
 });
 
 describe('list_reports tool', () => {
-	it('delegates to listReports() and wraps the summaries in an items envelope', async () => {
+	it('delegates to listReports() and wraps the page in an { items, nextCursor } envelope', async () => {
 		const summaries = [
 			{
 				id: 'rep-1',
@@ -164,13 +164,23 @@ describe('list_reports tool', () => {
 				updatedAt: new Date('2026-06-01T00:00:00Z')
 			}
 		];
-		listReportsMock.mockResolvedValue(summaries);
+		listReportsMock.mockResolvedValue({ items: summaries, nextCursor: 'next-page' });
 
-		const result = await listReportsTool(TEST_SCOPE);
+		const result = await listReportsTool({}, TEST_SCOPE);
 
 		expect(listReportsMock).toHaveBeenCalledOnce();
-		const body = payload(result) as { items: unknown[] };
+		const body = payload(result) as { items: unknown[]; nextCursor: string | null };
 		expect(body.items).toHaveLength(1);
+		// The page cursor is surfaced so an agent can fetch the next page.
+		expect(body.nextCursor).toBe('next-page');
+	});
+
+	it('threads a cursor through to listReports()', async () => {
+		listReportsMock.mockResolvedValue({ items: [], nextCursor: null });
+
+		await listReportsTool({ cursor: 'a-cursor' }, TEST_SCOPE);
+
+		expect(listReportsMock).toHaveBeenCalledWith(TEST_SCOPE, { cursor: 'a-cursor' });
 	});
 });
 

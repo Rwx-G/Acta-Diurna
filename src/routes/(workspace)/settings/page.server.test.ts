@@ -40,7 +40,7 @@ import { actions, load } from './+page.server';
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	listApiTokens.mockResolvedValue([]);
+	listApiTokens.mockResolvedValue({ items: [], nextCursor: null });
 	aiConfig.mockReturnValue(null);
 	isAiEnabled.mockReturnValue(false);
 	testSendConsume.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
@@ -294,12 +294,13 @@ describe('load (tokens)', () => {
 				status: 'active'
 			}
 		];
-		listApiTokens.mockResolvedValue(tokens);
+		listApiTokens.mockResolvedValue({ items: tokens, nextCursor: null });
 
 		const result = (await load({ locals: { authorSession: null } } as Parameters<
 			typeof load
 		>[0])) as { tokens: typeof tokens };
 
+		// The load unwraps the page to the token items the settings list renders.
 		expect(result.tokens).toEqual(tokens);
 	});
 });

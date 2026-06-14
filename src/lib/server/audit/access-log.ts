@@ -18,16 +18,24 @@
 import { and, desc, eq, type SQL } from 'drizzle-orm';
 import { ownerFilter, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
+import {
+	cursorPredicate,
+	decodeCursor,
+	pageSize,
+	toPage,
+	type Page,
+	type PageRequest
+} from '$lib/server/db/cursor';
 import { accessRecords, readerIdentities, reports } from '$lib/server/db/schema';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
- * Safety ceiling on the audit-log query (mirrors the reports/data-sets list
- * caps). The view has no pagination yet; this bounds the scan so an instance
- * that accumulates many accesses cannot degrade the audit page unboundedly.
- * Newest-first, so the cap keeps the most recent accesses, which is what the
- * author looks at first. It is a guard, not a page size.
+ * Safety ceiling on the owned-report dropdown options ({@link listOwnedReportOptions}).
+ * That list is a bounded picker (an author's own reports), not a growing log, so it
+ * keeps a simple cap rather than a cursor - real catalogues sit far below it. The
+ * access LOG itself is cursor-paginated (see {@link listAccessRecords}), because it
+ * accrues one row per reader access and must never silently drop the oldest.
  */
 export const MAX_ACCESS_RECORDS_LISTED = 500;
 
@@ -47,23 +55,36 @@ export interface AccessLogFilter {
 	readerId?: string;
 }
 
+/** An empty page: the result for an over-owner/unknown filter id or an exhausted log. */
+const EMPTY_PAGE: Page<AccessLogEntry> = { items: [], nextCursor: null };
+
 /**
- * Reads the access log for the scope's author, newest first, capped at
- * {@link MAX_ACCESS_RECORDS_LISTED}. The join to `reports` is where ownership is
+ * Reads a page of the access log for the scope's author, newest first, with
+ * keyset (cursor) pagination so the trail is NEVER silently truncated (full-audit
+ * C2): the prior fixed 500-row cap dropped the oldest accesses with no signal,
+ * losing audit data invisibly. The join to `reports` is where ownership is
  * enforced: the owner predicate (multi mode) ANDs onto `reports.owner_id`, so a
  * record whose report belongs to another author never appears. The optional
  * `reportId`/`readerId` filters AND further; a malformed filter id is treated as
- * "no match" (an empty result), never a cast error.
+ * "no match" (an empty page), never a cast error.
+ *
+ * The keyset is `(accessed_at DESC, id DESC)`; `page.cursor` resumes after the
+ * previous page's last row. The page fetches `limit + 1` rows: a surplus row sets
+ * a non-null `nextCursor` so the caller knows older accesses remain and can offer
+ * "load older" instead of dropping them. A malformed cursor is ignored (start from
+ * the newest), never an error.
  */
 export async function listAccessRecords(
 	scope: AuthorScope,
-	filter: AccessLogFilter = {}
-): Promise<AccessLogEntry[]> {
+	filter: AccessLogFilter = {},
+	page: PageRequest = {}
+): Promise<Page<AccessLogEntry>> {
 	// A malformed filter id matches nothing - the same empty result a cross-owner
 	// or unknown id yields, so a bad id is never a 500 nor an oracle.
-	if (filter.reportId !== undefined && !UUID_PATTERN.test(filter.reportId)) return [];
-	if (filter.readerId !== undefined && !UUID_PATTERN.test(filter.readerId)) return [];
+	if (filter.reportId !== undefined && !UUID_PATTERN.test(filter.reportId)) return EMPTY_PAGE;
+	if (filter.readerId !== undefined && !UUID_PATTERN.test(filter.readerId)) return EMPTY_PAGE;
 
+	const limit = pageSize(page.limit);
 	const predicates: SQL[] = [];
 	const owner = ownerFilter(scope, reports.ownerId);
 	if (owner) predicates.push(owner);
@@ -71,6 +92,12 @@ export async function listAccessRecords(
 	if (filter.readerId !== undefined) {
 		predicates.push(eq(accessRecords.readerIdentityId, filter.readerId));
 	}
+	const keyset = cursorPredicate(
+		decodeCursor(page.cursor),
+		accessRecords.accessedAt,
+		accessRecords.id
+	);
+	if (keyset) predicates.push(keyset);
 
 	let query = getDb()
 		.select({
@@ -90,7 +117,13 @@ export async function listAccessRecords(
 		query = query.where(predicates.length === 1 ? predicates[0] : and(...predicates));
 	}
 
-	return query.orderBy(desc(accessRecords.accessedAt)).limit(MAX_ACCESS_RECORDS_LISTED);
+	// Tiebreak on id (a time-ordered UUIDv7) so two accesses sharing a timestamp
+	// order deterministically and the cursor never straddles them. Fetch limit + 1
+	// to detect a further page without a second count query.
+	const fetched = await query
+		.orderBy(desc(accessRecords.accessedAt), desc(accessRecords.id))
+		.limit(limit + 1);
+	return toPage(fetched, limit, (row) => ({ timestamp: row.accessedAt, id: row.id }));
 }
 
 /** Reports the scope's author owns, for the audit-view report filter (id + title). */

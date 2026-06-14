@@ -112,7 +112,7 @@ describe('load', () => {
 	it('returns the report, data sets, skeletons and the AI-enabled flag', async () => {
 		const report = sampleReport();
 		getReportMock.mockResolvedValue(report);
-		listDataSetsMock.mockResolvedValue([]);
+		listDataSetsMock.mockResolvedValue({ items: [], nextCursor: null });
 		listSkeletonsMock.mockResolvedValue([]);
 		isAiEnabledMock.mockReturnValue(true);
 
@@ -128,7 +128,7 @@ describe('load', () => {
 
 	it('reports aiEnabled false when the connector is disabled (the entry point hides)', async () => {
 		getReportMock.mockResolvedValue(sampleReport());
-		listDataSetsMock.mockResolvedValue([]);
+		listDataSetsMock.mockResolvedValue({ items: [], nextCursor: null });
 		listSkeletonsMock.mockResolvedValue([]);
 		isAiEnabledMock.mockReturnValue(false);
 
@@ -144,7 +144,7 @@ describe('load', () => {
 		getReportMock.mockRejectedValue(
 			new AppError({ status: 404, title: 'Report not found', type: '/problems/report-not-found' })
 		);
-		listDataSetsMock.mockResolvedValue([]);
+		listDataSetsMock.mockResolvedValue({ items: [], nextCursor: null });
 		listSkeletonsMock.mockResolvedValue([]);
 		isAiEnabledMock.mockReturnValue(true);
 

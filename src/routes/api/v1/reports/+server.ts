@@ -8,16 +8,25 @@ import { runApi } from '$lib/server/api';
 import { readJsonObject } from './body';
 
 /**
- * `GET /api/v1/reports` - lists every report (newest first), the SAME projection
- * the workspace reports list renders (`listReports`, story 1.5). Returns a
- * `{ items }` envelope (backlog Epic 4 decision): an envelope from day one leaves
- * room for `total`/pagination later without a breaking response-shape change a
- * bare array would force on agents.
+ * `GET /api/v1/reports` - lists a page of reports (newest first), the SAME
+ * projection the workspace reports list renders (`listReports`, story 1.5).
+ * Keyset (cursor) paginated: `?cursor=` resumes after a prior page and `?limit=`
+ * sets the page size (clamped server-side). Returns a `{ items, nextCursor }`
+ * envelope; `nextCursor` is null on the last page, a cursor to pass back as
+ * `?cursor=` otherwise (the contract frozen by full-audit C2 - an envelope that
+ * already carried the items wrapper now carries the page cursor too, no break).
  */
-export const GET: RequestHandler = ({ locals }) =>
-	runApi(async () =>
-		json({ items: await listReports(await resolveApiAuthorScope(locals.apiIdentity!)) })
-	);
+export const GET: RequestHandler = ({ locals, url }) =>
+	runApi(async () => {
+		const cursor = url.searchParams.get('cursor') ?? undefined;
+		const rawLimit = url.searchParams.get('limit');
+		const limit = rawLimit !== null ? Number(rawLimit) : undefined;
+		const page = await listReports(await resolveApiAuthorScope(locals.apiIdentity!), {
+			cursor,
+			limit
+		});
+		return json({ items: page.items, nextCursor: page.nextCursor });
+	});
 
 /**
  * `POST /api/v1/reports` - creates a draft report (201). With a `document` in the

@@ -57,29 +57,39 @@ vi.mock('$lib/server/db/client', () => ({
 		select: (projection?: unknown) => ({
 			from: (table: unknown) => {
 				const store = storeFor(getTableName(table as never));
-				return {
+				// One chainable builder: getRow is `.where().limit()`; listDataSets is
+				// `.$dynamic()` -> (optional `.where()`) -> `.orderBy()` -> `.limit()`,
+				// keyset-paginated. A lookup is an eq(id) where with no orderBy; a list
+				// is detected by the orderBy call.
+				let lookupValue: unknown = undefined;
+				let ordered = false;
+				const builder = {
+					$dynamic: () => builder,
 					where: (filter: SQL) => {
-						const decoded = decodeEqFilter(filter);
-						return {
-							limit: () => {
-								const row = store.get(String(decoded.value));
-								return Promise.resolve(row ? [row] : []);
-							}
-						};
+						// Only the id lookup is a bare eq(id); the list owner/keyset WHERE
+						// has no Param/Column pair the mock keys on, so guard the decode.
+						try {
+							lookupValue = decodeEqFilter(filter).value;
+						} catch {
+							lookupValue = undefined;
+						}
+						return builder;
 					},
-					// listDataSets calls select(projection).from().orderBy().limit() with
-					// no where: all rows in the store, ordered (insertion order here), capped.
 					orderBy: () => {
+						ordered = true;
 						dbState.listProjections.push(decodeSelectProjection(projection));
-						const rows = [...store.values()];
-						return {
-							limit: (count: number) => {
-								dbState.listLimits.push(count);
-								return Promise.resolve(rows.slice(0, count));
-							}
-						};
+						return builder;
+					},
+					limit: (count: number) => {
+						if (!ordered) {
+							const row = store.get(String(lookupValue));
+							return Promise.resolve(row ? [row] : []);
+						}
+						dbState.listLimits.push(count);
+						return Promise.resolve([...store.values()].slice(0, count));
 					}
 				};
+				return builder;
 			}
 		}),
 		update: (table: unknown) => {
@@ -243,11 +253,13 @@ describe('listDataSets', () => {
 		expect(dbState.listProjections[0]).not.toContain('data_as_of');
 	});
 
-	it('maps the projected rows to the summary shape', async () => {
-		const summaries = await listDataSets(TEST_SCOPE);
+	it('maps the projected rows to the summary shape in a page envelope', async () => {
+		const page = await listDataSets(TEST_SCOPE);
 
-		expect(summaries).toHaveLength(1);
-		expect(summaries[0]).toEqual({
+		expect(page.items).toHaveLength(1);
+		// A single seeded row is under the default page size, so this is the last page.
+		expect(page.nextCursor).toBeNull();
+		expect(page.items[0]).toEqual({
 			id: DATA_SET_ID,
 			reportId: null,
 			filename: 'weekly.csv',
@@ -258,14 +270,15 @@ describe('listDataSets', () => {
 			],
 			injectedAt: expect.any(Date)
 		});
-		expect(summaries[0]).not.toHaveProperty('storagePath');
-		expect(summaries[0]).not.toHaveProperty('dataAsOf');
+		expect(page.items[0]).not.toHaveProperty('storagePath');
+		expect(page.items[0]).not.toHaveProperty('dataAsOf');
 	});
 
-	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
-		await listDataSets(TEST_SCOPE);
+	it('bounds the query: it fetches one more than the page size to detect a further page', async () => {
+		await listDataSets(TEST_SCOPE, { limit: 50 });
 
-		expect(dbState.listLimits).toEqual([500]);
+		// limit + 1, so the service can tell whether a next page exists.
+		expect(dbState.listLimits).toEqual([51]);
 	});
 });
 

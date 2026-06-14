@@ -100,9 +100,20 @@ export function listSkeletonsTool(scope: AuthorScope): Promise<McpToolResult> {
 	return withProblemMapping(async () => jsonResult({ items: await listSkeletons(scope) }));
 }
 
-/** `list_reports` -> the OWNER-scoped report summaries (`listReports`, id/title/status/updatedAt). */
-export function listReportsTool(scope: AuthorScope): Promise<McpToolResult> {
-	return withProblemMapping(async () => jsonResult({ items: await listReports(scope) }));
+/**
+ * `list_reports` -> a page of the OWNER-scoped report summaries (`listReports`,
+ * id/title/status/updatedAt). Keyset-paginated like the REST list: an optional
+ * `cursor` resumes after a prior page, and the result carries `{ items, nextCursor }`
+ * so an agent pages the catalogue instead of hitting a silent cap (full-audit C2).
+ */
+export function listReportsTool(
+	input: { cursor?: string },
+	scope: AuthorScope
+): Promise<McpToolResult> {
+	return withProblemMapping(async () => {
+		const page = await listReports(scope, { cursor: input.cursor });
+		return jsonResult({ items: page.items, nextCursor: page.nextCursor });
+	});
 }
 
 /** `get_report` -> one full report (`getReport`); an unknown or cross-author id is the service 404 as a tool error. */

@@ -92,28 +92,41 @@ vi.mock('$lib/server/db/client', () => ({
 		select: (projection?: unknown) => ({
 			from: () => {
 				dbState.selectProjections.push(decodeSelectProjection(projection));
-				return {
+				// One chainable builder so the list path (now `.$dynamic()` ->
+				// optional `.where()` -> `.orderBy()` -> `.limit()`, keyset-paginated)
+				// and the id lookup (`.where().limit()`) share the same mock. A lookup
+				// is detected by an eq(id) where with no order; a list is detected by
+				// an orderBy. The first orderBy argument carries the sort column.
+				let lookup: { column: string; value: unknown } | null = null;
+				let ordered = false;
+				const builder = {
+					$dynamic: () => builder,
 					where: (filter: SQL) => {
-						const decoded = decodeEqFilter(filter);
-						return {
-							limit: () => {
-								if (decoded.column !== 'id') return Promise.resolve([]);
-								const row = dbState.rowsById.get(String(decoded.value));
-								return Promise.resolve(row ? [row] : []);
-							}
-						};
+						// The list keyset/owner WHERE is not a bare eq(id); only the id
+						// lookup is. Decode leniently and remember an eq(id) for the lookup
+						// branch; anything else is a list predicate the mock ignores.
+						const decoded = decodeEqFilters(filter);
+						lookup = decoded.find((entry) => entry.column === 'id') ?? null;
+						return builder;
 					},
 					orderBy: (order: SQL) => {
+						ordered = true;
 						dbState.orderBys.push(decodeOrderBy(order));
-						const ordered = [...dbState.rowsById.values()];
-						return {
-							limit: (count: number) => {
-								dbState.listLimits.push(count);
-								return Promise.resolve(ordered.slice(0, count));
-							}
-						};
+						return builder;
+					},
+					limit: (count: number) => {
+						// A lookup short-circuits to the keyed row; a list (an orderBy ran)
+						// returns the ordered rows up to the requested count (limit + 1).
+						if (lookup !== null && !ordered) {
+							if (lookup.column !== 'id') return Promise.resolve([]);
+							const row = dbState.rowsById.get(String(lookup.value));
+							return Promise.resolve(row ? [row] : []);
+						}
+						dbState.listLimits.push(count);
+						return Promise.resolve([...dbState.rowsById.values()].slice(0, count));
 					}
 				};
+				return builder;
 			}
 		}),
 		update: () => ({
@@ -363,7 +376,7 @@ describe('getReport', () => {
 });
 
 describe('listReports', () => {
-	it('returns the list projection ordered by updated_at descending', async () => {
+	it('returns a page projection ordered by updated_at descending', async () => {
 		seedReport();
 		seedReport({
 			id: '01970000-0000-7000-8000-000000000002',
@@ -371,17 +384,19 @@ describe('listReports', () => {
 			status: 'published'
 		});
 
-		const list = await listReports(TEST_SCOPE);
+		const page = await listReports(TEST_SCOPE);
 
-		expect(list).toHaveLength(2);
-		expect(list[0]).toEqual({
+		expect(page.items).toHaveLength(2);
+		// Under the default page size both rows fit, so this is the last page.
+		expect(page.nextCursor).toBeNull();
+		expect(page.items[0]).toEqual({
 			id: '01970000-0000-7000-8000-000000000001',
 			title: 'Quarterly Review',
 			status: 'draft',
 			updatedAt: new Date('2026-06-12T08:00:00Z')
 		});
-		expect(Object.keys(list[1])).toEqual(['id', 'title', 'status', 'updatedAt']);
-		expect(dbState.orderBys).toHaveLength(1);
+		expect(Object.keys(page.items[1])).toEqual(['id', 'title', 'status', 'updatedAt']);
+		// The keyset orders on (updated_at, id); the first order key is updated_at desc.
 		expect(dbState.orderBys[0].column).toBe('updated_at');
 		expect(dbState.orderBys[0].sql).toContain('desc');
 	});
@@ -397,12 +412,40 @@ describe('listReports', () => {
 		expect(dbState.selectProjections[0]).not.toContain('published_document');
 	});
 
-	it('caps the query with a LIMIT ceiling so the list cannot scan unboundedly', async () => {
+	it('bounds the query: it fetches one more than the page size to detect a further page', async () => {
 		seedReport();
 
-		await listReports(TEST_SCOPE);
+		const page = await listReports(TEST_SCOPE, { limit: 2 });
 
-		expect(dbState.listLimits).toEqual([500]);
+		// limit + 1: a single seeded row is under the page size, so no next page.
+		expect(dbState.listLimits).toEqual([3]);
+		expect(page.nextCursor).toBeNull();
+	});
+
+	it('signals a further page: a full over-fetch yields a non-null nextCursor and drops the surplus', async () => {
+		seedReport();
+		seedReport({
+			id: '01970000-0000-7000-8000-000000000002',
+			title: 'Second Report',
+			updatedAt: new Date('2026-06-12T09:00:00Z')
+		});
+		seedReport({
+			id: '01970000-0000-7000-8000-000000000003',
+			title: 'Third Report',
+			updatedAt: new Date('2026-06-12T10:00:00Z')
+		});
+
+		// limit 2 fetches 3; the surplus row signals a next page and is dropped.
+		const first = await listReports(TEST_SCOPE, { limit: 2 });
+		expect(first.items).toHaveLength(2);
+		expect(first.nextCursor).not.toBeNull();
+		// The cursor encodes the last KEPT row, so it never overlaps the next page.
+		const lastKept = first.items[first.items.length - 1];
+		expect(first.nextCursor).toBe(
+			Buffer.from(`${lastKept.updatedAt.toISOString()}|${lastKept.id}`, 'utf8').toString(
+				'base64url'
+			)
+		);
 	});
 });
 

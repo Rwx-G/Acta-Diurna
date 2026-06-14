@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, type SQL } from 'drizzle-orm';
 import {
 	validateDocument,
 	validateStoredDocument,
@@ -9,6 +9,14 @@ import {
 } from '$lib/schema';
 import { ownerFilter, ownerForInsert, type AuthorScope } from '$lib/server/authors';
 import { getDb } from '$lib/server/db/client';
+import {
+	cursorPredicate,
+	decodeCursor,
+	pageSize,
+	toPage,
+	type Page,
+	type PageRequest
+} from '$lib/server/db/cursor';
 import { uuidv7 } from '$lib/server/db/ids';
 import { reports, type ReportRow } from '$lib/server/db/schema';
 import { MAX_DOCUMENT_BYTES } from '$lib/editor';
@@ -41,15 +49,6 @@ export interface ReportSummary {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/**
- * Safety ceiling on the report-list query (1.5 performance audit). The list view
- * has no pagination yet; this bounds the query so a deployment that accumulates
- * many reports cannot degrade the dashboard load unboundedly. Real counts sit far
- * below this, so truncation is not reachable in practice - it is a guard, not a
- * page size. Replace with real pagination if the catalogue ever approaches it.
- */
-const MAX_REPORTS_LISTED = 500;
 
 function toReport(row: ReportRow): Report {
 	return {
@@ -287,14 +286,17 @@ export async function getReport(id: string, scope: AuthorScope): Promise<Report>
 }
 
 /**
- * Runs the report-summary list query, optionally filtered by an owner predicate.
- * The owner branch keeps single mode (no predicate) on the EXACT pre-8.2 chain
- * (`from().orderBy().limit()`, no WHERE) so its SQL is byte-identical; the multi
- * branch ANDs the owner WHERE before the order. Same projection, cap, and order
- * either way.
+ * Runs the report-summary list query for one page, optionally filtered by an owner
+ * predicate. Single mode with NO cursor keeps the EXACT pre-8.2 chain
+ * (`from().orderBy().limit()`, no WHERE) so its SQL is byte-identical; the owner
+ * predicate (multi mode) and the keyset predicate (a cursor) AND into the WHERE
+ * when present. Same projection and order either way. Fetches `limit + 1` so the
+ * caller can detect a further page.
  */
 function selectReportSummaries(
-	owner: ReturnType<typeof ownerFilter>
+	owner: ReturnType<typeof ownerFilter>,
+	keyset: SQL | undefined,
+	limit: number
 ): Promise<{ id: string; title: string; status: string; updatedAt: Date }[]> {
 	const projection = {
 		id: reports.id,
@@ -302,37 +304,40 @@ function selectReportSummaries(
 		status: reports.status,
 		updatedAt: reports.updatedAt
 	};
-	if (!owner) {
-		return getDb()
-			.select(projection)
-			.from(reports)
-			.orderBy(desc(reports.updatedAt))
-			.limit(MAX_REPORTS_LISTED);
+	const predicates: SQL[] = [];
+	if (owner) predicates.push(owner);
+	if (keyset) predicates.push(keyset);
+	let query = getDb().select(projection).from(reports).$dynamic();
+	if (predicates.length > 0) {
+		query = query.where(predicates.length === 1 ? predicates[0] : and(...predicates));
 	}
-	return getDb()
-		.select(projection)
-		.from(reports)
-		.where(owner)
-		.orderBy(desc(reports.updatedAt))
-		.limit(MAX_REPORTS_LISTED);
+	return query.orderBy(desc(reports.updatedAt), desc(reports.id)).limit(limit + 1);
 }
 
 /**
- * Lists reports for the workspace, most recently updated first, capped at
- * {@link MAX_REPORTS_LISTED}. Projects only the {@link ReportSummary} columns:
- * the two JSONB document columns are large and the list view never reads them,
- * so selecting them on every dashboard load is wasted transfer (1.5 performance
- * audit). The cap is a safety ceiling, not pagination - real counts sit far
- * below it.
+ * Lists a page of reports for the workspace, most recently updated first, with
+ * keyset (cursor) pagination ({@link Page}). Projects only the {@link ReportSummary}
+ * columns: the two JSONB document columns are large and the list view never reads
+ * them, so selecting them on every dashboard load is wasted transfer (1.5
+ * performance audit). The keyset is `(updated_at DESC, id DESC)`; an absent cursor
+ * starts from the newest. Fetching `limit + 1` sets `nextCursor` so a caller (the
+ * REST list, the MCP `list_reports` tool) can page instead of hitting a silent cap
+ * (full-audit C2). The owner predicate keeps single mode byte-identical.
  */
-export async function listReports(scope: AuthorScope): Promise<ReportSummary[]> {
-	const rows = await selectReportSummaries(ownerFilter(scope, reports.ownerId));
-	return rows.map((row) => ({
+export async function listReports(
+	scope: AuthorScope,
+	page: PageRequest = {}
+): Promise<Page<ReportSummary>> {
+	const limit = pageSize(page.limit);
+	const keyset = cursorPredicate(decodeCursor(page.cursor), reports.updatedAt, reports.id);
+	const rows = await selectReportSummaries(ownerFilter(scope, reports.ownerId), keyset, limit);
+	const summaries = rows.map((row) => ({
 		id: row.id,
 		title: row.title,
 		status: row.status as ReportStatus,
 		updatedAt: row.updatedAt
 	}));
+	return toPage(summaries, limit, (row) => ({ timestamp: row.updatedAt, id: row.id }));
 }
 
 /**

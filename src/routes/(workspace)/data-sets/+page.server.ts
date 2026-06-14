@@ -7,7 +7,8 @@ import { tooLarge } from '$lib/server/ingestion/errors';
 import { AppError } from '$lib/server/problem';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	return { dataSets: await listDataSets(await resolveAuthorScope(locals.authorSession?.authorId)) };
+	const page = await listDataSets(await resolveAuthorScope(locals.authorSession?.authorId));
+	return { dataSets: page.items };
 };
 
 /**
