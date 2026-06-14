@@ -80,6 +80,14 @@
 				</form>
 				{#if report.status === 'published'}
 					<a
+						href={resolve('/(workspace)/reports/[id]/present', { id: report.id })}
+						class="action-link"
+						target="_blank"
+						rel="noopener"
+					>
+						Present
+					</a>
+					<a
 						href={resolve('/(workspace)/reports/[id]/share', { id: report.id })}
 						class="action-link"
 					>
