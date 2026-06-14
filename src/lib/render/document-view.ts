@@ -44,6 +44,13 @@ export interface SectionView {
 	id: string;
 	title: string;
 	annex: boolean;
+	/**
+	 * True when the section is a detail page (Epic 11, `kind: 'detail'`): rendered
+	 * with its stable anchor id but kept out of the main-flow sequence and the TOC,
+	 * reachable only through an internal link. Detail sections live in
+	 * {@link ReportView.detailSections}, never in {@link ReportView.sections}.
+	 */
+	detail: boolean;
 	/** Section-level audience tags (Story 6.1); see {@link BlockView.audiences}. */
 	audiences?: readonly Audience[];
 	blocks: BlockView[];
@@ -76,7 +83,21 @@ export interface ReportView {
 	 * threaded to the block renderer the same way `scales` is.
 	 */
 	matrixBlocks: Map<string, ComparisonMatrixBlock>;
+	/**
+	 * The main-flow sections, in document order, EXCLUDING detail sections (Epic
+	 * 11). This is the sequence the renderer pages through and the navigation,
+	 * progress rail and keyboard paging count - so a detail page never appears
+	 * between the cover and the close.
+	 */
 	sections: SectionView[];
+	/**
+	 * The detail sections (Epic 11, `kind: 'detail'`), in document order. Rendered
+	 * with their stable anchor ids so an internal link (Story 11.2/11.3) can reach
+	 * them, but kept out of {@link sections} and {@link toc}: they are not in the
+	 * main slide/scroll sequence and not in the table of contents. Empty when the
+	 * document declares no detail section.
+	 */
+	detailSections: SectionView[];
 	toc: TocEntry[];
 	/**
 	 * True when any section or block carries an audience tag (Story 6.1). Drives
@@ -116,10 +137,11 @@ function tocFrom(sections: SectionView[]): TocEntry[] {
 
 /** Reader path: a validated document maps directly, every block present. */
 export function toReportView(document: DocumentV1): ReportView {
-	const sections: SectionView[] = document.sections.map((section: Section) => ({
+	const allSections: SectionView[] = document.sections.map((section: Section) => ({
 		id: section.id,
 		title: section.title,
 		annex: section.annex ?? false,
+		detail: section.kind === 'detail',
 		audiences: section.audiences,
 		invalid: false,
 		blocks: section.blocks.map((block) => ({
@@ -128,13 +150,20 @@ export function toReportView(document: DocumentV1): ReportView {
 			audiences: block.audiences
 		}))
 	}));
+	// Partition main-flow from detail (Epic 11): detail sections render with their
+	// anchor id but stay out of the main sequence and the TOC.
+	const sections = allSections.filter((section) => !section.detail);
+	const detailSections = allSections.filter((section) => section.detail);
 	return {
 		title: document.title,
 		theme: document.theme,
 		scales: document.scales,
 		matrixBlocks: collectMatrixBlocks(document.sections),
 		sections,
+		detailSections,
 		toc: tocFrom(sections),
+		// Counts detail-section tags too: a document whose only audience tags are on
+		// detail sections still surfaces the switcher (Epic 11 kickoff default).
 		hasAudiences: hasAudienceTags(document.sections)
 	};
 }
@@ -143,6 +172,7 @@ interface RawSection {
 	id?: unknown;
 	title?: unknown;
 	annex?: unknown;
+	kind?: unknown;
 	blocks?: unknown;
 }
 
@@ -197,6 +227,7 @@ export function toPreviewView(snapshot: unknown): ReportView {
 				id: section.id,
 				title: section.title,
 				annex: section.annex ?? false,
+				detail: section.kind === 'detail',
 				audiences: section.audiences,
 				invalid: false,
 				blocks: section.blocks.map((block) => ({
@@ -232,6 +263,7 @@ export function toPreviewView(snapshot: unknown): ReportView {
 			id,
 			title: previewSectionTitle(raw, sectionIndex),
 			annex: raw.annex === true,
+			detail: raw.kind === 'detail',
 			invalid: frameInvalid,
 			invalidNotice: frameInvalid
 				? 'This section has a problem (check its title). Fix it in the editor.'
@@ -250,13 +282,20 @@ export function toPreviewView(snapshot: unknown): ReportView {
 	);
 	const matrixBlocks = collectMatrixBlocks([{ blocks: validBlocks }]);
 
+	// Partition main-flow from detail (Epic 11), the same split the reader path
+	// applies, so the workspace preview pages and lists the main flow only while a
+	// detail page still renders out-of-sequence.
+	const flowSections = sections.filter((section) => !section.detail);
+	const detailSections = sections.filter((section) => section.detail);
+
 	return {
 		title,
 		theme,
 		scales,
 		matrixBlocks,
-		sections,
-		toc: tocFrom(sections),
+		sections: flowSections,
+		detailSections,
+		toc: tocFrom(flowSections),
 		hasAudiences: hasAudienceTags(sections)
 	};
 }

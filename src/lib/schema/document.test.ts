@@ -71,6 +71,70 @@ describe('document schema v1 - valid documents', () => {
 		}
 	});
 
+	it("accepts an optional kind: 'detail' on a section, additively (Epic 11)", () => {
+		// A section WITHOUT `kind` validates unchanged (the field is optional, the
+		// default is a main-flow section); a section WITH kind: 'detail' parses with
+		// full types and keeps its id/title/audiences/notes/blocks like a flow
+		// section - no new block path.
+		const result = validateDocument({
+			version: 1,
+			title: 'Drill-down report',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'See the finding.' }]] }]
+				},
+				{
+					id: 'finding-detail',
+					title: 'Finding detail',
+					kind: 'detail',
+					audiences: ['technical'],
+					notes: 'Author cue for the detail page.',
+					blocks: [{ type: 'text', id: 'evidence', paragraphs: [[{ text: 'Full evidence.' }]] }]
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.document.sections[0].kind).toBeUndefined();
+			expect(result.document.sections[1].kind).toBe('detail');
+			expect(result.document.sections[1].audiences).toEqual(['technical']);
+			expect(result.document.sections[1].notes).toBe('Author cue for the detail page.');
+			expect(result.document.sections[1].blocks[0].id).toBe('evidence');
+		}
+		// The full fixture sets no `kind` and still validates, proving additivity.
+		const noKind = validateDocument(fullDocument);
+		expect(noKind.ok).toBe(true);
+		if (noKind.ok) {
+			expect(noKind.document.sections.every((section) => section.kind === undefined)).toBe(true);
+		}
+	});
+
+	it("rejects a section that sets both annex and kind: 'detail' (Epic 11, FR2 parity)", () => {
+		const result = validateDocument({
+			version: 1,
+			title: 'Conflicting placement',
+			sections: [
+				{
+					id: 'both-placements',
+					title: 'Both placements',
+					annex: true,
+					kind: 'detail',
+					blocks: [{ type: 'text', id: 'body', paragraphs: [[{ text: 'Body.' }]] }]
+				}
+			]
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((error) => error.path === 'sections[0].kind');
+			expect(issue).toBeDefined();
+			expect(issue?.message).toContain('both-placements');
+			expect(issue?.message).toContain('mutually exclusive');
+			expect(issue?.hint).toBeTruthy();
+		}
+	});
+
 	it('accepts static data, a binding, or both on data-bound blocks', () => {
 		const result = validateDocument(fullDocument);
 		expect(result.ok).toBe(true);

@@ -113,6 +113,10 @@
 					"annex": {
 						"type": "boolean"
 					},
+					"kind": {
+						"type": "string",
+						"const": "detail"
+					},
 					"notes": {
 						"type": "string",
 						"maxLength": 20000

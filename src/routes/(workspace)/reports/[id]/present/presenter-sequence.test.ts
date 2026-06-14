@@ -10,7 +10,7 @@ import {
 } from './presenter-sequence.ts';
 
 function section(id: string, annex = false, notes?: string): PresenterSection {
-	const view: SectionView = { id, title: id, annex, invalid: false, blocks: [] };
+	const view: SectionView = { id, title: id, annex, detail: false, invalid: false, blocks: [] };
 	return { view, annex, notes };
 }
 
@@ -133,6 +133,35 @@ describe('toPresenterSections', () => {
 		// The notes ride on the presenter pairs, never on the reader-shaped view.
 		expect(view.sections[0]).not.toHaveProperty('notes');
 		expect(JSON.stringify(view)).not.toContain('Welcome the room.');
+	});
+
+	it('excludes detail sections from the deck and pairs notes by id (Epic 11)', () => {
+		// A detail section sitting BEFORE a flow section would break positional
+		// notes-pairing; the deck drops it and pairs notes by id, so each flow
+		// section keeps its own notes.
+		const result = validateDocument({
+			version: 1,
+			title: 'Drill-down deck',
+			sections: [
+				{
+					id: 'finding-detail',
+					title: 'Finding detail',
+					kind: 'detail',
+					notes: 'Detail-page cue (never presented).',
+					blocks: [{ type: 'text', id: 'd1', paragraphs: [[{ text: 'Evidence.' }]] }]
+				},
+				{
+					id: 'overview',
+					title: 'Overview',
+					notes: 'Open with the headline.',
+					blocks: [{ type: 'text', id: 't1', paragraphs: [[{ text: 'Hi.' }]] }]
+				}
+			]
+		});
+		if (!result.ok) throw new Error('fixture invalid');
+		const { sections } = toPresenterSections(result.document);
+		expect(sections.map((s) => s.view.id)).toEqual(['overview']);
+		expect(sections[0].notes).toBe('Open with the headline.');
 	});
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toPreviewView, toReportView } from './document-view.ts';
+import { toPreviewView, toReportView, type ReportView } from './document-view.ts';
 import { fullDocument } from '$lib/schema/examples/full';
 import { validateDocument, type DocumentV1 } from '$lib/schema';
 
@@ -77,6 +77,103 @@ describe('toReportView', () => {
 	});
 });
 
+describe('toReportView - detail sections (Epic 11)', () => {
+	function withDetail(): DocumentV1 {
+		const doc = validFull();
+		// Append a detail section to the validated full document. It carries an
+		// audience tag so the hasAudiences-counts-detail case can isolate it.
+		const detail: DocumentV1['sections'][number] = {
+			id: 'finding-117-detail',
+			title: 'Finding 2026-117 detail',
+			kind: 'detail',
+			audiences: ['technical'],
+			blocks: [
+				{ type: 'text', id: 'evidence', paragraphs: [[{ text: 'Full evidence and remediation.' }]] }
+			]
+		};
+		return { ...doc, sections: [...doc.sections, detail] };
+	}
+
+	it('excludes detail sections from the main-flow sequence and the TOC', () => {
+		const view = toReportView(withDetail());
+		// The full fixture has three main-flow sections; the detail section is the
+		// fourth document section but must NOT appear in the main-flow sequence.
+		expect(view.sections.map((s) => s.id)).toEqual([
+			'executive-summary',
+			'incident-analysis',
+			'methodology'
+		]);
+		expect(view.sections.some((s) => s.id === 'finding-117-detail')).toBe(false);
+		// ...nor in the TOC.
+		expect(view.toc.some((t) => t.id === 'finding-117-detail')).toBe(false);
+	});
+
+	it('keeps detail sections present and rendered with their stable anchor id', () => {
+		const view = toReportView(withDetail());
+		expect(view.detailSections.map((s) => s.id)).toEqual(['finding-117-detail']);
+		const detail = view.detailSections[0];
+		expect(detail.detail).toBe(true);
+		// The section id is the deep-link anchor a later internal link reaches; the
+		// blocks carry their stable per-block anchors, so the page is fully rendered.
+		expect(detail.id).toBe('finding-117-detail');
+		expect(detail.blocks[0].block).not.toBeNull();
+		expect(detail.blocks[0].anchorId).toBe('finding-117-detail--evidence');
+	});
+
+	it('the main-flow count the navigation reads excludes detail sections', () => {
+		const view = toReportView(withDetail());
+		// The navigation, progress rail and keyboard paging are driven by
+		// view.sections.length; a detail page must never grow that count.
+		expect(view.sections).toHaveLength(3);
+		expect(view.detailSections).toHaveLength(1);
+	});
+
+	it('counts detail-section audience tags toward hasAudiences (Epic 11 default)', () => {
+		// A document whose ONLY audience tags live on a detail section still surfaces
+		// the level switcher (hasAudiences true).
+		const doc = validFull();
+		const stripped = doc.sections.map((section) => ({
+			...section,
+			audiences: undefined,
+			blocks: section.blocks.map((block) => ({ ...block, audiences: undefined }))
+		}));
+		const detail: DocumentV1['sections'][number] = {
+			id: 'detail-only-tag',
+			title: 'Detail-only tag',
+			kind: 'detail',
+			audiences: ['technical'],
+			blocks: [{ type: 'text', id: 'deep', paragraphs: [[{ text: 'Deep.' }]] }]
+		};
+		const onlyDetailTagged: DocumentV1 = { ...doc, sections: [...stripped, detail] };
+		const view = toReportView(onlyDetailTagged);
+		expect(view.sections.every((s) => s.audiences === undefined)).toBe(true);
+		expect(view.hasAudiences).toBe(true);
+	});
+
+	it('renders a no-kind document byte-unchanged (additivity, N/N-1)', () => {
+		// A document with no `kind` on any section produces exactly the view it did
+		// before Epic 11: every section is main-flow, detailSections is empty, and
+		// the main-flow sequence and TOC are unchanged. The detail addition is purely
+		// additive (a new empty array and a `detail: false` flag), so the rendered
+		// HTML the reader sees is identical.
+		const view = toReportView(validFull());
+		expect(view.sections).toHaveLength(3);
+		expect(view.detailSections).toEqual([]);
+		expect(view.sections.every((s) => s.detail === false)).toBe(true);
+		expect(view.toc.map((t) => t.id)).toEqual([
+			'executive-summary',
+			'incident-analysis',
+			'methodology'
+		]);
+		// The serialized reader view carries no `kind`-derived noise beyond the flag:
+		// stringifying drops the `false` only when absent, so assert the flag is the
+		// sole additive surface and the section payload is otherwise intact.
+		const serialized = JSON.parse(JSON.stringify(view)) as ReportView;
+		expect(serialized.detailSections).toEqual([]);
+		expect(serialized.sections).toHaveLength(3);
+	});
+});
+
 describe('toPreviewView (transiently-invalid tolerance)', () => {
 	it('renders a fully valid snapshot with every section present and none flagged', () => {
 		const view = toPreviewView(fullDocument);
@@ -98,6 +195,31 @@ describe('toPreviewView (transiently-invalid tolerance)', () => {
 		const result = validateDocument(fullDocument);
 		if (!result.ok) throw new Error('fixture should be valid');
 		expect(toPreviewView(fullDocument)).toEqual(toReportView(result.document));
+	});
+
+	it('partitions detail sections out of the main flow and the TOC (Epic 11)', () => {
+		const snapshot = {
+			version: 1,
+			title: 'Drill-down draft',
+			sections: [
+				{
+					id: 'overview',
+					title: 'Overview',
+					blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'See the finding.' }]] }]
+				},
+				{
+					id: 'finding-detail',
+					title: 'Finding detail',
+					kind: 'detail',
+					blocks: [{ type: 'text', id: 'evidence', paragraphs: [[{ text: 'Evidence.' }]] }]
+				}
+			]
+		};
+		const view = toPreviewView(snapshot);
+		expect(view.sections.map((s) => s.id)).toEqual(['overview']);
+		expect(view.toc.map((t) => t.id)).toEqual(['overview']);
+		expect(view.detailSections.map((s) => s.id)).toEqual(['finding-detail']);
+		expect(view.detailSections[0].detail).toBe(true);
 	});
 
 	it('threads audience tags and the hasAudiences flag through the preview', () => {

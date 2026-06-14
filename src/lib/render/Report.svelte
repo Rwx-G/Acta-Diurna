@@ -294,6 +294,25 @@
 				/>
 			</div>
 		{/each}
+
+		<!-- Detail sections (Epic 11): rendered with their stable anchor id so an
+		     internal link can reach them, but kept OUT of the main-flow sequence -
+		     no `sectionEls` binding, so they are not paged, observed, or counted by
+		     the navigation (the link-driven reveal is Story 11.3). They render after
+		     the flow; the no-JS reader still reaches them by anchor. -->
+		{#each view.detailSections as section, detailIndex (section.id)}
+			<div class="section-host detail-host" data-audiences={audiencesAttr(section.audiences)}>
+				<SectionSlide
+					{section}
+					index={detailIndex}
+					total={view.detailSections.length}
+					mode={effectiveMode}
+					scales={view.scales}
+					matrixBlocks={view.matrixBlocks}
+					{theme}
+				/>
+			</div>
+		{/each}
 	</main>
 </div>
 

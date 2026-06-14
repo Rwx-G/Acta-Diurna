@@ -61,18 +61,25 @@ export interface PresenterState {
  * draft document - the one surface allowed to read them. The view-model never
  * carries notes, so this pairing is the only place a section meets its notes.
  *
- * `toReportView` preserves document order and never drops a section, so index `i`
- * of the view aligns with `document.sections[i]`.
+ * The presenter deck is the MAIN-FLOW sections only: `view.sections` already
+ * excludes detail sections (Epic 11), which are reachable only through an
+ * internal link and are not part of the presented narrative. Notes are paired
+ * back by section id rather than by position, because `view.sections` may be a
+ * subset of `document.sections` once a detail section is dropped, so positional
+ * alignment no longer holds.
  */
 export function toPresenterSections(document: DocumentV1): {
 	view: ReportView;
 	sections: PresenterSection[];
 } {
 	const view = toReportView(document);
-	const sections = view.sections.map((sectionView, index) => ({
+	const notesById = new Map(
+		document.sections.map((section) => [section.id, section.notes] as const)
+	);
+	const sections = view.sections.map((sectionView) => ({
 		view: sectionView,
 		annex: sectionView.annex,
-		notes: document.sections[index]?.notes
+		notes: notesById.get(sectionView.id)
 	}));
 	return { view, sections };
 }
