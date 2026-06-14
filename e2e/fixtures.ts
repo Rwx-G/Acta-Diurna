@@ -9,6 +9,14 @@ import { fullDocument } from '../src/lib/schema/examples/full.ts';
 export const E2E_PORT = 4173;
 export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
 
+/**
+ * Distinct port for the multi-mode harness so its `node build` server never
+ * collides with the single-mode one (the two projects own separate containers and
+ * separate app processes - see `multi-global-setup.ts`).
+ */
+export const E2E_MULTI_PORT = 4273;
+export const E2E_MULTI_BASE_URL = `http://localhost:${E2E_MULTI_PORT}`;
+
 /** Where the `setup` project saves the authenticated author storage state. */
 export const AUTH_STATE = 'e2e/.auth/author.json';
 
@@ -18,6 +26,45 @@ export const AUTH_STATE = 'e2e/.auth/author.json';
  * rest of `.auth/`.
  */
 export const DB_URL_FILE = 'e2e/.auth/db-url.txt';
+
+/**
+ * The multi-mode harness writes its OWN container DATABASE_URL here, kept separate
+ * from the single-mode `DB_URL_FILE` so the two harnesses never read each other's
+ * connection string. Gitignored with the rest of `.auth/`.
+ */
+export const MULTI_DB_URL_FILE = 'e2e/.auth/multi-db-url.txt';
+
+/**
+ * The multi-mode harness writes the mapped Mailpit HTTP-API base URL here so a
+ * spec can poll the SMTP double without importing the container (the same
+ * `.auth`-file seam the DB URL uses). Gitignored with the rest of `.auth/`.
+ */
+export const MAILPIT_URL_FILE = 'e2e/.auth/mailpit-url.txt';
+
+/**
+ * Multi-mode identity env (story 8.1). The harness boots with SMTP set (multi
+ * mode), so these MUST satisfy the fail-fast superRefine: `INITIAL_OWNER_EMAIL`
+ * sits inside `AUTHOR_EMAIL_DOMAIN`, and `READER_EMAIL_DOMAINS` whitelists a
+ * distinct reader domain so the allow-list path (story 8.5) is exercised end to
+ * end. These are test-only literals, never production values.
+ */
+export const E2E_AUTHOR_EMAIL_DOMAIN = 'example.com';
+export const E2E_INITIAL_OWNER_EMAIL = 'owner@example.com';
+export const E2E_READER_EMAIL_DOMAIN = 'reader.example.com';
+
+/**
+ * The multi-mode authors the harness signs in ONCE (in `multi-auth.setup.ts`) and
+ * reuses via saved storage state. Collapsing every author sign-in to one per author
+ * keeps the run under the per-IP author-verification burst (capacity 5): all
+ * requests come from one localhost IP, so re-signing in per test would throttle the
+ * later flows. `owner` inherited the seeded report; `alice`/`bob` are minted on
+ * their first verified sign-in (the tenancy spec proves they cannot see each other).
+ */
+export const MULTI_AUTHORS = {
+	owner: { email: E2E_INITIAL_OWNER_EMAIL, state: 'e2e/.auth/multi-owner.json' },
+	alice: { email: 'alice@example.com', state: 'e2e/.auth/multi-alice.json' },
+	bob: { email: 'bob@example.com', state: 'e2e/.auth/multi-bob.json' }
+} as const;
 
 export const E2E_AUTHOR_PASSWORD = 'e2e-secret-password';
 

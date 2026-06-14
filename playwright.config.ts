@@ -21,6 +21,11 @@ const PORT = 4173;
 export default defineConfig({
 	testDir: 'e2e',
 	testMatch: '**/*.{e2e,setup}.{ts,js}',
+	// The multi-mode harness lives in its OWN config (playwright.multi.config.ts)
+	// with its own global setup, containers, and app port. Exclude its specs AND its
+	// setup here so the single-mode setup/desktop/mobile projects never pick them up
+	// and the 17 green single-mode specs stay byte-identical.
+	testIgnore: ['**/multi-*.e2e.ts', '**/multi-*.setup.ts'],
 	globalSetup: './e2e/global-setup.ts',
 	timeout: 30_000,
 	expect: { timeout: 10_000 },
