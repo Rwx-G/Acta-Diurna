@@ -98,7 +98,7 @@
 					<label for="mode">Access</label>
 					<select id="mode" name="mode" bind:value={createMode}>
 						<option value="restricted">Restricted (recipient list)</option>
-						<option value="open">Open (anyone with the link)</option>
+						<option value="open">Open (any verified email)</option>
 					</select>
 				</div>
 				{#if createMode === 'restricted'}
