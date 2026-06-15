@@ -106,9 +106,11 @@ function verdictOf(section: SectionDiff): ChangeSummaryEntry['change'] {
  *
  * Untagged means "visible at every level": an untagged side imposes no constraint, so
  * the result falls back to the other side's tags; both untagged yields `undefined` (the
- * movement shows everywhere, like its block). Disjoint tag sets yield an empty set,
- * which the renderer's attribute serializer maps to "hidden at every level" - leak-safe,
- * since the block is never shown when the section is.
+ * movement shows everywhere, like its block). Disjoint tag sets yield an EMPTY array,
+ * which the caller ({@link movementsFor}) reads as "hidden at every level" and OMITS the
+ * movement entirely - the omit-rather-than-mislead rule. The empty array must NOT reach
+ * the renderer's `audiencesAttr`, which maps an empty set to "no attribute" (visible
+ * everywhere), the exact opposite of the intended hide.
  */
 function movementAudiences(
 	sectionAudiences: readonly string[] | undefined,
@@ -136,6 +138,14 @@ function movementAudiences(
  * line whenever EITHER the section or the block is hidden at the reader's level - a
  * block-level tag can no longer leak a figure the body conceals at that level.
  *
+ * Omit-rather-than-mislead on disjoint tags: when the section and the block are BOTH
+ * tagged but share no level (e.g. a `summary` section holding a `technical` KPI), the
+ * intersection is empty - the movement is hidden at EVERY level - so it is omitted
+ * entirely rather than baked. Baking it with an empty `audiences` would serialize to no
+ * `data-audiences` attribute, which the reader CSS treats as visible everywhere: the
+ * exact opposite of the hide, leaking the figure at every level. A non-empty
+ * intersection (real overlap) and an absent constraint (both untagged) still bake.
+ *
  * Omit-rather-than-mislead on the label: a KPI with no usable single-item label
  * contributes no movement (rather than falling back to the section title, which would
  * attribute the figure to the wrong subject), consistent with every other missing-data
@@ -159,6 +169,12 @@ function movementsFor(
 		const label = source?.items?.[0]?.label;
 		if (label === undefined || label.length === 0) continue;
 		const audiences = movementAudiences(sectionAudiences, source?.audiences);
+		// Disjoint section/block tags yield an empty array (hidden at every level): omit
+		// the movement rather than bake it. An empty `audiences` would serialize to no
+		// attribute, which the reader CSS reads as visible everywhere - the opposite of
+		// the hide, a leak. An absent (undefined) constraint is "shown everywhere" and is
+		// kept; a non-empty intersection is kept and carries the intersection.
+		if (audiences !== undefined && audiences.length === 0) continue;
 		movements.push({
 			label,
 			delta,
@@ -195,7 +211,7 @@ function audiencesById(document: SummarySourceDocument): Map<string, readonly st
 /**
  * Builds the leak-safe reader-facing change-summary entries from a {@link SeriesDiff}
  * and the BAKED new snapshot (which already carries the 9.4 KPI deltas). Pure and
- * total: it reads only the diff and the snapshot passed in, never throws, and returns
+ * total: it reads only the diff and the snapshots passed in, never throws, and returns
  * the same result for the same inputs.
  *
  * A computed diff yields one entry per CHANGED section (added / removed / updated),
@@ -204,6 +220,14 @@ function audiencesById(document: SummarySourceDocument): Map<string, readonly st
  * `substantial-drift` diff yields an EMPTY array - the panel does not appear, the
  * omit-rather-than-mislead rule.
  *
+ * A `removed` section is GONE from the new snapshot, so its audience tags cannot be
+ * read off `baked`; they are read off the PREDECESSOR snapshot instead, so a
+ * technical-only section deleted this issue keeps its `technical` tag on the entry and
+ * the reader CSS still hides it at `summary` (rather than surfacing the deleted
+ * section's title to every level). The predecessor is the same snapshot the diff was
+ * computed against; an absent predecessor (a no-predecessor diff never reaches the
+ * loop) carries no removed entries to tag.
+ *
  * `audiences` is typed as the schema `Audience` set at the bake boundary: the baked
  * snapshot is a validated document, so its section `audiences` are valid audience
  * tags; this module stays isomorphic by reading them as `readonly string[]` and the
@@ -211,21 +235,28 @@ function audiencesById(document: SummarySourceDocument): Map<string, readonly st
  */
 export function buildChangeSummaryEntries(
 	diff: SeriesDiff,
-	baked: SummarySourceDocument
+	baked: SummarySourceDocument,
+	predecessor?: SummarySourceDocument
 ): ChangeSummaryEntry[] {
 	if (diff.kind !== 'diff') return [];
 
 	const blocksById = indexBlocksById(baked);
 	const audiences = audiencesById(baked);
+	const predecessorAudiences =
+		predecessor !== undefined ? audiencesById(predecessor) : new Map<string, readonly string[]>();
 	const entries: ChangeSummaryEntry[] = [];
 	for (const section of diff.sections) {
 		if (!sectionChanged(section)) continue;
-		const tags = audiences.get(section.id);
+		const verdict = verdictOf(section);
+		// A removed section is absent from `baked`, so its tags live only on the
+		// predecessor snapshot; every other verdict reads them off the new snapshot.
+		const tags =
+			verdict === 'removed' ? predecessorAudiences.get(section.id) : audiences.get(section.id);
 		const movements = movementsFor(section, tags, blocksById);
 		entries.push({
 			sectionId: section.id,
 			sectionTitle: section.title,
-			change: verdictOf(section),
+			change: verdict,
 			...(tags !== undefined ? { audiences: tags as ChangeSummaryEntry['audiences'] } : {}),
 			...(movements.length > 0 ? { movements } : {})
 		});

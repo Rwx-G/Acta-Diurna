@@ -185,6 +185,68 @@ describe('buildChangeSummaryEntries', () => {
 		expect(entries[0].movements?.[0].audiences).toEqual(['full']);
 	});
 
+	it('omits a movement when the section and block audience tags are disjoint (hidden everywhere)', () => {
+		// Section visible only at `summary`, KPI tagged only `technical`: the intersection is
+		// empty, so the movement is hidden at EVERY level. Baking it with an empty `audiences`
+		// would serialize to no `data-audiences` attribute -> visible everywhere (a leak), so
+		// it is omitted entirely. The section is still flagged `updated`, just with no movement.
+		const old = doc([
+			section(
+				'metrics',
+				'Metrics',
+				[kpiBlock('rev', 'Revenue', 100, undefined, ['technical'])],
+				['summary']
+			)
+		]);
+		const baked = doc([
+			section(
+				'metrics',
+				'Metrics',
+				[kpiBlock('rev', 'Revenue', 108, upDelta(), ['technical'])],
+				['summary']
+			)
+		]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked);
+		expect(entries).toEqual([
+			{ sectionId: 'metrics', sectionTitle: 'Metrics', change: 'updated', audiences: ['summary'] }
+		]);
+		expect(entries[0].movements).toBeUndefined();
+	});
+
+	it('still surfaces a movement when both the section and block are untagged (shown everywhere)', () => {
+		// No constraint on either side: the movement carries no `audiences` and shows at
+		// every level, like its block. This is the absent-constraint case the omit guard
+		// must NOT trip on.
+		const old = doc([section('metrics', 'Metrics', [kpiBlock('rev', 'Revenue', 100)])]);
+		const baked = doc([
+			section('metrics', 'Metrics', [kpiBlock('rev', 'Revenue', 108, upDelta())])
+		]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked);
+		expect(entries[0].movements).toEqual([{ label: 'Revenue', delta: upDelta() }]);
+	});
+
+	it('carries the predecessor audience tags on a removed section (not the absent new-snapshot tags)', () => {
+		// A technical-only section deleted this issue is GONE from the baked snapshot, so its
+		// tags can only come from the predecessor. Without threading them, the entry would
+		// carry no tags and surface the deleted section's title at `summary` - a leak.
+		const old = doc([
+			section('intro', 'Intro', [textBlock('p', 'Kept.')]),
+			section('method', 'Method', [textBlock('m', 'Gone.')], ['technical'])
+		]);
+		const baked = doc([section('intro', 'Intro', [textBlock('p', 'Kept.')])]);
+		const diff = diffSnapshots(baked, old);
+		const entries = buildChangeSummaryEntries(diff, baked, old);
+		const removed = entries.find((entry) => entry.sectionId === 'method');
+		expect(removed).toEqual({
+			sectionId: 'method',
+			sectionTitle: 'Method',
+			change: 'removed',
+			audiences: ['technical']
+		});
+	});
+
 	it('omits a movement whose KPI has no usable label (omit-rather-than-mislead)', () => {
 		// An unlabeled KPI must not borrow the section title - that would attribute the
 		// figure to the wrong subject. The movement is omitted entirely, the same posture as
