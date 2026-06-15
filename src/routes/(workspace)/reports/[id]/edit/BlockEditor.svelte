@@ -159,17 +159,17 @@
 		<div class="gutter">
 			<span class="gutter-hint" aria-hidden="true">&#8943;</span>
 			<div class="controls">
-				<Button onclick={() => onMove(-1)} disabled={blockIndex === 0}>
+				<Button class="row-control" onclick={() => onMove(-1)} disabled={blockIndex === 0}>
 					<span class="sr-only">Move block up</span>
-					<span aria-hidden="true">Up</span>
+					<span aria-hidden="true">&uarr;</span>
 				</Button>
-				<Button onclick={() => onMove(1)} disabled={blockIndex === count - 1}>
+				<Button class="row-control" onclick={() => onMove(1)} disabled={blockIndex === count - 1}>
 					<span class="sr-only">Move block down</span>
-					<span aria-hidden="true">Down</span>
+					<span aria-hidden="true">&darr;</span>
 				</Button>
-				<Button variant="ghost" onclick={onRemove}>
+				<Button class="row-control" variant="ghost" onclick={onRemove}>
 					<span class="sr-only">Remove block</span>
-					<span aria-hidden="true">Remove</span>
+					<span aria-hidden="true">&times;</span>
 				</Button>
 			</div>
 		</div>

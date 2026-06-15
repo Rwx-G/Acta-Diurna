@@ -55,6 +55,7 @@
 					aria-label={`Item ${itemIndex + 1} term`}
 				/>
 				<Button
+					class="row-control"
 					variant="ghost"
 					onclick={() => {
 						block.items.splice(itemIndex, 1);
@@ -63,7 +64,7 @@
 					disabled={block.items.length === 1}
 					aria-label={`Remove item ${itemIndex + 1}`}
 				>
-					Remove
+					<span aria-hidden="true">&times;</span>
 				</Button>
 			</div>
 
@@ -135,12 +136,14 @@
 
 	.item-head {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
 		align-items: center;
 	}
 
 	.item-head input {
-		flex: 1;
+		flex: 1 1 10rem;
+		min-width: 0;
 	}
 
 	/* `input` and `select` are the shared workspace base (form-fields.css). */

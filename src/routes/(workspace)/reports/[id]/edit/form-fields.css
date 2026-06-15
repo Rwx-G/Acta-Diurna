@@ -35,6 +35,47 @@
 }
 
 /*
+ * Per-item field rows reflow (layout/overflow fix). Every per-type editor lays its
+ * inputs + reorder/remove controls in a horizontal `.field-row`. Allowing it to wrap
+ * (with a sensible flex-basis floor on the text inputs/selects so they collapse to a
+ * usable width rather than 1px slivers before the row breaks) means a narrow column
+ * wraps the controls onto the next line instead of overflowing - so the document
+ * never slides under the sticky inspector at desktop, and there is no horizontal
+ * scroll on a narrow viewport. The per-editor `.field-row` rules keep only their
+ * component-specific basis tweaks; the wrap + the control floor live here once.
+ */
+.block-card .field-row {
+	flex-wrap: wrap;
+}
+
+.block-card .field-row input,
+.block-card .field-row select {
+	flex: 1 1 8rem;
+}
+
+/*
+ * Compact row controls (button polish). The per-item move / remove buttons and the
+ * card-level / section-level gutter buttons share one quiet, square-ish icon
+ * treatment instead of the heavy text buttons that inflated each row's min-content.
+ * The class is forwarded onto the shared `Button` (its caller `class` MERGES with the
+ * variant), so it overrides the `.btn` padding without losing the variant colours.
+ * The glyph inside is `aria-hidden`; the accessible name is the sibling `.sr-only`
+ * span (or the button's own `aria-label`), so this is purely visual.
+ */
+.btn.row-control {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	min-width: 2rem;
+	height: 2rem;
+	padding: 0 var(--space-2);
+	font-size: var(--text-base);
+	font-weight: 600;
+	line-height: 1;
+}
+
+/*
  * The `.sr-only` accessible-name helper for the icon-style move/remove controls
  * (WCAG 2.5.3, label-in-name) lives in the sibling `sr-only.css`, imported by the
  * same workspace layout and scoped under the same `.block-card`. The accessible

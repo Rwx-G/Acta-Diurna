@@ -76,6 +76,7 @@
 				aria-label={`Annotation ${annotationIndex + 1} text`}
 			/>
 			<Button
+				class="row-control"
 				variant="ghost"
 				onclick={() => {
 					block.annotations?.splice(annotationIndex, 1);
@@ -84,7 +85,7 @@
 				}}
 				aria-label={`Remove annotation ${annotationIndex + 1}`}
 			>
-				Remove
+				<span aria-hidden="true">&times;</span>
 			</Button>
 		</div>
 	{/each}
@@ -123,17 +124,21 @@
 
 	.field-row {
 		display: flex;
+		align-items: center;
 		gap: var(--space-2);
 	}
 
 	.field-row input:not(.line-input) {
-		flex: 1;
+		flex: 1 1 8rem;
 		min-width: 0;
 	}
 
-	.line-input {
+	/* The shared `.block-card .field-row input` basis (form-fields.css) would otherwise
+	   stretch this fixed line-number input; the compound selector outranks it so the line
+	   field stays a narrow 5rem column. */
+	.field-row input.line-input {
+		flex: 0 0 5rem;
 		width: 5rem;
-		flex: none;
 	}
 
 	.code-source {

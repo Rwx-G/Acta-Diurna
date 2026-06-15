@@ -1090,6 +1090,13 @@
 		margin: 0;
 		padding: 0;
 		border: 0;
+		/* A <fieldset> will not shrink below its content's min-content unless given an
+		   explicit min-width:0 (the long-standing fieldset min-width quirk). Without it
+		   the widest per-block row sizes the fieldset and it overflows the grid column -
+		   sliding the document under the sticky inspector at desktop and off-screen on a
+		   narrow viewport. min-width:0 lets the grid column (minmax(0,1fr)) clamp it so
+		   the rows reflow instead. */
+		min-width: 0;
 	}
 
 	.report-title {

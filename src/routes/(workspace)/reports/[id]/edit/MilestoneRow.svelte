@@ -53,21 +53,22 @@
 			}}
 			aria-label={`Milestone ${milestoneIndex + 1} label`}
 		/>
-		<Button onclick={onMoveUp} disabled={!canMoveUp}>
+		<Button class="row-control" onclick={onMoveUp} disabled={!canMoveUp}>
 			<span class="sr-only">{`Move milestone ${milestoneIndex + 1} up`}</span>
-			<span aria-hidden="true">Up</span>
+			<span aria-hidden="true">&uarr;</span>
 		</Button>
-		<Button onclick={onMoveDown} disabled={!canMoveDown}>
+		<Button class="row-control" onclick={onMoveDown} disabled={!canMoveDown}>
 			<span class="sr-only">{`Move milestone ${milestoneIndex + 1} down`}</span>
-			<span aria-hidden="true">Down</span>
+			<span aria-hidden="true">&darr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			variant="ghost"
 			onclick={onRemove}
 			disabled={!canRemove}
 			aria-label={`Remove milestone ${milestoneIndex + 1}`}
 		>
-			Remove
+			<span aria-hidden="true">&times;</span>
 		</Button>
 	</div>
 
@@ -173,16 +174,19 @@
 
 	.milestone-head {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
 		align-items: center;
 	}
 
 	.milestone-head input {
-		flex: 1;
+		flex: 1 1 10rem;
+		min-width: 0;
 	}
 
 	.status-row {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
 	}
 

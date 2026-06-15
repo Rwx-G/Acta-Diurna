@@ -72,6 +72,7 @@
 				{/each}
 			</select>
 			<Button
+				class="row-control"
 				variant="ghost"
 				onclick={() => {
 					block.entries.splice(entryIndex, 1);
@@ -80,7 +81,7 @@
 				disabled={block.entries.length === 1}
 				aria-label={`Remove chip ${entryIndex + 1}`}
 			>
-				Remove
+				<span aria-hidden="true">&times;</span>
 			</Button>
 		</div>
 	{/each}
@@ -121,11 +122,12 @@
 
 	.field-row {
 		display: flex;
+		align-items: center;
 		gap: var(--space-2);
 	}
 
 	.field-row select {
-		flex: 1;
+		flex: 1 1 8rem;
 		min-width: 0;
 	}
 

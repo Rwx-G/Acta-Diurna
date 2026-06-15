@@ -70,6 +70,7 @@
 				aria-label={`Card ${itemIndex + 1} description`}
 			/>
 			<Button
+				class="row-control"
 				variant="ghost"
 				onclick={() => {
 					block.items.splice(itemIndex, 1);
@@ -78,7 +79,7 @@
 				disabled={block.items.length === 1}
 				aria-label={`Remove card ${itemIndex + 1}`}
 			>
-				Remove
+				<span aria-hidden="true">&times;</span>
 			</Button>
 		</div>
 	{/each}
@@ -111,6 +112,7 @@
 
 	.card-row {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
 		align-items: center;
 	}
@@ -127,7 +129,8 @@
 		border-radius: var(--radius-sm);
 	}
 
-	.card-row input {
-		flex: 1;
+	.card-row input,
+	.card-row select {
+		flex: 1 1 8rem;
 	}
 </style>

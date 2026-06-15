@@ -83,6 +83,7 @@
 					/>
 					<div class="run-controls">
 						<Button
+							class="row-control"
 							onclick={() => {
 								moveItem(paragraph, runIndex, -1);
 								onEdit();
@@ -90,9 +91,10 @@
 							disabled={runIndex === 0}
 						>
 							<span class="sr-only">{`Move ${scope}run ${runIndex + 1} left`}</span>
-							<span aria-hidden="true">Left</span>
+							<span aria-hidden="true">&larr;</span>
 						</Button>
 						<Button
+							class="row-control"
 							onclick={() => {
 								moveItem(paragraph, runIndex, 1);
 								onEdit();
@@ -100,9 +102,10 @@
 							disabled={runIndex === paragraph.length - 1}
 						>
 							<span class="sr-only">{`Move ${scope}run ${runIndex + 1} right`}</span>
-							<span aria-hidden="true">Right</span>
+							<span aria-hidden="true">&rarr;</span>
 						</Button>
 						<Button
+							class="row-control"
 							variant="ghost"
 							onclick={() => {
 								paragraph.splice(runIndex, 1);
@@ -111,7 +114,7 @@
 							disabled={paragraph.length === 1}
 						>
 							<span class="sr-only">{`Remove ${scope}run ${runIndex + 1}`}</span>
-							<span aria-hidden="true">Remove</span>
+							<span aria-hidden="true">&times;</span>
 						</Button>
 					</div>
 				</div>
@@ -217,12 +220,14 @@
 
 	.run-text {
 		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: var(--space-2);
 		margin-bottom: var(--space-2);
 	}
 
 	.run-text input {
-		flex: 1;
+		flex: 1 1 10rem;
 		min-width: 0;
 	}
 

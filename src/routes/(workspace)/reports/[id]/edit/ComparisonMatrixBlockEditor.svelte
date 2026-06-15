@@ -127,6 +127,7 @@
 			<legend>Finding {findingIndex + 1}</legend>
 			<div class="finding-controls">
 				<Button
+					class="row-control"
 					onclick={() => {
 						moveItem(block.findings, findingIndex, -1);
 						onEdit();
@@ -134,9 +135,10 @@
 					disabled={findingIndex === 0}
 				>
 					<span class="sr-only">{`Move finding ${findingIndex + 1} up`}</span>
-					<span aria-hidden="true">Up</span>
+					<span aria-hidden="true">&uarr;</span>
 				</Button>
 				<Button
+					class="row-control"
 					onclick={() => {
 						moveItem(block.findings, findingIndex, 1);
 						onEdit();
@@ -144,7 +146,7 @@
 					disabled={findingIndex === block.findings.length - 1}
 				>
 					<span class="sr-only">{`Move finding ${findingIndex + 1} down`}</span>
-					<span aria-hidden="true">Down</span>
+					<span aria-hidden="true">&darr;</span>
 				</Button>
 			</div>
 			<div class="field-row">
@@ -331,21 +333,14 @@
 
 	.field-row {
 		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
-	}
-
-	.source-row {
-		align-items: center;
 	}
 
 	.source-name {
 		flex: 0 0 8rem;
 		font-size: var(--text-sm);
-	}
-
-	.field-row input {
-		flex: 1;
-		min-width: 0;
 	}
 </style>

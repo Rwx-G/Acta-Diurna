@@ -66,6 +66,7 @@
 			{/each}
 		</select>
 		<Button
+			class="row-control"
 			onclick={() => {
 				moveItem(block.items!, itemIndex, -1);
 				onEdit();
@@ -73,9 +74,10 @@
 			disabled={itemIndex === 0}
 		>
 			<span class="sr-only">{`Move KPI ${itemIndex + 1} up`}</span>
-			<span aria-hidden="true">Up</span>
+			<span aria-hidden="true">&uarr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			onclick={() => {
 				moveItem(block.items!, itemIndex, 1);
 				onEdit();
@@ -83,9 +85,10 @@
 			disabled={itemIndex === (block.items?.length ?? 0) - 1}
 		>
 			<span class="sr-only">{`Move KPI ${itemIndex + 1} down`}</span>
-			<span aria-hidden="true">Down</span>
+			<span aria-hidden="true">&darr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			variant="ghost"
 			onclick={() => {
 				block.items!.splice(itemIndex, 1);
@@ -94,7 +97,7 @@
 			}}
 		>
 			<span class="sr-only">{`Remove KPI ${itemIndex + 1}`}</span>
-			<span aria-hidden="true">Remove</span>
+			<span aria-hidden="true">&times;</span>
 		</Button>
 	</div>
 {/each}
@@ -109,31 +112,13 @@
 <BindingEditor bind:binding={block.binding} {onEdit} />
 
 <style>
-	/* The input/select base reset lives in the workspace-scoped form-fields.css
-	   (under `.block-card`); only component-specific rules remain. */
+	/* The input/select reset, the `.field-row` wrap + control floor, the `.row-control`
+	   button treatment and `.sr-only` all live in the workspace-scoped form-fields.css /
+	   sr-only.css (under `.block-card`); only component-specific rules remain. */
 	.field-row {
 		display: flex;
+		align-items: center;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
-	}
-
-	.field-row input {
-		flex: 1;
-		min-width: 0;
-	}
-
-	/* Off-screen accessible name for the icon-style move/remove controls (WCAG 2.5.3);
-	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
-	   the workspace layout too. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>

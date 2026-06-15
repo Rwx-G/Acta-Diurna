@@ -100,6 +100,7 @@
 			{/each}
 		</select>
 		<Button
+			class="row-control"
 			onclick={() => {
 				moveItem(block.columns, columnIndex, -1);
 				onEdit();
@@ -107,9 +108,10 @@
 			disabled={columnIndex === 0}
 		>
 			<span class="sr-only">{`Move column ${columnIndex + 1} left`}</span>
-			<span aria-hidden="true">Left</span>
+			<span aria-hidden="true">&larr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			onclick={() => {
 				moveItem(block.columns, columnIndex, 1);
 				onEdit();
@@ -117,9 +119,10 @@
 			disabled={columnIndex === block.columns.length - 1}
 		>
 			<span class="sr-only">{`Move column ${columnIndex + 1} right`}</span>
-			<span aria-hidden="true">Right</span>
+			<span aria-hidden="true">&rarr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			variant="ghost"
 			onclick={() => {
 				removeColumn(columnIndex);
@@ -128,7 +131,7 @@
 			disabled={block.columns.length === 1}
 		>
 			<span class="sr-only">{`Remove column ${columnIndex + 1}`}</span>
-			<span aria-hidden="true">Remove</span>
+			<span aria-hidden="true">&times;</span>
 		</Button>
 	</div>
 {/each}
@@ -169,6 +172,7 @@
 			/>
 		{/each}
 		<Button
+			class="row-control"
 			onclick={() => {
 				moveItem(block.rows!, rowIndex, -1);
 				onEdit();
@@ -176,9 +180,10 @@
 			disabled={rowIndex === 0}
 		>
 			<span class="sr-only">{`Move row ${rowIndex + 1} up`}</span>
-			<span aria-hidden="true">Up</span>
+			<span aria-hidden="true">&uarr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			onclick={() => {
 				moveItem(block.rows!, rowIndex, 1);
 				onEdit();
@@ -186,9 +191,10 @@
 			disabled={rowIndex === (block.rows?.length ?? 0) - 1}
 		>
 			<span class="sr-only">{`Move row ${rowIndex + 1} down`}</span>
-			<span aria-hidden="true">Down</span>
+			<span aria-hidden="true">&darr;</span>
 		</Button>
 		<Button
+			class="row-control"
 			variant="ghost"
 			onclick={() => {
 				block.rows!.splice(rowIndex, 1);
@@ -197,7 +203,7 @@
 			}}
 		>
 			<span class="sr-only">{`Remove row ${rowIndex + 1}`}</span>
-			<span aria-hidden="true">Remove</span>
+			<span aria-hidden="true">&times;</span>
 		</Button>
 	</div>
 {/each}
@@ -213,37 +219,20 @@
 <BindingEditor bind:binding={block.binding} {onEdit} />
 
 <style>
-	/* `.field-label` and the input/select base reset live in the workspace-scoped
-	   form-fields.css (under `.block-card`); only component-specific rules remain. */
+	/* The `.field-label` / input reset, the `.field-row` wrap + control floor, the
+	   `.row-control` button treatment and `.sr-only` live in the workspace-scoped
+	   form-fields.css / sr-only.css (under `.block-card`); only the component-specific
+	   rules remain. */
 	.field-row {
 		display: flex;
+		align-items: center;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
-	}
-
-	.field-row input {
-		flex: 1;
-		min-width: 0;
 	}
 
 	.field-error {
 		margin: 0 0 var(--space-3);
 		font-size: var(--text-sm);
 		color: var(--color-danger);
-	}
-
-	/* Off-screen accessible name for the icon-style move/remove controls (WCAG 2.5.3);
-	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
-	   the workspace layout too. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>

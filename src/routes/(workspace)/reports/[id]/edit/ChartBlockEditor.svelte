@@ -82,6 +82,7 @@
 				aria-label={`Series ${seriesIndex + 1} name`}
 			/>
 			<Button
+				class="row-control"
 				onclick={() => {
 					moveItem(block.series!, seriesIndex, -1);
 					onEdit();
@@ -89,9 +90,10 @@
 				disabled={seriesIndex === 0}
 			>
 				<span class="sr-only">{`Move series ${seriesIndex + 1} up`}</span>
-				<span aria-hidden="true">Up</span>
+				<span aria-hidden="true">&uarr;</span>
 			</Button>
 			<Button
+				class="row-control"
 				onclick={() => {
 					moveItem(block.series!, seriesIndex, 1);
 					onEdit();
@@ -99,9 +101,10 @@
 				disabled={seriesIndex === (block.series?.length ?? 0) - 1}
 			>
 				<span class="sr-only">{`Move series ${seriesIndex + 1} down`}</span>
-				<span aria-hidden="true">Down</span>
+				<span aria-hidden="true">&darr;</span>
 			</Button>
 			<Button
+				class="row-control"
 				variant="ghost"
 				onclick={() => {
 					block.series!.splice(seriesIndex, 1);
@@ -110,7 +113,7 @@
 				}}
 			>
 				<span class="sr-only">{`Remove series ${seriesIndex + 1}`}</span>
-				<span aria-hidden="true">Remove</span>
+				<span aria-hidden="true">&times;</span>
 			</Button>
 		</div>
 		{#each series.points as point, pointIndex (pointIndex)}
@@ -137,6 +140,7 @@
 					aria-label={`Series ${seriesIndex + 1} point ${pointIndex + 1} y`}
 				/>
 				<Button
+					class="row-control"
 					variant="ghost"
 					onclick={() => {
 						series.points.splice(pointIndex, 1);
@@ -144,7 +148,7 @@
 					}}
 				>
 					<span class="sr-only">{`Remove point ${pointIndex + 1}`}</span>
-					<span aria-hidden="true">Remove</span>
+					<span aria-hidden="true">&times;</span>
 				</Button>
 			</div>
 		{/each}
@@ -172,10 +176,13 @@
 <BindingEditor bind:binding={block.binding} {onEdit} />
 
 <style>
-	/* `.field-label` and the input/select base reset live in the workspace-scoped
-	   form-fields.css (under `.block-card`); only component-specific rules remain. */
+	/* The `.field-label` / input reset, the `.field-row` wrap + control floor, the
+	   `.row-control` button treatment and `.sr-only` live in the workspace-scoped
+	   form-fields.css / sr-only.css (under `.block-card`); only the component-specific
+	   rules remain. */
 	.field-row {
 		display: flex;
+		align-items: center;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
 	}
@@ -187,28 +194,8 @@
 		border-radius: var(--radius-sm);
 	}
 
-	.field-row input {
-		flex: 1;
-		min-width: 0;
-	}
-
 	.label-field {
 		display: block;
 		width: 100%;
-	}
-
-	/* Off-screen accessible name for the icon-style move/remove controls (WCAG 2.5.3);
-	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
-	   the workspace layout too. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>

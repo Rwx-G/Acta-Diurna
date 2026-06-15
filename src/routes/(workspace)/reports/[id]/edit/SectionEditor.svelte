@@ -149,20 +149,24 @@
 			<span class="gutter-hint" aria-hidden="true">&#8943;</span>
 			<div class="controls">
 				<Button
+					class="row-control"
 					onclick={() => onMove(-1)}
 					disabled={sectionIndex === 0}
 					aria-label="Move section up"
 				>
-					Up
+					<span aria-hidden="true">&uarr;</span>
 				</Button>
 				<Button
+					class="row-control"
 					onclick={() => onMove(1)}
 					disabled={sectionIndex === count - 1}
 					aria-label="Move section down"
 				>
-					Down
+					<span aria-hidden="true">&darr;</span>
 				</Button>
-				<Button variant="ghost" onclick={onRemove} aria-label="Remove section">Remove</Button>
+				<Button class="row-control" variant="ghost" onclick={onRemove} aria-label="Remove section">
+					<span aria-hidden="true">&times;</span>
+				</Button>
 			</div>
 		</div>
 	</header>

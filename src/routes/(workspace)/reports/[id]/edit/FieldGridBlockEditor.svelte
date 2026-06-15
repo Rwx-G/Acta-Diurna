@@ -53,6 +53,7 @@
 				aria-label={`Field ${itemIndex + 1} value`}
 			/>
 			<Button
+				class="row-control"
 				variant="ghost"
 				onclick={() => {
 					block.items.splice(itemIndex, 1);
@@ -61,7 +62,7 @@
 				disabled={block.items.length === 1}
 				aria-label={`Remove field ${itemIndex + 1}`}
 			>
-				Remove
+				<span aria-hidden="true">&times;</span>
 			</Button>
 		</div>
 	{/each}
@@ -105,7 +106,7 @@
 	}
 
 	.field-row input {
-		flex: 1;
+		flex: 1 1 8rem;
 		min-width: 0;
 		padding: var(--space-2) var(--space-3);
 		font: inherit;
