@@ -15,6 +15,7 @@ import {
 	type BlockType,
 	type DocumentV1,
 	type DocumentV1Input,
+	type InlineRun,
 	type Paragraph,
 	type Section
 } from '$lib/schema';
@@ -249,6 +250,48 @@ export const blockPaletteEntries: BlockPaletteEntry[] = blockSchema.options.map(
  */
 export function paragraphText(paragraph: Paragraph): string {
 	return paragraph.map((run) => run.text).join('');
+}
+
+/**
+ * The boolean inline marks the text editor (Story 10.3) exposes per run - the
+ * SAME vocabulary the schema (`inlineRunSchema`) and the renderer
+ * (`InlineRuns.svelte`) honour: bold, italic, and inline `code`. The `link` mark
+ * is edited separately (it carries an href, not a boolean), and `linkTo` is the
+ * Epic 11 internal-link twin the core text editor leaves untouched. Typed as
+ * `keyof` the run so a renamed/added boolean mark is a compile error here.
+ */
+export type RunMark = 'bold' | 'italic' | 'code';
+
+export const RUN_MARKS: readonly RunMark[] = ['bold', 'italic', 'code'];
+
+/** A fresh, unformatted inline run - one keystroke from valid (an empty text run). */
+export function newRun(): InlineRun {
+	return { text: '' };
+}
+
+/**
+ * Toggles a boolean inline mark on a run IN PLACE, in the schema's own idiom:
+ * an active mark is the boolean field present and `true`, an inactive mark is the
+ * field ABSENT (optional fields are omitted, never stored `false`), so a run with
+ * no marks is byte-identical to a plain `{ text }` run. The text editor only ever
+ * writes the marks the schema defines - there is no contenteditable and no HTML
+ * path - so arbitrary markup can never enter a run; the mark set is the vocabulary.
+ */
+export function toggleRunMark(run: InlineRun, mark: RunMark): void {
+	if (run[mark]) delete run[mark];
+	else run[mark] = true;
+}
+
+/**
+ * Sets or clears a run's EXTERNAL link IN PLACE. A non-empty href stores the
+ * `link` object the schema validates (an http(s) URL, enforced on save); an empty
+ * href removes the field entirely (an optional link is omitted, not blanked). The
+ * editor never sets both `link` and the Epic 11 `linkTo` on a run (it does not edit
+ * `linkTo`), so the schema's mutual-exclusion refine is never tripped from here.
+ */
+export function setRunLink(run: InlineRun, href: string): void {
+	if (href === '') delete run.link;
+	else run.link = { href };
 }
 
 /**

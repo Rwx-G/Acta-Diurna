@@ -27,7 +27,6 @@
 	// mutates a prop needs that prop bound, not the whole block re-derived).
 	interface Props {
 		block: Block;
-		sectionIndex: number;
 		blockIndex: number;
 		count: number;
 		issues: EditorIssue[];
@@ -42,7 +41,6 @@
 
 	let {
 		block = $bindable(),
-		sectionIndex,
 		blockIndex,
 		count,
 		issues,
@@ -86,7 +84,7 @@
 	<AudiencePicker bind:audiences={block.audiences} legend="Block audiences" {onEdit} />
 
 	{#if block.type === 'text'}
-		<TextBlockEditor bind:block {sectionIndex} {blockIndex} {onEdit} />
+		<TextBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'table'}
 		<TableBlockEditor bind:block {scales} {onEdit} />
 	{:else if block.type === 'chart'}

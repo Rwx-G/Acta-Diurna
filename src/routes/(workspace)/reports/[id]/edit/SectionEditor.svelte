@@ -133,7 +133,6 @@
 		{#each section.blocks as block, blockIndex (block.id)}
 			<BlockEditor
 				bind:block={section.blocks[blockIndex]}
-				{sectionIndex}
 				{blockIndex}
 				count={section.blocks.length}
 				issues={errors[`block:${block.id}`] ?? []}
