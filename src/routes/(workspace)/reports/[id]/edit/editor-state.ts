@@ -183,6 +183,51 @@ export function newSection(): Section {
 }
 
 /**
+ * One palette entry per member of the block discriminated union (Story 10.2),
+ * with a human label and a one-line description so the author picks a block by
+ * what it does rather than by its schema key. `satisfies Record<BlockType, ...>`
+ * makes the catalogue EXHAUSTIVE: a new block type added to the union (or a
+ * removed/renamed one) is a compile error here, so the palette can never silently
+ * omit or stale-list a type. The order is the palette order; insertion seeds the
+ * chosen type from `newBlock`, so the palette adds NO new block shape - it exposes
+ * the existing catalogue.
+ */
+export interface BlockPaletteEntry {
+	type: BlockType;
+	label: string;
+	description: string;
+}
+
+const BLOCK_CATALOGUE = {
+	text: { label: 'Text', description: 'Formatted paragraphs of prose.' },
+	table: { label: 'Table', description: 'Rows and columns, optionally data-bound.' },
+	chart: { label: 'Chart', description: 'A line, bar, or area series.' },
+	kpi: { label: 'KPI', description: 'Headline figures with optional trend.' },
+	image: { label: 'Image', description: 'A figure with alt text.' },
+	'comparison-matrix': {
+		label: 'Comparison matrix',
+		description: 'A findings grid scored against scales.'
+	},
+	'field-grid': { label: 'Field grid', description: 'Label / value metadata pairs.' },
+	legend: { label: 'Legend', description: 'A key explaining a scale.' },
+	'set-membership': {
+		label: 'Set membership',
+		description: 'Membership against a comparison matrix.'
+	},
+	'chip-cluster': { label: 'Chip cluster', description: 'A cluster of scale-tagged chips.' },
+	callout: { label: 'Callout', description: 'A tinted admonition box.' },
+	code: { label: 'Code', description: 'A monospace code snippet.' },
+	'card-grid': { label: 'Card grid', description: 'A grid of icon / title / description cards.' },
+	list: { label: 'List', description: 'An ordered or unordered structured list.' },
+	timeline: { label: 'Timeline', description: 'A sequence of dated milestones.' }
+} satisfies Record<BlockType, { label: string; description: string }>;
+
+/** The palette entries in display order, one per block-union member. */
+export const blockPaletteEntries: BlockPaletteEntry[] = (
+	Object.keys(BLOCK_CATALOGUE) as BlockType[]
+).map((type) => ({ type, ...BLOCK_CATALOGUE[type] }));
+
+/**
  * The MVP editor edits paragraphs as plain text: the displayed value is the
  * concatenated run text, and an edit replaces the paragraph with a single
  * unformatted run. Editor-created documents only ever contain plain runs;

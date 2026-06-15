@@ -54,7 +54,16 @@
 	}: Props = $props();
 </script>
 
-<article class="block-card" aria-label={`${block.type} block`}>
+<!-- `tabindex="-1"` + `data-block-id` make this card a scriptable focus target so
+     the section's structural-edit focus management (add / move / delete) can move
+     focus to the right block without putting the card in the tab order (Story 10.2,
+     NFR15). -->
+<article
+	class="block-card"
+	aria-label={`${block.type} block`}
+	tabindex="-1"
+	data-block-id={block.id}
+>
 	<header>
 		<span class="block-type">{block.type}</span>
 		<div class="controls">
@@ -116,6 +125,13 @@
 		background: var(--color-stone);
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-sm);
+	}
+
+	/* The card is a scripted focus target (structural-edit focus management); show a
+	   clear focus ring when focus lands on it so a keyboard user sees where they are. */
+	.block-card:focus-visible {
+		outline: 2px solid var(--color-purple);
+		outline-offset: 2px;
 	}
 
 	header {

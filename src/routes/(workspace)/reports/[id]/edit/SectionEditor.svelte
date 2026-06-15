@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { BlockType, Scales, Section } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import BlockEditor from './BlockEditor.svelte';
+	import BlockPalette from './BlockPalette.svelte';
 	import IssueList from './IssueList.svelte';
 	import { moveItem, newBlock, type ErrorsByKey, type MatrixBlockOption } from './editor-state';
 
@@ -34,31 +36,69 @@
 
 	const sectionIssues = $derived(errors[`section:${section.id}`] ?? []);
 
-	// `satisfies Record<BlockType, true>` makes the menu exhaustive: a new block
-	// type missing a key is a compile error (no silently-absent "Add" button), and
-	// a typo'd or removed key is rejected too. The order here is the menu order.
-	const BLOCK_MENU = {
-		text: true,
-		table: true,
-		chart: true,
-		kpi: true,
-		image: true,
-		'comparison-matrix': true,
-		'field-grid': true,
-		legend: true,
-		'set-membership': true,
-		'chip-cluster': true,
-		callout: true,
-		code: true,
-		'card-grid': true,
-		list: true,
-		timeline: true
-	} satisfies Record<BlockType, true>;
+	// Structural-edit focus management (Story 10.2, NFR15). A structural change
+	// (add / move / delete a block) tears down and rebuilds the keyed `{#each}`, so
+	// the control the author activated is gone after the update. We record a focus
+	// INTENT (a stable block id) on each structural edit and move focus to that
+	// block's card once the DOM has settled (`tick()`), so a keyboard / screen-reader
+	// user never loses their place: a moved block keeps focus, an added block is
+	// focused, and after a delete focus lands on the neighbour that took its place
+	// (or the palette when the section is emptied). The card is a `tabindex="-1"`
+	// region (focusable by script, not in the tab order) so focus can rest on it.
+	let blockListElement = $state<HTMLDivElement>();
 
-	const BLOCK_TYPES = Object.keys(BLOCK_MENU) as BlockType[];
+	async function focusBlock(blockId: string): Promise<void> {
+		await tick();
+		blockListElement
+			?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`)
+			?.focus();
+	}
+
+	function insertBlock(type: BlockType): void {
+		const block = newBlock(type);
+		section.blocks.push(block);
+		onEdit();
+		void focusBlock(block.id);
+	}
+
+	function removeBlock(index: number): void {
+		section.blocks.splice(index, 1);
+		onEdit();
+		// Focus the block that slid into the removed slot, else the previous block,
+		// else nothing remains in the list - fall back to the palette's first entry.
+		const next = section.blocks[index] ?? section.blocks[index - 1];
+		if (next) {
+			void focusBlock(next.id);
+		} else {
+			void tick().then(() => {
+				blockListElement
+					?.closest('section')
+					?.querySelector<HTMLElement>('[data-block-palette] button')
+					?.focus();
+			});
+		}
+	}
+
+	function moveBlock(index: number, direction: -1 | 1): void {
+		const movedId = section.blocks[index].id;
+		moveItem(section.blocks, index, direction);
+		onEdit();
+		// Keep focus on the moved block so repeated up/down presses keep working
+		// from the keyboard without re-acquiring the control.
+		void focusBlock(movedId);
+	}
 </script>
 
-<section class="section-card" aria-label={`Section: ${section.title}`}>
+<!-- `tabindex="-1"` + `data-section-id` make this card a scriptable focus target so
+     the editor's section-level structural-edit focus management (add / move / delete
+     a section) can move focus to the right section without putting the card in the tab
+     order (Story 10.2, NFR15). -->
+<section
+	class="section-card"
+	aria-label={`Section: ${section.title}`}
+	tabindex="-1"
+	data-section-id={section.id}
+>
 	<header>
 		<input
 			class="section-title"
@@ -89,38 +129,25 @@
 
 	<IssueList issues={sectionIssues} variant="section" />
 
-	{#each section.blocks as block, blockIndex (block.id)}
-		<BlockEditor
-			bind:block={section.blocks[blockIndex]}
-			{sectionIndex}
-			{blockIndex}
-			count={section.blocks.length}
-			issues={errors[`block:${block.id}`] ?? []}
-			{scales}
-			{matrixBlocks}
-			{onEdit}
-			onRemove={() => {
-				section.blocks.splice(blockIndex, 1);
-				onEdit();
-			}}
-			onMove={(direction) => {
-				moveItem(section.blocks, blockIndex, direction);
-				onEdit();
-			}}
-		/>
-	{/each}
-
-	<div class="add-block">
-		{#each BLOCK_TYPES as type (type)}
-			<Button
-				onclick={() => {
-					section.blocks.push(newBlock(type));
-					onEdit();
-				}}
-			>
-				Add {type}
-			</Button>
+	<div class="block-list" bind:this={blockListElement}>
+		{#each section.blocks as block, blockIndex (block.id)}
+			<BlockEditor
+				bind:block={section.blocks[blockIndex]}
+				{sectionIndex}
+				{blockIndex}
+				count={section.blocks.length}
+				issues={errors[`block:${block.id}`] ?? []}
+				{scales}
+				{matrixBlocks}
+				{onEdit}
+				onRemove={() => removeBlock(blockIndex)}
+				onMove={(direction) => moveBlock(blockIndex, direction)}
+			/>
 		{/each}
+	</div>
+
+	<div data-block-palette>
+		<BlockPalette label={`Add a block to ${section.title}`} onInsert={insertBlock} />
 	</div>
 </section>
 
@@ -131,6 +158,13 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-md);
+	}
+
+	/* The card is a scripted focus target (section-level structural-edit focus
+	   management); show a clear focus ring when focus lands on it. */
+	.section-card:focus-visible {
+		outline: 2px solid var(--color-purple);
+		outline-offset: 2px;
 	}
 
 	header {
@@ -162,12 +196,5 @@
 	.controls {
 		display: flex;
 		gap: var(--space-1);
-	}
-
-	.add-block {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-		margin-top: var(--space-4);
 	}
 </style>

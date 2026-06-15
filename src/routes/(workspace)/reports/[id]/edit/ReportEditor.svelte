@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -224,6 +225,48 @@
 		if (!editable) return;
 		dirty = true;
 		scheduleSave();
+	}
+
+	// Section-level structural-edit focus management (Story 10.2, NFR15). Like the
+	// block case in SectionEditor, a section add / move / delete rebuilds the keyed
+	// `{#each}`, so we move focus to the affected section's card (a `tabindex="-1"`
+	// region) once the DOM settles: a moved section keeps focus (so repeated up/down
+	// presses keep working), an added section is focused, and after a delete focus
+	// lands on the neighbour that took its place (or the "Add section" button when no
+	// section remains). The same validated working-copy path carries every change.
+	let sectionsElement = $state<HTMLDivElement>();
+	let addSectionButton = $state<HTMLButtonElement>();
+
+	async function focusSection(sectionId: string): Promise<void> {
+		await tick();
+		sectionsElement
+			?.querySelector<HTMLElement>(`[data-section-id="${CSS.escape(sectionId)}"]`)
+			?.focus();
+	}
+
+	function insertSection(): void {
+		const section = newSection();
+		doc.sections.push(section);
+		onEdit();
+		void focusSection(section.id);
+	}
+
+	function removeSection(index: number): void {
+		doc.sections.splice(index, 1);
+		onEdit();
+		const next = doc.sections[index] ?? doc.sections[index - 1];
+		if (next) {
+			void focusSection(next.id);
+		} else {
+			void tick().then(() => addSectionButton?.focus());
+		}
+	}
+
+	function moveSection(index: number, direction: -1 | 1): void {
+		const movedId = doc.sections[index].id;
+		moveItem(doc.sections, index, direction);
+		onEdit();
+		void focusSection(movedId);
 	}
 
 	const submitSave: SubmitFunction = ({ formData, cancel }) => {
@@ -499,35 +542,24 @@
 
 			<IssueList issues={documentIssues} variant="document" />
 
-			{#each doc.sections as section, sectionIndex (section.id)}
-				<SectionEditor
-					bind:section={doc.sections[sectionIndex]}
-					{sectionIndex}
-					count={doc.sections.length}
-					errors={errorsByKey}
-					scales={doc.scales}
-					{matrixBlocks}
-					{onEdit}
-					onRemove={() => {
-						doc.sections.splice(sectionIndex, 1);
-						onEdit();
-					}}
-					onMove={(direction) => {
-						moveItem(doc.sections, sectionIndex, direction);
-						onEdit();
-					}}
-				/>
-			{/each}
+			<div bind:this={sectionsElement}>
+				{#each doc.sections as section, sectionIndex (section.id)}
+					<SectionEditor
+						bind:section={doc.sections[sectionIndex]}
+						{sectionIndex}
+						count={doc.sections.length}
+						errors={errorsByKey}
+						scales={doc.scales}
+						{matrixBlocks}
+						{onEdit}
+						onRemove={() => removeSection(sectionIndex)}
+						onMove={(direction) => moveSection(sectionIndex, direction)}
+					/>
+				{/each}
+			</div>
 
 			<div class="add-section">
-				<Button
-					onclick={() => {
-						doc.sections.push(newSection());
-						onEdit();
-					}}
-				>
-					Add section
-				</Button>
+				<Button bind:ref={addSectionButton} onclick={insertSection}>Add section</Button>
 			</div>
 		</fieldset>
 	</form>

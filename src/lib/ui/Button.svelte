@@ -8,15 +8,29 @@
 	// danger = destructive text button reserved for real deletion/revocation.
 	interface Props extends HTMLButtonAttributes {
 		variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+		/** Bindable handle to the underlying button, for scripted focus management. */
+		ref?: HTMLButtonElement;
 		children: Snippet;
 	}
 
 	// `type` defaults to "button" (not the HTML "submit" default): most editor
 	// buttons are structural actions inside the save form and must not submit.
-	let { variant = 'secondary', type = 'button', children, ...rest }: Props = $props();
+	// A caller-supplied `class` is MERGED with the variant classes (not clobbered by
+	// the `{...rest}` spread), so a consumer can add layout without losing the
+	// button styling.
+	let {
+		variant = 'secondary',
+		type = 'button',
+		class: className,
+		ref = $bindable(),
+		children,
+		...rest
+	}: Props = $props();
 </script>
 
-<button {type} class="btn {variant}" {...rest}>{@render children()}</button>
+<button bind:this={ref} {type} class={['btn', variant, className]} {...rest}>
+	{@render children()}
+</button>
 
 <style>
 	.btn {
