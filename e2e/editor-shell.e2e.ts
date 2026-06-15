@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { E2E_BASE_URL } from './fixtures.ts';
+import { createDraft, FORM_HEADERS } from './helpers.ts';
 
 // Authenticated via the `setup` project's storage state. Story 10.1: the WYSIWYG
 // editor SHELL - load into an editable working copy, an authoritative live
@@ -15,11 +16,6 @@ import { E2E_BASE_URL } from './fixtures.ts';
 // Playwright's request context with an explicit Origin header (the HTTP-only CSRF
 // concession the other workspace specs use).
 
-const FORM_HEADERS = {
-	origin: E2E_BASE_URL,
-	'content-type': 'application/x-www-form-urlencoded'
-};
-
 function draftDocument(title: string): string {
 	return JSON.stringify({
 		version: 1,
@@ -32,19 +28,6 @@ function draftDocument(title: string): string {
 			}
 		]
 	});
-}
-
-async function createDraft(page: import('@playwright/test').Page): Promise<string> {
-	const created = await page.request.post(`${E2E_BASE_URL}/reports/new`, {
-		headers: FORM_HEADERS,
-		form: {},
-		maxRedirects: 0,
-		failOnStatusCode: false
-	});
-	const body = (await created.json()) as { location?: string };
-	const reportId = body.location?.match(/^\/reports\/([0-9a-f-]+)\/edit$/)?.[1];
-	expect(reportId).toBeTruthy();
-	return reportId!;
 }
 
 test('opens a draft, edits in place, saves, and the edit persists across a reload', async ({

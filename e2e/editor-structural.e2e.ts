@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { E2E_BASE_URL } from './fixtures.ts';
+import { createDraft } from './helpers.ts';
 
 // Story 10.2: the block palette and STRUCTURAL editing (blocks and sections) -
 // add from the palette, reorder with the keyboard-accessible move controls, and
@@ -9,24 +9,6 @@ import { E2E_BASE_URL } from './fixtures.ts';
 // (NFR27 is a reader requirement), so this runs on the desktop project only.
 //
 // A FRESH draft is created per test so writes succeed and the spec stays isolated.
-
-const FORM_HEADERS = {
-	origin: E2E_BASE_URL,
-	'content-type': 'application/x-www-form-urlencoded'
-};
-
-async function createDraft(page: import('@playwright/test').Page): Promise<string> {
-	const created = await page.request.post(`${E2E_BASE_URL}/reports/new`, {
-		headers: FORM_HEADERS,
-		form: {},
-		maxRedirects: 0,
-		failOnStatusCode: false
-	});
-	const body = (await created.json()) as { location?: string };
-	const reportId = body.location?.match(/^\/reports\/([0-9a-f-]+)\/edit$/)?.[1];
-	expect(reportId).toBeTruthy();
-	return reportId!;
-}
 
 test('adds a block from the palette, reorders and deletes it, and the structure persists across reload', async ({
 	page
@@ -140,6 +122,32 @@ test('a keyboard-only block move reorders the structure', async ({ page }, testI
 				.map((node) => node.getAttribute('aria-label'))
 		);
 	expect(order).toEqual(['callout block', 'text block']);
+});
+
+test('a keyboard-only section move reorders the structure', async ({ page }, testInfo) => {
+	test.skip(testInfo.project.name === 'mobile', 'workspace is desktop-only');
+
+	const reportId = await createDraft(page);
+	await page.goto(`/reports/${reportId}/edit`);
+
+	// A fresh draft has one section; add a second so there is something to move. The
+	// new section seeds as "New section".
+	await expect(page.getByRole('region', { name: /^Section:/ })).toHaveCount(1);
+	await page.getByRole('button', { name: 'Add section', exact: true }).click();
+	await expect(page.getByRole('region', { name: 'Section: New section' })).toBeVisible();
+
+	// Focus the FIRST section's "Move section down" control and activate it with the
+	// keyboard only (Enter), the NFR15 baseline - no pointer drag involved. The first
+	// section is the original draft section ("New report" / "Untitled").
+	const moveDown = page.getByRole('button', { name: 'Move section down' }).first();
+	await moveDown.focus();
+	await page.keyboard.press('Enter');
+
+	// "New section" now precedes the original draft section in the editor's order.
+	const order = await page
+		.getByRole('region', { name: /^Section:/ })
+		.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label')));
+	expect(order[0]).toBe('Section: New section');
 });
 
 test('the editor surface with the block palette has no axe-core violations', async ({

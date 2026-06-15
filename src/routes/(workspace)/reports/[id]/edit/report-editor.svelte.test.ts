@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { validateDocument, type DocumentV1, type DocumentV1Input } from '$lib/schema';
 import ReportEditor from './ReportEditor.svelte';
@@ -136,6 +136,77 @@ describe('ReportEditor shell', () => {
 		await expect
 			.element(getByRole('region', { name: 'Section: Appendix' }))
 			.not.toBeInTheDocument();
+	});
+
+	it('reorders sections in the working copy and follows focus to the moved section', async () => {
+		// Story 10.2: a section reorder (move down on the first of two sections) swaps
+		// them in the in-edit working copy AND keeps focus on the moved section's card
+		// (NFR15), so repeated keyboard moves keep working without re-acquiring the
+		// control across the keyed `{#each}` rebuild.
+		const twoSections = sampleReport();
+		const doc = (twoSections as { document: DocumentV1 }).document;
+		doc.sections.push({
+			id: 'appendix',
+			title: 'Appendix',
+			blocks: [{ type: 'text', id: 'note', paragraphs: [[{ text: 'Annex note.' }]] }]
+		});
+
+		const { getByRole, container } = renderEditor(twoSections);
+
+		// Scope to the editor FORM: the embedded live preview renders the SAME sections
+		// with their own `data-section-id`, so an unscoped query would see each section
+		// twice (the editor card and the preview node).
+		const editorForm = container.querySelector('.editor-form')!;
+		const orderOf = () =>
+			[...editorForm.querySelectorAll('[data-section-id]')].map((node) =>
+				node.getAttribute('data-section-id')
+			);
+
+		// Before: Overview precedes Appendix in the editor's section order.
+		expect(orderOf()).toEqual(['overview', 'appendix']);
+
+		// Move the first section (Overview) down; the two swap in the working copy.
+		await getByRole('button', { name: 'Move section down' }).first().click();
+
+		await vi.waitFor(() => {
+			expect(orderOf()).toEqual(['appendix', 'overview']);
+		});
+
+		// Focus follows the moved section (Overview) so a keyboard user keeps their place.
+		await vi.waitFor(() => {
+			const focused = document.activeElement as HTMLElement | null;
+			expect(focused?.getAttribute('data-section-id')).toBe('overview');
+		});
+	});
+
+	it('surfaces the emptied-section 422 at that section, not the document level', async () => {
+		// Story 10.2 AC4 at the 10.2 surface: deleting the last block of a section
+		// leaves the document invalid ("A section must contain at least one block.").
+		// The optimistic settled snapshot surfaces that inline at THAT section's
+		// IssueList (a `section:<id>` group), never the document panel - a structural
+		// edit never silently drops content.
+		const report = sampleReport();
+		const EMPTY_SECTION_MESSAGE = 'A section must contain at least one block.';
+
+		const { getByRole, container } = renderEditor(report);
+
+		// The seeded section has exactly one block; remove it to empty the section.
+		await getByRole('button', { name: 'Remove block' }).first().click();
+
+		// The settled snapshot (~200 ms debounce) validates and surfaces the
+		// section-level message INSIDE the offending section's card (its `section:<id>`
+		// IssueList), never the document-level panel.
+		// Scope to the editor FORM: the embedded live preview also carries a
+		// `data-section-id="overview"` node, but the inline 422 lives only in the
+		// editor card's section IssueList.
+		const editorForm = container.querySelector('.editor-form')!;
+		await vi.waitFor(() => {
+			const sectionCard = editorForm.querySelector('[data-section-id="overview"]');
+			expect(sectionCard?.textContent ?? '').toContain(EMPTY_SECTION_MESSAGE);
+		});
+
+		const documentPanel = editorForm.querySelector('.issue-list.document');
+		expect(documentPanel?.textContent ?? '').not.toContain(EMPTY_SECTION_MESSAGE);
 	});
 
 	it('renders a published report read-only with the unpublish-to-edit affordance', async () => {
