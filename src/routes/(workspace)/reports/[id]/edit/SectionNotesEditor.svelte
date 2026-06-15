@@ -17,7 +17,9 @@
 
 	const stateLabel = $derived(notes && notes.length > 0 ? 'present' : 'none');
 
-	function onInput(value: string): void {
+	// Takes the textarea's current string (not the Event), so name it for the value
+	// it commits rather than the `on*`-prefixed handler shape.
+	function commitValue(value: string): void {
 		notes = value === '' ? undefined : value;
 		onEdit();
 	}
@@ -27,6 +29,9 @@
 	<summary>
 		<span class="legend">Speaker notes:</span>
 		<span class="state">{stateLabel}</span>
+		<!-- The author-only contract is surfaced on the COLLAPSED disclosure, not only
+		     inside the open body, so the privacy guarantee is visible without expanding. -->
+		<span class="author-only-badge">Author-only</span>
 	</summary>
 	<div class="body">
 		<textarea
@@ -36,7 +41,7 @@
 			aria-label="Speaker notes"
 			placeholder="Author-only notes for the presenter view"
 			value={notes ?? ''}
-			oninput={(event) => onInput(event.currentTarget.value)}
+			oninput={(event) => commitValue(event.currentTarget.value)}
 		></textarea>
 		<p class="privacy-hint">Author-only. Readers never see speaker notes.</p>
 	</div>
@@ -80,6 +85,17 @@
 
 	.state {
 		text-transform: capitalize;
+	}
+
+	.author-only-badge {
+		margin-left: auto;
+		padding: 0 var(--space-2);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		color: var(--color-ink-65);
+		background: var(--color-stone);
+		border: 1px solid var(--color-ink-12);
+		border-radius: var(--radius-pill);
 	}
 
 	.body {

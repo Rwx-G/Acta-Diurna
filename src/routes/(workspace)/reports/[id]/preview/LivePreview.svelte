@@ -119,7 +119,7 @@
 		padding: var(--space-3) var(--space-4);
 		font-size: var(--text-sm);
 		color: var(--color-ink);
-		background: var(--color-amber-12, color-mix(in srgb, var(--color-purple) 10%, transparent));
+		background: var(--color-amber-12);
 		border: 1px solid var(--color-ink-25);
 		border-radius: var(--radius-sm);
 	}

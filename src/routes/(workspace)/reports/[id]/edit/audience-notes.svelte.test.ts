@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { validateDocument, type DocumentV1, type DocumentV1Input } from '$lib/schema';
 import ReportEditor from './ReportEditor.svelte';
 import SectionNotesEditor from './SectionNotesEditor.svelte';
+import LivePreview from '../preview/LivePreview.svelte';
 
 // Story 10.6: the live audience-aware preview, audience tagging, and author-private
 // speaker notes, all flowing through the SAME 10.1 working-copy + validated-save seam.
@@ -113,6 +114,34 @@ describe('Story 10.6 audience-aware preview', () => {
 		technicalRadio.click();
 		await vi.waitFor(() => {
 			expect(reportRoot.getAttribute('data-level')).toBe('technical');
+		});
+	});
+
+	it('keeps the picked preview level across a settled-snapshot remount', async () => {
+		// The regression the `onlevelchange` + reseed fix addressed: LivePreview owns
+		// `previewLevel` and re-seeds the embedded Report's `level` on every `{#key
+		// document}` remount. Switch to Technical, then change the `document` prop (a
+		// fresh snapshot identity remounts the Report tree, as a settled edit does), and
+		// the chosen level must survive instead of snapping back to the default `full`.
+		const first = taggedDocument();
+		const { container, rerender } = render(LivePreview, { document: first });
+
+		const reportRoot = () => container.querySelector<HTMLElement>('.report.embedded')!;
+		expect(reportRoot().getAttribute('data-level')).toBe('full');
+
+		const technicalRadio = [
+			...container.querySelectorAll<HTMLInputElement>('input[name="audience-level"]')
+		].find((input) => input.value === 'technical')!;
+		technicalRadio.click();
+		await vi.waitFor(() => {
+			expect(reportRoot().getAttribute('data-level')).toBe('technical');
+		});
+
+		// A fresh snapshot identity (the same shape) triggers the `{#key document}`
+		// remount the editor performs on every settle.
+		await rerender({ document: taggedDocument() });
+		await vi.waitFor(() => {
+			expect(reportRoot().getAttribute('data-level')).toBe('technical');
 		});
 	});
 
