@@ -76,6 +76,47 @@ export default defineConfig(
 		}
 	},
 	{
+		// Reader-purity boundary (story 10.1): the render tier is shared with the
+		// public reader path, so importing the server-and-load validation machinery
+		// here would drag the version registry + migration chain into a reader-shared
+		// chunk and breach the NFR3 budget. The renderer never needs them - a stored
+		// document is migrated/validated BEFORE it reaches the render tier. A focused
+		// boundary test (scripts/reader-bundle-size.test.ts) pins this by built-chunk
+		// contents too; this lint catches it at the source. Scoped to PRODUCTION
+		// render files: tests legitimately call `validateDocument` to build fixtures
+		// and never ship to the reader bundle.
+		files: ['src/lib/render/**'],
+		ignores: ['src/lib/render/**/*.{test,spec}.{js,ts}'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{
+							name: '$lib/schema',
+							importNames: [
+								'validateDocument',
+								'validateStoredDocument',
+								'migrateToVersion',
+								'schemaRegistry',
+								'MigrationPathError'
+							],
+							message:
+								'Architecture rule: src/lib/render must not import the validation/migration machinery from $lib/schema (it would pull the version registry into a reader-shared chunk and breach the NFR3 budget). The render tier sees only already-validated, current-version documents.'
+						}
+					],
+					patterns: [
+						{
+							group: ['$lib/server', '$lib/server/*', '**/server/**'],
+							message:
+								'Architecture rule: src/lib/render must not import server-only code ($lib/server); renderers stay pure.'
+						}
+					]
+				}
+			]
+		}
+	},
+	{
 		// Architecture rule: the render boundary NEVER injects raw HTML. Authored
 		// values are untrusted document content (NFR14), so every renderer emits
 		// them through Svelte text/attribute interpolation, which escapes. `{@html}`

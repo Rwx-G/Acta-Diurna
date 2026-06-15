@@ -11,9 +11,10 @@
 import { gzipSync } from 'node:zlib';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const BUDGET_BYTES = 200 * 1024;
-const CLIENT_DIR = path.resolve(process.cwd(), '.svelte-kit/output/client');
+export const CLIENT_DIR = path.resolve(process.cwd(), '.svelte-kit/output/client');
 const MANIFEST = path.join(CLIENT_DIR, '.vite/manifest.json');
 const GENERATED_NODES = path.resolve(process.cwd(), '.svelte-kit/generated/client-optimized/nodes');
 
@@ -36,7 +37,7 @@ interface ManifestChunk {
 	dynamicImports?: string[];
 }
 
-type Manifest = Record<string, ManifestChunk>;
+export type Manifest = Record<string, ManifestChunk>;
 
 function gzipSize(file: string): number {
 	const buffer = readFileSync(path.join(CLIENT_DIR, file));
@@ -44,7 +45,7 @@ function gzipSize(file: string): number {
 }
 
 /** Collects the static-import closure of a set of manifest keys. */
-function closure(manifest: Manifest, roots: string[]): Set<string> {
+export function closure(manifest: Manifest, roots: string[]): Set<string> {
 	const files = new Set<string>();
 	const seen = new Set<string>();
 	const stack = [...roots];
@@ -87,13 +88,23 @@ function manifestKeyForNode(manifest: Manifest, index: number): string | undefin
 	return findKey(manifest, `client-optimized/nodes/${index}.js`);
 }
 
-function main(): void {
+/**
+ * The JS files the browser statically downloads to hydrate the reader route
+ * `/r/[token]` - the SvelteKit entry app, the root layout node and the view page
+ * node, resolved by their route SOURCE (never a fixed numeric index, which
+ * renumbers when routes are added). The single source of truth the budget check
+ * and the reader-purity boundary test both build on, so they cannot drift apart.
+ *
+ * Throws (rather than `process.exit`) on a missing build artifact so an importing
+ * caller - the boundary test - fails loudly instead of taking the whole process down.
+ */
+export function readerClosureFiles(): {
+	files: string[];
+	viewIndex: number;
+	rootLayoutIndex: number;
+} {
 	const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
 
-	// Roots the browser loads to hydrate the reader view: the SvelteKit client
-	// entry app, the root layout node (the view is a +page@.svelte that resets to
-	// the root layout - it does NOT pull the workspace layout) and the view page
-	// node. Both nodes are resolved by their route source, not a fixed index.
 	const roots: string[] = [];
 	const appEntry = findKey(manifest, 'client-optimized/app.js');
 	if (appEntry) roots.push(appEntry);
@@ -101,26 +112,28 @@ function main(): void {
 	const viewIndex = nodeIndexForSource(VIEW_PAGE_SOURCE);
 	const rootLayoutIndex = nodeIndexForSource(ROOT_LAYOUT_SOURCE);
 	if (viewIndex === undefined || rootLayoutIndex === undefined) {
-		console.error(
+		throw new Error(
 			`Could not resolve the reader nodes by source ` +
-				`(view: ${VIEW_PAGE_SOURCE}, layout: ${ROOT_LAYOUT_SOURCE}).`
+				`(view: ${VIEW_PAGE_SOURCE}, layout: ${ROOT_LAYOUT_SOURCE}). Run \`pnpm build\` first.`
 		);
-		process.exit(2);
 	}
 
 	const rootLayout = manifestKeyForNode(manifest, rootLayoutIndex);
 	const viewPage = manifestKeyForNode(manifest, viewIndex);
 	if (!viewPage || !rootLayout) {
-		console.error(
+		throw new Error(
 			`Resolved nodes (layout ${rootLayoutIndex}, view ${viewIndex}) but could not ` +
-				`find their keys in the client manifest.`
+				`find their keys in the client manifest. Run \`pnpm build\` first.`
 		);
-		process.exit(2);
 	}
 	roots.push(rootLayout, viewPage);
+	return { files: [...closure(manifest, roots)], viewIndex, rootLayoutIndex };
+}
+
+function main(): void {
+	const { files, viewIndex, rootLayoutIndex } = readerClosureFiles();
 	console.log(`Reader view node ${viewIndex}, root layout node ${rootLayoutIndex}\n`);
 
-	const files = closure(manifest, roots);
 	const rows = [...files]
 		.map((file) => ({ file, bytes: gzipSize(file) }))
 		.sort((a, b) => b.bytes - a.bytes);
@@ -144,4 +157,9 @@ function main(): void {
 	console.log(`\nOK: ${(total / 1024).toFixed(1)} KB is within the 200 KB budget.`);
 }
 
-main();
+// Run the CLI report only when invoked directly (`node scripts/reader-bundle-size.ts`),
+// not when imported by the reader-purity boundary test, which reuses the exported
+// closure walker without printing the table or exiting the process.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main();
+}
