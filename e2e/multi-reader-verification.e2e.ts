@@ -129,6 +129,43 @@ test('prefetch-safe: a scanner GET on the reader link does not consume the token
 	}
 });
 
+test('the Access=Open form selection creates an open share, not restricted', async ({
+	browser
+}) => {
+	// Reproduces the reported bug: choosing "Open" in the share form's Access selector
+	// and clicking Generate. The select drives the create-share `mode`; this asserts
+	// the selection actually reaches the action (the multipart body carries it) and
+	// the resulting share is open, never falling through to restricted.
+	const context = await actorContext(browser, { storageState: MULTI_AUTHORS.owner.state });
+	const page = await context.newPage();
+	try {
+		await page.goto(`${E2E_MULTI_BASE_URL}/reports/${FIXTURE_REPORT_ID}/share`);
+		await expect(page.getByLabel('Access')).toBeVisible();
+		await page.getByLabel('Access').selectOption('open');
+
+		const postPromise = page.waitForRequest(
+			(request) => request.url().includes('/share?/create-share') && request.method() === 'POST'
+		);
+		await page.getByRole('button', { name: 'Generate link' }).click();
+		const post = await postPromise;
+
+		// The selected Access must reach the action as mode=open (the multipart form
+		// body carries the select's value), not fall through to the restricted default.
+		const body = post.postData() ?? '';
+		const modeValue = body.match(/(?:^|&)mode=([^&]+)/)?.[1];
+		expect(modeValue, 'the create-share POST carries the selected Open mode').toBe('open');
+
+		// End to end: the freshly created share renders open (its mode chip reads "open"
+		// and it offers Switch-to-restricted), never restricted (a recipient editor).
+		await expect(page.getByText('Your share link', { exact: false })).toBeVisible();
+		await expect(page.locator('.share-list li').filter({ hasText: 'open' }).first()).toContainText(
+			'Switch to restricted'
+		);
+	} finally {
+		await context.close();
+	}
+});
+
 test('an off-whitelist reader email is refused: no mail, neutral confirmation', async ({
 	browser
 }) => {
