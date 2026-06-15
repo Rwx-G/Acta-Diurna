@@ -37,7 +37,10 @@
 		</select>
 	</label>
 
-	{#each block.items as item, itemIndex (itemIndex)}
+	<!-- Keyed by the item OBJECT REFERENCE, not the index: removing an item from the
+	     middle then reuses the surviving rows' subtrees (their open description editors
+	     and focus survive) instead of remounting every row whose index shifted. -->
+	{#each block.items as item, itemIndex (item)}
 		<div class="item">
 			<div class="item-head">
 				<input
@@ -140,16 +143,5 @@
 		flex: 1;
 	}
 
-	input,
-	select {
-		min-width: 0;
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		font-weight: 400;
-		line-height: 1.5;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
+	/* `input` and `select` are the shared workspace base (form-fields.css). */
 </style>

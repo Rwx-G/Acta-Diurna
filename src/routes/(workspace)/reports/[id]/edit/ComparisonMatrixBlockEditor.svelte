@@ -40,7 +40,28 @@
 		{ value: 'none', label: 'Not covered' }
 	];
 
-	const TREATMENT_STATUSES: TreatmentStatus[] = ['action', 'deferred'];
+	const TREATMENT_STATUSES: { value: TreatmentStatus; label: string }[] = [
+		{ value: 'action', label: 'Action' },
+		{ value: 'deferred', label: 'Deferred' }
+	];
+
+	// Changing a scale ref invalidates every finding's keys scored against the OLD
+	// scale: the severity entry is no longer a valid entry of the new scale, and the
+	// per-source cells are keyed by the old sources-scale entry keys. Reset them so
+	// the editor never carries a dangling ref the author cannot see (it would only
+	// surface as a save 422). Destructive but correct, mirroring the timeline reset
+	// (`milestone.status.entry = ''` on a scale change).
+	function changeSeverityScale(key: string): void {
+		block.severityScale = key;
+		for (const finding of block.findings) finding.severity = '';
+		onEdit();
+	}
+
+	function changeSourceScale(key: string): void {
+		block.sourceScale = key;
+		for (const finding of block.findings) finding.sources = {};
+		onEdit();
+	}
 
 	function setSourceState(finding: Finding, key: string, state: string): void {
 		// `none` is the absence default: clearing to it drops the record key rather
@@ -60,16 +81,6 @@
 		if (text === '') delete cell.text;
 		else cell.text = text;
 	}
-
-	function addFinding(): void {
-		block.findings.push({
-			category: '',
-			label: '',
-			severity: '',
-			sources: {},
-			treatment: { before: '', after: '', status: 'action' }
-		});
-	}
 </script>
 
 <div class="matrix-editor">
@@ -78,11 +89,7 @@
 			Severity scale
 			<select
 				value={block.severityScale}
-				onchange={(event) => {
-					block.severityScale = event.currentTarget.value;
-					onEdit();
-				}}
-				aria-label="Severity scale"
+				onchange={(event) => changeSeverityScale(event.currentTarget.value)}
 			>
 				<option value="">Select a scale</option>
 				{#each scaleOptions as scale (scale.key)}
@@ -94,11 +101,7 @@
 			Sources scale
 			<select
 				value={block.sourceScale}
-				onchange={(event) => {
-					block.sourceScale = event.currentTarget.value;
-					onEdit();
-				}}
-				aria-label="Sources scale"
+				onchange={(event) => changeSourceScale(event.currentTarget.value)}
 			>
 				<option value="">Select a scale</option>
 				{#each scaleOptions as scale (scale.key)}
@@ -115,7 +118,11 @@
 		</p>
 	{/if}
 
-	{#each block.findings as finding, findingIndex (findingIndex)}
+	<!-- Keyed by the finding OBJECT REFERENCE, not the index: `moveItem` is an in-place
+	     adjacent swap that preserves object identity, so a reorder reuses the existing
+	     subtrees (no destroy/recreate of the whole finding fieldset, focus survives the
+	     move) instead of remounting every row whose index shifted. -->
+	{#each block.findings as finding, findingIndex (finding)}
 		<fieldset class="finding">
 			<legend>Finding {findingIndex + 1}</legend>
 			<div class="finding-controls">
@@ -242,8 +249,8 @@
 					}}
 					aria-label={`Finding ${findingIndex + 1} treatment status`}
 				>
-					{#each TREATMENT_STATUSES as status (status)}
-						<option value={status}>{status}</option>
+					{#each TREATMENT_STATUSES as option (option.value)}
+						<option value={option.value}>{option.label}</option>
 					{/each}
 				</select>
 			</div>
@@ -264,7 +271,13 @@
 
 	<Button
 		onclick={() => {
-			addFinding();
+			block.findings.push({
+				category: '',
+				label: '',
+				severity: '',
+				sources: {},
+				treatment: { before: '', after: '', status: 'action' }
+			});
 			onEdit();
 		}}
 	>
@@ -313,28 +326,8 @@
 		margin-bottom: var(--space-3);
 	}
 
-	/* Accessible name for the icon-style finding move controls (WCAG 2.5.3): the full
-	   descriptive name is in a visually-hidden span, the visible glyph is aria-hidden.
-	   Component-scoped so it holds outside the workspace layout too. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-
-	.field-label {
-		display: block;
-		margin: var(--space-3) 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--color-ink-65);
-	}
+	/* `.field-label`, the `input, select` reset and `.sr-only` are the shared
+	   workspace base (form-fields.css + sr-only.css), not duplicated here. */
 
 	.field-row {
 		display: flex;
@@ -349,16 +342,6 @@
 	.source-name {
 		flex: 0 0 8rem;
 		font-size: var(--text-sm);
-	}
-
-	input,
-	select {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
 	}
 
 	.field-row input {

@@ -76,16 +76,7 @@
 		color: var(--color-ink-65);
 	}
 
-	input,
-	select {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		font-weight: 400;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
+	/* `input` and `select` are the shared workspace base (form-fields.css). */
 
 	.hint {
 		margin: 0;

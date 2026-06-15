@@ -99,6 +99,48 @@ describe('CalloutBlockEditor body runs', () => {
 	});
 });
 
+describe('ParagraphsEditor run link guard (Epic 11 linkTo mutual exclusion)', () => {
+	it('disables the URL input on a run carrying an internal linkTo, and surfaces a note', async () => {
+		// A run links internally (`linkTo`) OR externally (`link.href`), never both - the
+		// schema refines them mutually exclusive. The editor preserves but does not surface
+		// `linkTo`, so the URL input must be disabled on such a run: otherwise typing a URL
+		// authors a 422 the editor cannot then clear.
+		const block: CalloutBlock = $state({
+			type: 'callout',
+			id: 'note',
+			tone: 'info',
+			body: [[{ text: 'See the appendix', linkTo: 'fixture' }]]
+		});
+		const { getByLabelText, getByText } = render(CalloutBlockEditor, { block, onEdit: vi.fn() });
+
+		const urlInput = getByLabelText(
+			'Callout body paragraph 1, run 1 link URL'
+		).element() as HTMLInputElement;
+
+		expect(urlInput.disabled).toBe(true);
+		await expect.element(getByText('Internal link set')).toBeInTheDocument();
+		// The run keeps its linkTo and never gains a link (the document stays valid).
+		expect(block.body[0][0]).toEqual({ text: 'See the appendix', linkTo: 'fixture' });
+		expect(validateDocument(documentWith([block])).ok).toBe(true);
+	});
+
+	it('leaves the URL input enabled on a plain run (no linkTo)', () => {
+		const block: CalloutBlock = $state({
+			type: 'callout',
+			id: 'note',
+			tone: 'info',
+			body: [[{ text: 'Plain run' }]]
+		});
+		const { getByLabelText } = render(CalloutBlockEditor, { block, onEdit: vi.fn() });
+
+		const urlInput = getByLabelText(
+			'Callout body paragraph 1, run 1 link URL'
+		).element() as HTMLInputElement;
+
+		expect(urlInput.disabled).toBe(false);
+	});
+});
+
 describe('ListBlockEditor description', () => {
 	it('adds an optional description and edits it as inline runs', async () => {
 		const block: ListBlock = $state({
@@ -275,6 +317,97 @@ describe('ComparisonMatrixBlockEditor', () => {
 		await getByLabelText('Finding 1 source SIEM state').selectOptions('found');
 
 		expect(block.findings[0].sources.siem).toEqual({ state: 'found' });
+	});
+
+	it('resets every finding severity when the severity scale changes (no stale ref dangles)', async () => {
+		const block: ComparisonMatrixBlock = $state(matrixBlock());
+		const { getByLabelText } = render(ComparisonMatrixBlockEditor, {
+			block,
+			scales: SCALES,
+			onEdit: vi.fn()
+		});
+
+		// Both findings start with a severity scored against the 'severity' scale.
+		expect(block.findings.map((finding) => finding.severity)).toEqual(['high', 'critical']);
+
+		await getByLabelText('Severity scale').selectOptions('sources');
+
+		// Changing the scale clears every severity: the old keys are not entries of the
+		// new scale, so keeping them would dangle (invisible until the save 422). Mirrors
+		// the timeline reset of `milestone.status.entry` on a scale change.
+		expect(block.findings.map((finding) => finding.severity)).toEqual(['', '']);
+	});
+
+	it('clears every finding source cell when the sources scale changes', async () => {
+		const block: ComparisonMatrixBlock = $state({
+			type: 'comparison-matrix',
+			id: 'coverage',
+			severityScale: 'severity',
+			sourceScale: 'sources',
+			findings: [
+				{
+					category: 'Access',
+					label: 'Weak policy',
+					severity: 'high',
+					sources: { siem: { state: 'found' }, edr: { state: 'missing' } },
+					treatment: { before: 'a', after: 'b', status: 'action' }
+				}
+			]
+		});
+		const { getByLabelText } = render(ComparisonMatrixBlockEditor, {
+			block,
+			scales: SCALES,
+			onEdit: vi.fn()
+		});
+
+		await getByLabelText('Sources scale').selectOptions('severity');
+
+		// The cells were keyed by the old sources-scale entries; clearing them on the
+		// scale change drops the stale keys that would otherwise dangle.
+		expect(block.findings[0].sources).toEqual({});
+	});
+
+	it('reuses the existing finding nodes across a reorder (object-keyed each, no remount)', async () => {
+		const block: ComparisonMatrixBlock = $state(matrixBlock());
+		const { getByLabelText, getByRole } = render(ComparisonMatrixBlockEditor, {
+			block,
+			scales: SCALES,
+			onEdit: vi.fn()
+		});
+
+		// Capture the SECOND finding's label DOM node, then move it up. Because the each is
+		// keyed by the finding OBJECT (not the index), the swap MOVES this existing node to
+		// the new position rather than remounting a fresh subtree there. An index-keyed
+		// each would instead recreate the node at index 0 and discard this one, dropping any
+		// focus / caret / open child editor inside it - the churn this fix removes.
+		const secondLabel = getByLabelText('Finding 2 label').element() as HTMLInputElement;
+		expect(secondLabel.value).toBe('Open port');
+
+		await getByRole('button', { name: 'Move finding 2 up' }).click();
+
+		expect(block.findings.map((finding) => finding.label)).toEqual(['Open port', 'Weak policy']);
+		// The SAME node now answers to the index-1 -> index-0 accessible name and still
+		// holds "Open port": it was moved, not remounted (a remount would leave this
+		// detached node out of the document).
+		await vi.waitFor(() => {
+			expect(secondLabel.getAttribute('aria-label')).toBe('Finding 1 label');
+			expect(secondLabel.isConnected).toBe(true);
+			expect(getByLabelText('Finding 1 label').element()).toBe(secondLabel);
+		});
+	});
+
+	it('labels the treatment status options with human text, not the raw enum', async () => {
+		const block: ComparisonMatrixBlock = $state(matrixBlock());
+		const { getByLabelText } = render(ComparisonMatrixBlockEditor, {
+			block,
+			scales: SCALES,
+			onEdit: vi.fn()
+		});
+
+		const select = getByLabelText('Finding 1 treatment status').element() as HTMLSelectElement;
+		const optionLabels = Array.from(select.options).map((option) => option.textContent);
+
+		expect(optionLabels).toEqual(['Action', 'Deferred']);
 	});
 });
 

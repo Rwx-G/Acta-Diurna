@@ -61,10 +61,15 @@
 	};
 </script>
 
-{#each paragraphs as paragraph, paragraphIndex (paragraphIndex)}
+<!-- Keyed by the paragraph / run OBJECT REFERENCE, not the index: a paragraph is an
+     array and a run is an object, both with stable reference identity, and `moveItem`
+     reorders by an in-place adjacent swap that preserves that identity. Keying by the
+     object reuses the existing subtrees on a reorder (focus survives the move) instead
+     of destroying and recreating every row whose index shifted. -->
+{#each paragraphs as paragraph, paragraphIndex (paragraph)}
 	<fieldset class="paragraph">
 		<legend>{paragraphNoun} {paragraphIndex + 1}</legend>
-		{#each paragraph as run, runIndex (runIndex)}
+		{#each paragraph as run, runIndex (run)}
 			<div class="run">
 				<div class="run-text">
 					<input
@@ -125,17 +130,27 @@
 							{MARK_LABELS[mark]}
 						</label>
 					{/each}
+					<!-- A run links internally (Epic 11 `linkTo`, a section id) OR externally
+					     (`link.href`), never both - the schema refines them mutually exclusive.
+					     This editor does not surface `linkTo` but preserves it; if a run already
+					     carries one, the URL input is DISABLED so the author cannot author the
+					     conflicting state (a 422 this editor could not then clear). `setRunLink`
+					     guards the same invariant as defence in depth. -->
 					<input
 						class="run-link"
 						type="url"
 						value={run.link?.href ?? ''}
 						placeholder="Link URL (optional)"
+						disabled={run.linkTo !== undefined}
 						oninput={(event) => {
 							setRunLink(run, event.currentTarget.value);
 							onEdit();
 						}}
 						aria-label={runField(paragraphIndex, runIndex, 'link URL')}
 					/>
+					{#if run.linkTo !== undefined}
+						<span class="link-note">Internal link set</span>
+					{/if}
 				</div>
 			</div>
 		{/each}
@@ -236,38 +251,20 @@
 		min-width: 140px;
 	}
 
+	.link-note {
+		font-size: var(--text-sm);
+		color: var(--color-ink-65);
+	}
+
 	.paragraph-controls {
 		display: flex;
 		gap: var(--space-2);
 		margin-top: var(--space-2);
 	}
 
-	input {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
-
+	/* The `input` reset and `.sr-only` are the shared workspace base (form-fields.css
+	   + sr-only.css). Only the checkbox override is component-specific. */
 	input[type='checkbox'] {
 		padding: 0;
-	}
-
-	/* Accessible name for the icon-style move/remove controls (WCAG 2.5.3): the full
-	   descriptive name is in a visually-hidden span, the visible glyph is aria-hidden.
-	   Kept component-scoped (not only in the shared form-fields.css) so the control is
-	   off-screen even when this editor renders outside the workspace layout. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>

@@ -1,0 +1,28 @@
+/*
+ * Shared `.sr-only` accessible-name helper for the per-block-type editors (Story
+ * 10.4 QA remediation). The icon-style move / remove / add controls carry their
+ * full descriptive name (WCAG 2.5.3, label-in-name) in a visually-hidden span
+ * with the visible glyph `aria-hidden`. The same 15-line clip block was pasted
+ * verbatim across ~6 editors; it lives here once, scoped under `.block-card` (the
+ * `BlockEditor` wrapper that contains every per-type editor body), so a per-type
+ * editor keeps no copy.
+ *
+ * WORKSPACE-ONLY: imported by the workspace layout, never by a reader route. The
+ * reader budget (NFR3) measures the `/r/[token]` JS closure and excludes CSS, so
+ * this adds zero reader bytes by construction. The accessible name is the span's
+ * TEXT (present in the DOM regardless of CSS); this rule only moves it off-screen,
+ * so an editor mounted outside the layout in a component test stays accessible -
+ * the visible glyph just renders beside the (un-clipped) descriptive text there.
+ */
+
+.block-card .sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}

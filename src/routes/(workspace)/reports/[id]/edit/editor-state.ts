@@ -279,11 +279,17 @@ export function toggleRunMark(run: InlineRun, mark: RunMark): void {
 /**
  * Sets or clears a run's EXTERNAL link IN PLACE. A non-empty href stores the
  * `link` object the schema validates (an http(s) URL, enforced on save); an empty
- * href removes the field entirely (an optional link is omitted, not blanked). The
- * editor never sets both `link` and the Epic 11 `linkTo` on a run (it does not edit
- * `linkTo`), so the schema's mutual-exclusion refine is never tripped from here.
+ * href removes the field entirely (an optional link is omitted, not blanked).
+ *
+ * A run links internally (the Epic 11 `linkTo`, a section id) OR externally
+ * (`link.href`), never both - the schema refines them mutually exclusive. This
+ * editor does not surface `linkTo` but preserves it, so when a run already carries
+ * one this is a NO-OP: it must not author the conflicting `link`+`linkTo` state the
+ * editor could then not clear (the URL input is disabled for the same run, this is
+ * the defence-in-depth guard behind it).
  */
 export function setRunLink(run: InlineRun, href: string): void {
+	if (run.linkTo !== undefined) return;
 	if (href === '') delete run.link;
 	else run.link = { href };
 }

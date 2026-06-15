@@ -153,18 +153,6 @@
 		gap: var(--space-1);
 	}
 
-	/* Off-screen accessible name for the block move/remove controls (WCAG 2.5.3);
-	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
-	   the workspace layout too. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
+	/* `.sr-only` is the shared workspace base (sr-only.css), scoped under
+	   `.block-card` - the wrapper this component renders. */
 </style>

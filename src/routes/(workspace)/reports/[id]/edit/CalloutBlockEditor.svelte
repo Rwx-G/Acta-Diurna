@@ -90,22 +90,6 @@
 		color: var(--color-ink-65);
 	}
 
-	.field-label {
-		margin: var(--space-2) 0 0;
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--color-ink-65);
-	}
-
-	input,
-	select {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		font-weight: 400;
-		line-height: 1.5;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
+	/* `.field-label`, `input` and `select` are the shared workspace base
+	   (form-fields.css), authoritative - no local copy. */
 </style>

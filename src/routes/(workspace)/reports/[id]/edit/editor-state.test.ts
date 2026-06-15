@@ -268,6 +268,18 @@ describe('setRunLink', () => {
 		setRunLink(run, '');
 		expect('link' in run).toBe(false);
 	});
+
+	it('is a no-op on a run carrying an Epic 11 linkTo (the two are mutually exclusive)', () => {
+		// A run links internally (`linkTo`) OR externally (`link.href`), never both. The
+		// editor preserves but does not surface `linkTo`; setting an external link on such
+		// a run would author the conflicting state the schema rejects, so this guards it.
+		const run = { ...newRun(), linkTo: 'appendix' };
+
+		setRunLink(run, 'https://example.com/x');
+
+		expect('link' in run).toBe(false);
+		expect(run.linkTo).toBe('appendix');
+	});
 });
 
 describe('humanizePath', () => {

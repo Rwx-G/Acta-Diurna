@@ -1,8 +1,7 @@
 <script lang="ts">
-	import type { TimelineBlock } from '$lib/schema';
-	import { resolveScaleRef } from '$lib/schema';
+	import type { Scales, TimelineBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
-	import ParagraphsEditor from './ParagraphsEditor.svelte';
+	import MilestoneRow from './MilestoneRow.svelte';
 	import { moveItem } from './editor-state';
 
 	// The timeline adds, edits and removes ordered milestones. Each milestone
@@ -14,9 +13,10 @@
 	// picked from the document scales: the scale select offers the declared scales,
 	// the entry select offers that scale's entries by key (label shown). The `scales`
 	// prop is the document's scales, threaded down so the selects offer the declared
-	// scales. The shared BlockEditor frame supplies the audience picker.
-	import type { Scales } from '$lib/schema';
-
+	// scales. Each milestone row is its own child component (MilestoneRow) so the
+	// entry-option lookup (`resolveScaleRef`) memoizes per milestone via `$derived`
+	// and re-runs only on a scaleRef/scales change, not on every label/date keystroke.
+	// The shared BlockEditor frame supplies the audience picker.
 	interface Props {
 		block: TimelineBlock;
 		scales?: Scales;
@@ -44,131 +44,33 @@
 		/>
 	</label>
 
-	{#each block.milestones as milestone, milestoneIndex (milestoneIndex)}
-		{@const entryOptions = resolveScaleRef(scales, milestone.status.scaleRef)?.entries ?? []}
-		<div class="milestone">
-			<div class="milestone-head">
-				<input
-					value={milestone.label}
-					placeholder="Milestone label"
-					oninput={(event) => {
-						milestone.label = event.currentTarget.value;
-						onEdit();
-					}}
-					aria-label={`Milestone ${milestoneIndex + 1} label`}
-				/>
-				<Button
-					onclick={() => {
-						moveItem(block.milestones, milestoneIndex, -1);
-						onEdit();
-					}}
-					disabled={milestoneIndex === 0}
-				>
-					<span class="sr-only">{`Move milestone ${milestoneIndex + 1} up`}</span>
-					<span aria-hidden="true">Up</span>
-				</Button>
-				<Button
-					onclick={() => {
-						moveItem(block.milestones, milestoneIndex, 1);
-						onEdit();
-					}}
-					disabled={milestoneIndex === block.milestones.length - 1}
-				>
-					<span class="sr-only">{`Move milestone ${milestoneIndex + 1} down`}</span>
-					<span aria-hidden="true">Down</span>
-				</Button>
-				<Button
-					variant="ghost"
-					onclick={() => {
-						block.milestones.splice(milestoneIndex, 1);
-						onEdit();
-					}}
-					disabled={block.milestones.length === 1}
-					aria-label={`Remove milestone ${milestoneIndex + 1}`}
-				>
-					Remove
-				</Button>
-			</div>
-
-			<label>
-				Date (optional)
-				<input
-					value={milestone.date ?? ''}
-					placeholder="e.g. Q3 2026"
-					oninput={(event) => {
-						const value = event.currentTarget.value;
-						if (value === '') delete milestone.date;
-						else milestone.date = value;
-						onEdit();
-					}}
-					aria-label={`Milestone ${milestoneIndex + 1} date`}
-				/>
-			</label>
-
-			<div class="status-row">
-				<label>
-					Status scale
-					<select
-						value={milestone.status.scaleRef}
-						onchange={(event) => {
-							milestone.status.scaleRef = event.currentTarget.value;
-							milestone.status.entry = '';
-							onEdit();
-						}}
-						aria-label={`Milestone ${milestoneIndex + 1} status scale`}
-					>
-						<option value="">Select a scale</option>
-						{#each scaleOptions as scale (scale.key)}
-							<option value={scale.key}>{scale.label}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					Status
-					<select
-						value={milestone.status.entry}
-						onchange={(event) => {
-							milestone.status.entry = event.currentTarget.value;
-							onEdit();
-						}}
-						aria-label={`Milestone ${milestoneIndex + 1} status`}
-					>
-						<option value="">Select a status</option>
-						{#each entryOptions as entry (entry.key)}
-							<option value={entry.key}>{entry.label}</option>
-						{/each}
-					</select>
-				</label>
-			</div>
-
-			{#if milestone.detail}
-				<ParagraphsEditor
-					bind:paragraphs={milestone.detail}
-					label={`Milestone ${milestoneIndex + 1} detail`}
-					{onEdit}
-				/>
-				<Button
-					variant="ghost"
-					onclick={() => {
-						delete milestone.detail;
-						onEdit();
-					}}
-					aria-label={`Remove milestone ${milestoneIndex + 1} detail`}
-				>
-					Remove detail
-				</Button>
-			{:else}
-				<Button
-					onclick={() => {
-						milestone.detail = [[{ text: '' }]];
-						onEdit();
-					}}
-					aria-label={`Add detail to milestone ${milestoneIndex + 1}`}
-				>
-					Add detail
-				</Button>
-			{/if}
-		</div>
+	<!-- Keyed by the milestone OBJECT REFERENCE, not the index: `moveItem` reorders by
+	     an in-place adjacent swap that preserves object identity, so a reorder reuses the
+	     existing milestone subtrees (focus survives the move) instead of remounting every
+	     row whose index shifted. -->
+	{#each block.milestones as milestone, milestoneIndex (milestone)}
+		<MilestoneRow
+			bind:milestone={block.milestones[milestoneIndex]}
+			{milestoneIndex}
+			{scales}
+			{scaleOptions}
+			canMoveUp={milestoneIndex > 0}
+			canMoveDown={milestoneIndex < block.milestones.length - 1}
+			canRemove={block.milestones.length > 1}
+			onMoveUp={() => {
+				moveItem(block.milestones, milestoneIndex, -1);
+				onEdit();
+			}}
+			onMoveDown={() => {
+				moveItem(block.milestones, milestoneIndex, 1);
+				onEdit();
+			}}
+			onRemove={() => {
+				block.milestones.splice(milestoneIndex, 1);
+				onEdit();
+			}}
+			{onEdit}
+		/>
 	{/each}
 
 	<Button
@@ -203,63 +105,7 @@
 		color: var(--color-ink-65);
 	}
 
-	.milestone {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-		padding: var(--space-3);
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-12);
-		border-radius: var(--radius-sm);
-	}
-
-	.milestone-head {
-		display: flex;
-		gap: var(--space-2);
-		align-items: center;
-	}
-
-	.milestone-head input {
-		flex: 1;
-	}
-
-	.status-row {
-		display: flex;
-		gap: var(--space-2);
-	}
-
-	.status-row label {
-		flex: 1;
-		min-width: 0;
-	}
-
-	input,
-	select {
-		min-width: 0;
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		font-weight: 400;
-		line-height: 1.5;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
-
-	/* Accessible name for the icon-style milestone move controls (WCAG 2.5.3): the
-	   full descriptive name is in a visually-hidden span, the visible glyph is
-	   aria-hidden. Component-scoped so it holds outside the workspace layout too. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
+	/* The `input, select` reset is the shared workspace base (form-fields.css). */
 
 	.hint {
 		margin: 0;
