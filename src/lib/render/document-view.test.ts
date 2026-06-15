@@ -263,6 +263,30 @@ describe('toPreviewView (transiently-invalid tolerance)', () => {
 		expect(toPreviewView(snapshot).hasAudiences).toBe(false);
 	});
 
+	it('never carries author-only speaker notes onto the editor preview view-model (Story 10.6 privacy)', () => {
+		// The editor's live preview renders from `toPreviewView`. Speaker notes are an
+		// author-only affordance edited on the working copy (Story 10.6) and must not
+		// surface in the reader-facing render the preview shows - the preview is the
+		// author's, but it IS the reader output, and notes are not part of it. The
+		// render tier never reads `notes`, so a draft snapshot carrying notes produces a
+		// view-model free of them (no property, no value anywhere in the serialized view).
+		const snapshot = {
+			version: 1,
+			title: 'Briefed draft',
+			sections: [
+				{
+					id: 'sec-1',
+					title: 'Section one',
+					notes: 'Confidential presenter cue in the draft.',
+					blocks: [{ type: 'text', id: 'ok', paragraphs: [[{ text: 'Plain.' }]] }]
+				}
+			]
+		};
+		const view = toPreviewView(snapshot);
+		expect(view.sections[0]).not.toHaveProperty('notes');
+		expect(JSON.stringify(view)).not.toContain('Confidential presenter cue in the draft.');
+	});
+
 	it('renders valid blocks and flags only the invalid one', () => {
 		const snapshot = {
 			version: 1,
