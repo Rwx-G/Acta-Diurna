@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { DEFAULT_AUDIENCE, type Audience } from '$lib/schema';
 	import { Report, toPreviewView } from '$lib/render';
 
 	// The embedded real renderer (UX LivePreview): the identical render tier the
@@ -12,6 +13,13 @@
 	let { document }: Props = $props();
 
 	let viewport = $state<'desktop' | 'mobile'>('desktop');
+	// Per-level preview (Story 10.6): the SAME level filtering the reader uses,
+	// rendered by the embedded Report's reader LevelSwitcher. The editor remounts
+	// the Report on every settled edit (`{#key document}`), which would reset the
+	// in-component level to `full`; holding the chosen level here and re-seeding it
+	// via `level` keeps the author authoring against the level they picked. Defaults
+	// to `full` (FR28). The switcher only shows when the document carries tags.
+	let previewLevel = $state<Audience>(DEFAULT_AUDIENCE);
 	const view = $derived(toPreviewView(document));
 </script>
 
@@ -55,7 +63,13 @@
 
 	<div class="frame" class:mobile={viewport === 'mobile'}>
 		{#key document}
-			<Report {view} mode="scroll" embedded />
+			<Report
+				{view}
+				mode="scroll"
+				embedded
+				level={previewLevel}
+				onlevelchange={(next) => (previewLevel = next)}
+			/>
 		{/key}
 	</div>
 </div>

@@ -36,9 +36,23 @@
 		 * `data-audiences` excludes it - content stays SSR, only visibility toggles.
 		 */
 		level?: Audience;
+		/**
+		 * Reports an embedded per-level preview switch UP (Story 10.6). The workspace
+		 * LivePreview remounts this component on every settled edit (`{#key document}`),
+		 * which would reset the in-component `activeLevel` to the default. The preview
+		 * owner holds the chosen level across remounts and re-seeds it via `level`, so
+		 * the author keeps authoring against the level they picked while they edit.
+		 */
+		onlevelchange?: (level: Audience) => void;
 	}
 
-	let { view, mode = 'slide', embedded = false, level = DEFAULT_AUDIENCE }: Props = $props();
+	let {
+		view,
+		mode = 'slide',
+		embedded = false,
+		level = DEFAULT_AUDIENCE,
+		onlevelchange
+	}: Props = $props();
 
 	// svelte-ignore state_referenced_locally
 	let activeLevel = $state<Audience>(level);
@@ -338,10 +352,18 @@
 	ontouchend={embedded ? undefined : handleTouchEnd}
 >
 	{#if embedded && view.hasAudiences}
-		<!-- Workspace per-level preview control (AC3): drives the same data-level
-		     mechanism the reader uses, so author and reader cannot drift. -->
+		<!-- Workspace per-level preview control (Story 10.6): the SAME LevelSwitcher
+		     the reader drives, so author and reader cannot drift. The choice is also
+		     reported UP so the preview owner persists it across the editor's settled-
+		     snapshot remounts (the author keeps authoring against the picked level). -->
 		<div class="preview-levels">
-			<LevelSwitcher level={activeLevel} onchange={(next) => (activeLevel = next)} />
+			<LevelSwitcher
+				level={activeLevel}
+				onchange={(next) => {
+					activeLevel = next;
+					onlevelchange?.(next);
+				}}
+			/>
 		</div>
 	{/if}
 
