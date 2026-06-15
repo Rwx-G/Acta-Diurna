@@ -1,11 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
+	diffSnapshots,
 	validateDocument,
 	type BindingDelta,
 	type ChangeSummaryEntry,
-	type DocumentV1
+	type DocumentV1,
+	type NoPredecessorReason
 } from '$lib/schema';
 import { bakeChangeSummary } from './bake-change-summary.ts';
+
+/**
+ * Computes the (issue, predecessor) diff the publish path now computes ONCE and shares
+ * with the bake, then bakes it - so the test exercises the same one-traversal wiring as
+ * `publishReport`. A null predecessor maps to a no-predecessor diff with `reason`.
+ */
+function bake(
+	issue: DocumentV1,
+	predecessor: DocumentV1 | null,
+	reason: NoPredecessorReason = 'first-issue'
+): DocumentV1 {
+	const diff = diffSnapshots(issue, predecessor, reason);
+	return bakeChangeSummary(issue, diff, predecessor);
+}
 
 /**
  * Builds a validated document with an optional change-summary opt-in and an optional
@@ -69,7 +85,7 @@ describe('bakeChangeSummary', () => {
 	it('returns the document unchanged when there is no opt-in (off by default)', () => {
 		const issue = reportDocument({ intro: 'New intro.' });
 		const predecessor = reportDocument({ intro: 'Old intro.' });
-		const baked = bakeChangeSummary(issue, predecessor);
+		const baked = bake(issue, predecessor);
 		expect(baked.changeSummary).toBeUndefined();
 		expect(baked).toBe(issue);
 	});
@@ -77,7 +93,7 @@ describe('bakeChangeSummary', () => {
 	it('returns the document unchanged when the opt-in is explicitly off', () => {
 		const issue = reportDocument({ enabled: false, intro: 'New intro.' });
 		const predecessor = reportDocument({ intro: 'Old intro.' });
-		const baked = bakeChangeSummary(issue, predecessor);
+		const baked = bake(issue, predecessor);
 		expect(baked.changeSummary).toEqual({ enabled: false });
 		expect(baked.changeSummary?.entries).toBeUndefined();
 		// No stale entries to drop, so the bake returns the input identity unchanged.
@@ -86,7 +102,7 @@ describe('bakeChangeSummary', () => {
 
 	it('bakes no entries on a first issue (null predecessor), keeping the opt-in on', () => {
 		const issue = reportDocument({ enabled: true, intro: 'First issue.' });
-		const baked = bakeChangeSummary(issue, null, 'first-issue');
+		const baked = bake(issue, null, 'first-issue');
 		expect(baked.changeSummary).toEqual({ enabled: true });
 		expect(baked.changeSummary?.entries).toBeUndefined();
 	});
@@ -100,7 +116,7 @@ describe('bakeChangeSummary', () => {
 			revenue: 108,
 			revenueDelta: { direction: 'up', priorValue: 100, absolute: 8, relative: 0.08 }
 		});
-		const baked = bakeChangeSummary(issue, predecessor);
+		const baked = bake(issue, predecessor);
 		expect(baked.changeSummary?.enabled).toBe(true);
 		const entries = baked.changeSummary?.entries ?? [];
 		// The prose change on intro, the KPI movement on metrics, and the added risks section.
@@ -126,7 +142,7 @@ describe('bakeChangeSummary', () => {
 	it('never ships the predecessor prose into the baked summary (leak tripwire)', () => {
 		const predecessor = reportDocument({ intro: 'SECRET predecessor prose.', revenue: 100 });
 		const issue = reportDocument({ enabled: true, intro: 'New intro this issue.', revenue: 100 });
-		const baked = bakeChangeSummary(issue, predecessor);
+		const baked = bake(issue, predecessor);
 		expect(JSON.stringify(baked.changeSummary)).not.toContain('SECRET predecessor prose');
 	});
 
@@ -140,14 +156,14 @@ describe('bakeChangeSummary', () => {
 			intro: 'New intro.'
 		});
 		const predecessor = reportDocument({ intro: 'Old intro.' });
-		const baked = bakeChangeSummary(issue, predecessor);
+		const baked = bake(issue, predecessor);
 		expect(baked.changeSummary).toEqual({ enabled: false });
 	});
 
 	it('does not mutate the input document', () => {
 		const issue = reportDocument({ enabled: true, intro: 'New intro.', extraSection: true });
 		const predecessor = reportDocument({ intro: 'Old intro.' });
-		bakeChangeSummary(issue, predecessor);
+		bake(issue, predecessor);
 		expect(issue.changeSummary).toEqual({ enabled: true });
 		expect(issue.changeSummary?.entries).toBeUndefined();
 	});

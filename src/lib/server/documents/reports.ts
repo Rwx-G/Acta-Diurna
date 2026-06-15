@@ -838,16 +838,20 @@ export async function publishReport(
 	const predecessor = await predecessorSnapshot(row.predecessorId, scope, migrations);
 	const withDeltas = bakeBindingDeltas(validated, predecessor);
 	// Story 9.5: bake the OPT-IN reader-facing change summary AFTER the delta bake, so its
-	// headline movements read the freshly-baked KPI deltas. The bake is a no-op unless the
-	// document carries `changeSummary.enabled === true`; a first issue, an unpublished
-	// predecessor, or a drifted pair bakes no entries (the panel does not appear). The
-	// predecessor edge being absent (a first issue) vs present-but-unpublished only changes
-	// the neutral reason; both yield no entries, so the reason is informational here.
-	const document = bakeChangeSummary(
+	// headline movements read the freshly-baked KPI deltas. The diff over the (baked issue,
+	// predecessor) pair is computed ONCE here and shared with the bake, so the publish path
+	// traverses the document pair a single time rather than re-diffing inside the bake. The
+	// no-predecessor reason is derived from the SNAPSHOT resolution, not the edge alone: a
+	// null snapshot is a first issue only when there is no predecessor edge; a present edge
+	// with no published snapshot is an unpublished predecessor. Both yield no entries, so
+	// the reason is informational, but it is now semantically correct for any future
+	// consumer. A drifted pair bakes no entries either - the panel does not appear.
+	const seriesDiff = diffSnapshots(
 		withDeltas,
 		predecessor,
-		row.predecessorId === null ? 'first-issue' : 'predecessor-unpublished'
+		predecessor === null && row.predecessorId === null ? 'first-issue' : 'predecessor-unpublished'
 	);
+	const document = bakeChangeSummary(withDeltas, seriesDiff, predecessor);
 	const now = new Date();
 	const where =
 		expectedUpdatedAt === undefined

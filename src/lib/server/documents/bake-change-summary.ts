@@ -22,34 +22,32 @@
  * opt-in stays enabled but the panel does not appear - the same posture as the KPI
  * delta omission, never a misleading empty summary.
  */
-import {
-	buildChangeSummaryEntries,
-	diffSnapshots,
-	type DocumentV1,
-	type NoPredecessorReason,
-	type SeriesDiff
-} from '$lib/schema';
+import { buildChangeSummaryEntries, type DocumentV1, type SeriesDiff } from '$lib/schema';
 
 /**
  * Returns a copy of `published` with the Story 9.5 reader change-summary baked onto
- * its `changeSummary.entries`, computed against `predecessor`. The bake is a no-op
- * (returns the input unchanged) when the opt-in is off (`changeSummary` absent or
- * `enabled: false`). When on, it diffs the issue against the predecessor and bakes the
- * leak-safe entries; a null predecessor (first issue or unpublished predecessor) or a
- * drifted pair bakes an empty/omitted summary so the panel simply does not appear.
+ * its `changeSummary.entries`, distilled from the precomputed {@link SeriesDiff}. The
+ * bake is a no-op (returns the input unchanged) when the opt-in is off (`changeSummary`
+ * absent or `enabled: false`). When on, it distills the diff into the leak-safe
+ * entries; a `no-predecessor` diff (first issue or unpublished predecessor) or a
+ * drifted pair yields an empty/omitted summary so the panel simply does not appear.
+ *
+ * The caller passes the SAME `diff` it already computed for the publish (one traversal
+ * of the document pair), so this bake does not re-diff: `diffSnapshots` walks both
+ * documents (placeBlocks twice, a full per-block deepEqual), and running it again here
+ * would double that cost on every opted-in publish. `predecessor` is the same snapshot
+ * the diff was computed against; it is threaded through so a `removed` section's
+ * audience tags - absent from `published` - are recovered for the entry.
  *
  * `published` is already validated and already carries the 9.4 baked KPI deltas (the
  * delta bake runs first), so the headline movements read the same figures the reader
  * sees. This never mutates the input (it rebuilds the `changeSummary` field), and the
  * result is re-validated by the caller before it is frozen.
- *
- * `noPredecessorReason` mirrors the delta bake's predecessor resolution: `null`
- * predecessor maps to a `no-predecessor` diff, so the builder yields no entries.
  */
 export function bakeChangeSummary(
 	published: DocumentV1,
-	predecessor: DocumentV1 | null,
-	noPredecessorReason: NoPredecessorReason = 'first-issue'
+	diff: SeriesDiff,
+	predecessor: DocumentV1 | null
 ): DocumentV1 {
 	const optIn = published.changeSummary;
 	// OFF by default: no opt-in, or opt-in disabled. Drop any stale baked entries so a
@@ -59,8 +57,7 @@ export function bakeChangeSummary(
 		return { ...published, changeSummary: { enabled: optIn.enabled } };
 	}
 
-	const diff: SeriesDiff = diffSnapshots(published, predecessor, noPredecessorReason);
-	const entries = buildChangeSummaryEntries(diff, published);
+	const entries = buildChangeSummaryEntries(diff, published, predecessor ?? undefined);
 	// Omit the `entries` key entirely when there is nothing to surface (a first issue,
 	// an unpublished predecessor, a drifted pair, or a refill that changed nothing), so
 	// the renderer's "no panel" branch fires on absence rather than an empty array.
