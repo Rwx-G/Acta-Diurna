@@ -61,8 +61,13 @@
 						{/if}
 					{/each}
 				{:else}
-					<!-- y grid + axis labels -->
-					{#each geometry.yTicks as tick (tick.value)}
+					<!-- y grid + axis labels. Keyed by INDEX, not `tick.value`: a flat or
+					     tiny-range domain rounds several ticks to the same formatted string
+					     (`formatTickValue`), and a duplicate key trips Svelte's
+					     `each_key_duplicate` on hydration - a reader-facing crash. The tick
+					     list is positionally stable (one entry per `scale.ticks` step), so the
+					     index is a sound unique key. -->
+					{#each geometry.yTicks as tick, tickIndex (tickIndex)}
 						<line
 							x1={geometry.plot.left}
 							x2={geometry.plot.left + geometry.plot.width}
@@ -79,8 +84,10 @@
 						>
 					{/each}
 
-					<!-- x category labels -->
-					{#each geometry.xTicks as tick (tick.value)}
+					<!-- x category labels. Keyed by INDEX for the same reason: the category
+					     domain is de-duplicated upstream, but a stringified numeric x can still
+					     repeat after formatting, so the position index is the safe unique key. -->
+					{#each geometry.xTicks as tick, tickIndex (tickIndex)}
 						<text
 							x={tick.position}
 							y={geometry.plot.top + geometry.plot.height + 20}

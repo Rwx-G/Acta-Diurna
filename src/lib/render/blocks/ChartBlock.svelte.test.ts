@@ -87,6 +87,36 @@ describe('ChartBlock render', () => {
 		expect(xTicks).toEqual(['Jan', 'Feb', 'Mar']);
 	});
 
+	it('renders without an each_key_duplicate crash when y ticks format to duplicate strings', () => {
+		// A tiny y-domain rounds several `formatTickValue` outputs to the same string
+		// (here every tick formats to "0.0"). Keying the tick `{#each}` by the formatted
+		// value would trip Svelte's `each_key_duplicate` on hydration - a reader-facing
+		// crash. Keyed by index, the chart renders and every tick is present.
+		const { container } = render(ChartBlock, {
+			block: block({
+				series: [
+					{
+						name: 'Rate',
+						points: [
+							{ x: 'a', y: 0.001 },
+							{ x: 'b', y: 0.002 }
+						]
+					}
+				]
+			})
+		});
+		const svg = container.querySelector('svg.chart-svg');
+		expect(svg).not.toBeNull();
+		const yTicks = Array.from(container.querySelectorAll('.y-tick')).map((t) =>
+			t.textContent?.trim()
+		);
+		// Several ticks share the formatted string yet all render (no key collision).
+		expect(yTicks.length).toBeGreaterThan(1);
+		expect(new Set(yTicks).size).toBeLessThan(yTicks.length);
+		// The axis still draws (the value labels and grid lines are present).
+		expect(container.querySelectorAll('.grid-line').length).toBe(yTicks.length);
+	});
+
 	it('escapes an HTML-looking series name and accessible title instead of rendering them (XSS rule)', () => {
 		const { container } = render(ChartBlock, {
 			block: block({
