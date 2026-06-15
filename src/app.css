@@ -31,6 +31,7 @@
 	--color-ink-25: color-mix(in srgb, var(--color-ink) 25%, transparent);
 	--color-ink-50: color-mix(in srgb, var(--color-ink) 50%, transparent);
 	--color-ink-65: color-mix(in srgb, var(--color-ink) 65%, transparent);
+	--color-ink-80: color-mix(in srgb, var(--color-ink) 80%, transparent);
 
 	/* Semantic workspace colors - desaturated, AA floor, chrome only (never
 	   inside report content per the UX color rule). */

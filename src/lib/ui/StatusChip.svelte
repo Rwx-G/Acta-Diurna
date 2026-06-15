@@ -23,7 +23,9 @@
 	}
 
 	.draft {
-		color: var(--color-ink-65);
+		/* ink-80 over the ink-12 chip keeps the muted look while clearing the
+		   WCAG AA 4.5:1 floor (ink-65 resolved to 4.24:1, an axe contrast miss). */
+		color: var(--color-ink-80);
 		background: var(--color-ink-12);
 	}
 
