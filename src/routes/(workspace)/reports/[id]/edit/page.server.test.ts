@@ -362,8 +362,12 @@ function bindEvent(form: Record<string, string>): Parameters<BindAction>[0] {
 }
 
 describe('bind action', () => {
-	it('binds the named block to a data set and returns the bound timestamp', async () => {
-		bindBlockMock.mockResolvedValue(sampleReport({ updatedAt: new Date('2026-06-12T11:00:00Z') }));
+	it('binds the named block to a data set and returns the bound timestamp + document', async () => {
+		// Epic 10.5: the action returns the bound document AND its new `updatedAt` so the
+		// editor reseeds its working copy and advances the concurrency token (a bind
+		// mutates the report; an unreconciled token would 409 the next document save).
+		const bound = sampleReport({ updatedAt: new Date('2026-06-12T11:00:00Z') });
+		bindBlockMock.mockResolvedValue(bound);
 
 		const result = await actions.bind(
 			bindEvent({
@@ -380,7 +384,7 @@ describe('bind action', () => {
 			{ week: { role: 'column' } },
 			TEST_SCOPE
 		);
-		expect(result).toEqual({ boundAt: '2026-06-12T11:00:00.000Z' });
+		expect(result).toEqual({ boundAt: '2026-06-12T11:00:00.000Z', document: bound.document });
 	});
 
 	it('rejects a missing block/data-set with 400 without calling the service', async () => {
@@ -446,8 +450,9 @@ function postEvent(action: string, form: Record<string, string>): PostEvent {
 
 describe('rebind action (FR14)', () => {
 	it('rebinds from a data set and returns diagnostics + summary', async () => {
+		const reboundReport = sampleReport({ updatedAt: new Date('2026-06-12T12:00:00Z') });
 		rebindReportMock.mockResolvedValue({
-			report: sampleReport({ updatedAt: new Date('2026-06-12T12:00:00Z') }),
+			report: reboundReport,
 			diagnostics: [
 				{ blockId: 'b1', blockType: 'table', label: 'Metrics - table', state: 'bound', drifts: [] }
 			],
@@ -466,6 +471,9 @@ describe('rebind action (FR14)', () => {
 		);
 		expect(result).toMatchObject({
 			reboundAt: '2026-06-12T12:00:00.000Z',
+			// Epic 10.5: the re-resolved document is returned for the editor's token
+			// reconciliation alongside the diagnostics.
+			document: reboundReport.document,
 			rebound: ['b1'],
 			summary: { allGreen: true }
 		});
@@ -499,8 +507,11 @@ describe('rebind action (FR14)', () => {
 });
 
 describe('remap action (FR15)', () => {
-	it('remaps an expected field onto an available field and returns the timestamp', async () => {
-		remapFieldMock.mockResolvedValue(sampleReport({ updatedAt: new Date('2026-06-12T12:30:00Z') }));
+	it('remaps an expected field onto an available field and returns the timestamp + document', async () => {
+		// Epic 10.5: like bind, the action returns the re-resolved document + its new
+		// `updatedAt` for the editor's token reconciliation.
+		const remapped = sampleReport({ updatedAt: new Date('2026-06-12T12:30:00Z') });
+		remapFieldMock.mockResolvedValue(remapped);
 
 		const result = await actions.remap(
 			postEvent('remap', {
@@ -519,7 +530,10 @@ describe('remap action (FR15)', () => {
 			'counts',
 			TEST_SCOPE
 		);
-		expect(result).toEqual({ remappedAt: '2026-06-12T12:30:00.000Z' });
+		expect(result).toEqual({
+			remappedAt: '2026-06-12T12:30:00.000Z',
+			document: remapped.document
+		});
 	});
 
 	it('rejects an incomplete remap with 400 without calling the service', async () => {
