@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { validateDocument, type BlockType, type DocumentV1Input } from '$lib/schema';
+import { blockSchema, validateDocument, type BlockType, type DocumentV1Input } from '$lib/schema';
 import {
 	applyNarrativeFields,
+	blockPaletteEntries,
 	groupErrorsByLocation,
 	humanizePath,
 	moveItem,
@@ -149,6 +150,34 @@ describe('newBlock', () => {
 
 		expect(first.id).not.toBe(second.id);
 		expect(first.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+	});
+});
+
+describe('blockPaletteEntries', () => {
+	it('offers exactly one entry per member of the block discriminated union', () => {
+		const unionTypes = blockSchema.options.map((option) => option.shape.type.value as BlockType);
+		const paletteTypes = blockPaletteEntries.map((entry) => entry.type);
+
+		// One palette entry per union member, no duplicates, no extras: the palette
+		// is the complete catalogue and nothing more.
+		expect([...paletteTypes].sort()).toEqual([...unionTypes].sort());
+		expect(new Set(paletteTypes).size).toBe(paletteTypes.length);
+	});
+
+	it('carries a non-empty label and description for every entry', () => {
+		for (const entry of blockPaletteEntries) {
+			expect(entry.label.length).toBeGreaterThan(0);
+			expect(entry.description.length).toBeGreaterThan(0);
+		}
+	});
+
+	it('inserts a block of the chosen type via newBlock for every entry', () => {
+		// The palette seeds each insertion from `newBlock(type)`, so every entry must
+		// produce a block whose discriminant matches the entry - the contract the
+		// palette UI relies on (pick "Table", get a table block).
+		for (const entry of blockPaletteEntries) {
+			expect(newBlock(entry.type).type).toBe(entry.type);
+		}
 	});
 });
 

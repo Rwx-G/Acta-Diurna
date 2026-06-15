@@ -104,6 +104,40 @@ describe('ReportEditor shell', () => {
 		await expect.element(getByText('A document needs a title.')).toBeVisible();
 	});
 
+	it('adds a section to the working copy from a single validated path', async () => {
+		// Story 10.2: a structural edit (add a section) flows through the SAME in-edit
+		// working copy (no parallel model). A fresh seeded section ("New section", one
+		// empty text block) lands in the editor as its own labelled section region
+		// (the default report has no "New section", so its appearance is the add).
+		const { getByRole } = renderEditor(sampleReport());
+
+		expect(getByRole('region', { name: 'Section: New section' }).query()).toBeNull();
+		await getByRole('button', { name: 'Add section', exact: true }).click();
+
+		await expect.element(getByRole('region', { name: 'Section: New section' })).toBeVisible();
+	});
+
+	it('deletes a section from the working copy', async () => {
+		const twoSections = sampleReport();
+		const doc = (twoSections as { document: DocumentV1 }).document;
+		doc.sections.push({
+			id: 'appendix',
+			title: 'Appendix',
+			blocks: [{ type: 'text', id: 'note', paragraphs: [[{ text: 'Annex note.' }]] }]
+		});
+
+		const { getByRole } = renderEditor(twoSections);
+		await expect.element(getByRole('region', { name: 'Section: Appendix' })).toBeVisible();
+
+		// Two sections render two "Remove section" controls; removing the second drops
+		// it from the working copy (its labelled section region disappears).
+		await getByRole('button', { name: 'Remove section' }).nth(1).click();
+
+		await expect
+			.element(getByRole('region', { name: 'Section: Appendix' }))
+			.not.toBeInTheDocument();
+	});
+
 	it('renders a published report read-only with the unpublish-to-edit affordance', async () => {
 		const published = sampleReport({
 			status: 'published',

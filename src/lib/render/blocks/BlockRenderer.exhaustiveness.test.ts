@@ -6,9 +6,9 @@ import { blockSchema } from '$lib/schema';
 /**
  * Compile-time `satisfies Record<BlockType, ...>` guards already make a forgotten
  * branch a build error at both seams (the render dispatch in BlockRenderer.svelte
- * and the block menu in SectionEditor.svelte). These runtime tests are the
+ * and the block palette catalogue in editor-state.ts). These runtime tests are the
  * belt-and-braces backstop: they read the actual source and assert every block
- * type the schema declares appears as a dispatch arm and as a menu entry, so a
+ * type the schema declares appears as a dispatch arm and as a palette entry, so a
  * type silently dropped from either list fails a test even if a future refactor
  * weakens the typed guard.
  */
@@ -53,12 +53,13 @@ describe('block-type dispatch exhaustiveness', () => {
 		expect(source).toMatch(/\{:else\}[\s\S]*class="invalid"/);
 	});
 
-	it('the SectionEditor menu offers an Add button for every block type', () => {
-		const source = readSource('../../../routes/(workspace)/reports/[id]/edit/SectionEditor.svelte');
+	it('the block palette catalogue offers an entry for every block type', () => {
+		const source = readSource('../../../routes/(workspace)/reports/[id]/edit/editor-state.ts');
 		for (const type of blockTypes) {
-			// Hyphenated keys are quoted object keys (`'comparison-matrix': true`),
-			// bare identifiers are not (`text: true`); accept either form.
-			expect(source).toMatch(new RegExp(`'?${type}'?: true`));
+			// Hyphenated keys are quoted object keys (`'comparison-matrix': { ... }`),
+			// bare identifiers are not (`text: { ... }`); accept either form, asserting
+			// the catalogue entry opens an object (the palette label/description record).
+			expect(source).toMatch(new RegExp(`'?${type}'?: \\{`));
 		}
 	});
 });
