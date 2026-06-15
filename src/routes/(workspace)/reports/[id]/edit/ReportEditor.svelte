@@ -25,6 +25,7 @@
 		type EditorIssue,
 		type ErrorsByKey
 	} from './editor-state';
+	import { EditHistory } from './editor-history';
 	import type { DiagnosticContext } from './editor-types';
 	import type { ActionData, PageData } from './$types';
 
@@ -93,6 +94,15 @@
 	// no-JS path); [] = last JS save succeeded; entries = last JS save failed.
 	let clientErrors = $state<EditorIssue[] | null>(null);
 	let saveMessage = $state<string | null>(null);
+	// The autosave INFRASTRUCTURE-failure flag (Story 10.7), distinct from a
+	// validation failure (which renders inline at the failing block, not in the save
+	// indicator): true when the last save could not complete for a reason the author
+	// resolves by RETRYING - the server was unreachable (`result.type === 'error'`)
+	// or a non-409 failure with no actionable inline errors (a 413, a 400 malformed
+	// payload, a 5xx). The status indicator surfaces it as "Save failed - retry" with
+	// a retry control; a fresh edit or a successful save clears it. A 409 is NOT a
+	// save failure - it has its own conflict banner and resolve path.
+	let saveFailed = $state(false);
 	// Reactive: the error-to-block mapping below maps issues against the document
 	// that was SUBMITTED (the one the server rejected), not the live doc. As a
 	// plain `let` the $derived captured the initial null and never re-grouped
@@ -121,19 +131,105 @@
 	let settledSnapshot = $state<DocumentV1>($state.snapshot(doc) as DocumentV1);
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
-	// One clone per settle, shared by the preview and the validation. Watching
-	// `doc` (deep) schedules a single deferred capture; a burst of keystrokes
-	// collapses to one snapshot. The capture itself is the only `$state.snapshot`
-	// of the live doc on the hot path - both heavy consumers read `settledSnapshot`.
+	// In-tab undo/redo history (Story 10.7). A bounded stack of document snapshots
+	// the author steps back/forward through, CLIENT-SIDE only - not a
+	// server-versioned history (an explicit non-goal: concurrency is handled by the
+	// optimistic-concurrency conflict path, undo/redo is an in-tab convenience). The
+	// stack holds `$state.snapshot(doc)` deep clones, coalesced so a typing burst is
+	// one step and bounded in depth (`EditHistory` owns both). `previewLevel` is a
+	// VIEW concern owned by LivePreview, never part of `doc`, so it is excluded from
+	// the history by construction (10.6 Dev Notes). The history records off the SAME
+	// 200 ms settle the preview/validation use, so it shares the keystroke-coalescing
+	// the editor already does; `EditHistory`'s own window merges rapid successive
+	// settles into one undo step too.
+	// svelte-ignore state_referenced_locally
+	// WHY: a one-time capture of the loaded doc as the history baseline (the page
+	// remounts per report.id). Every later transition goes through `record` (on
+	// settle) or `reseed` (a server reseed), never a re-read of this initial value.
+	const history = new EditHistory<DocumentV1>($state.snapshot(doc) as DocumentV1);
+	let canUndo = $state(false);
+	let canRedo = $state(false);
+	// When true, the next settle must NOT push to the history: the `doc` change came
+	// from an undo/redo restore or a server reseed, not a fresh author edit, so
+	// recording it would corrupt the stack (re-pushing a state the cursor already
+	// sits on). One-shot: the settle that consumes it clears it.
+	let skipHistoryRecord = false;
+
+	function refreshHistoryFlags(): void {
+		canUndo = history.canUndo;
+		canRedo = history.canRedo;
+	}
+
+	// One clone per settle, shared by the preview, the validation, and the undo
+	// history. Watching `doc` (deep) schedules a single deferred capture; a burst of
+	// keystrokes collapses to one snapshot. The capture itself is the only
+	// `$state.snapshot` of the live doc on the hot path - the heavy consumers read
+	// `settledSnapshot`, and the history records the same clone.
 	$effect(() => {
 		// Touch the document so the effect re-runs on any nested edit.
 		void doc;
 		clearTimeout(settleTimer);
 		settleTimer = setTimeout(() => {
-			settledSnapshot = $state.snapshot(doc) as DocumentV1;
+			const snapshot = $state.snapshot(doc) as DocumentV1;
+			settledSnapshot = snapshot;
+			if (skipHistoryRecord) {
+				// A restore/reseed already set the history cursor; do not re-record it.
+				skipHistoryRecord = false;
+			} else {
+				history.record(snapshot);
+				refreshHistoryFlags();
+			}
 		}, PREVIEW_DEBOUNCE_MS);
 		return () => clearTimeout(settleTimer);
 	});
+
+	// Applies a restored snapshot onto the working copy as if it were any other edit
+	// (Story 10.7): undo/redo MUTATES the document and rides the same validated-save
+	// seam, so the next autosave persists the restored state through validate-on-write.
+	// The settle that follows is told to skip the history record (the cursor already
+	// moved inside `EditHistory`), so an undo does not itself become a new undo step.
+	function applyRestored(snapshot: DocumentV1): void {
+		doc = snapshot;
+		skipHistoryRecord = true;
+		refreshHistoryFlags();
+		onEdit();
+	}
+
+	function undo(): void {
+		if (!editable) return;
+		const restored = history.undo();
+		if (restored) applyRestored(restored);
+	}
+
+	function redo(): void {
+		if (!editable) return;
+		const restored = history.redo();
+		if (restored) applyRestored(restored);
+	}
+
+	// Ctrl/Cmd+Z undoes, Shift+Ctrl/Cmd+Z (or Ctrl/Cmd+Y) redoes - the platform
+	// conventions, alongside the visible toolbar buttons (an undo affordance must not
+	// be keyboard-only, NFR15). Ignored while a native text field is composing is not
+	// needed: undo/redo here operates on the document model, and the browser's own
+	// per-field text undo is a separate concern the author keeps inside an input. We
+	// only act on the document shortcut when the editor is editable and a redo/undo is
+	// actually available, and we preventDefault so the browser's page-level undo does
+	// not also fire.
+	function onKeydown(event: KeyboardEvent): void {
+		if (!editable) return;
+		const mod = event.ctrlKey || event.metaKey;
+		if (!mod) return;
+		const key = event.key.toLowerCase();
+		if (key === 'z' && !event.shiftKey) {
+			if (!history.canUndo) return;
+			event.preventDefault();
+			undo();
+		} else if ((key === 'z' && event.shiftKey) || key === 'y') {
+			if (!history.canRedo) return;
+			event.preventDefault();
+			redo();
+		}
+	}
 
 	// Optimistic client validation (Epic 10.1): the editor parses the in-edit
 	// document against the SAME isomorphic `documentSchemaV1` the server validates
@@ -252,6 +348,20 @@
 	function onEdit(): void {
 		if (!editable) return;
 		dirty = true;
+		// A fresh edit clears a prior save-failure status: the queued save will retry
+		// with the new state, so the stale "Save failed" must not linger over a
+		// document the author has since moved on from.
+		saveFailed = false;
+		scheduleSave();
+	}
+
+	// The explicit retry behind the "Save failed - retry" status (Story 10.7): re-arm
+	// the single save seam so the latest working copy is reposted through the same
+	// validated path. Clearing the flag optimistically keeps the indicator honest -
+	// it flips back to failed only if the retry fails again.
+	function retrySave(): void {
+		if (!editable) return;
+		saveFailed = false;
 		scheduleSave();
 	}
 
@@ -325,6 +435,7 @@
 				if (result.type === 'success') {
 					dirty = false;
 					conflict = false;
+					saveFailed = false;
 					clientErrors = [];
 					saveMessage = null;
 					const payload = result.data as { savedAt?: string } | undefined;
@@ -353,9 +464,14 @@
 					const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
 					clientErrors = payload?.errors ?? [];
 					saveMessage = clientErrors.length === 0 ? (payload?.message ?? 'Save failed.') : null;
+					// A non-409 failure with no inline errors (413/400/5xx) is an
+					// infrastructure failure the author retries; one carrying inline errors
+					// is a validation failure the author fixes at the block, not a retry.
+					saveFailed = clientErrors.length === 0;
 				} else if (result.type === 'error') {
 					clientErrors = [];
 					saveMessage = 'Save failed: the server could not be reached.';
+					saveFailed = true;
 				}
 			} finally {
 				saving = false;
@@ -400,6 +516,12 @@
 					expectedUpdatedAt = payload.savedAt;
 					savedAt = payload.savedAt;
 				}
+				// Publishing reseeds the undo baseline (Story 10.7): the published state is
+				// the new floor, so a later unpublish-then-edit cannot undo PAST it into a
+				// pre-publish document the server has already snapshotted.
+				history.reseed($state.snapshot(doc) as DocumentV1);
+				skipHistoryRecord = true;
+				refreshHistoryFlags();
 				await invalidateAll();
 			} else if (result.type === 'failure') {
 				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
@@ -431,6 +553,12 @@
 					expectedUpdatedAt = payload.savedAt;
 					savedAt = payload.savedAt;
 				}
+				// Returning to draft reseeds the undo baseline (Story 10.7): editing resumes
+				// from the just-unpublished state as the new floor, so undo cannot reach back
+				// across the publish/unpublish boundary into a stale document.
+				history.reseed($state.snapshot(doc) as DocumentV1);
+				skipHistoryRecord = true;
+				refreshHistoryFlags();
 				await invalidateAll();
 			} else if (result.type === 'failure') {
 				const payload = result.data as { message?: string } | undefined;
@@ -481,6 +609,14 @@
 		clearTimeout(autosaveTimer);
 		clientErrors = [];
 		saveMessage = null;
+		// A binding reconcile is a SERVER reseed (Story 10.7): the re-resolved document
+		// is a new authoritative baseline, not an undo step the author steps PAST into
+		// the pre-bind state (10.5 Dev Notes). Reseed the history to this baseline so
+		// undo/redo cannot resurrect the stale pre-reconcile document, and skip the
+		// settle's record (the reseed already placed the cursor).
+		history.reseed($state.snapshot(doc) as DocumentV1);
+		skipHistoryRecord = true;
+		refreshHistoryFlags();
 	}
 
 	function onBound(savedAtIso: string, document: DocumentV1): void {
@@ -542,6 +678,21 @@
 		return `Saved at ${formatUtcTime(iso)}`;
 	}
 
+	// The autosave status indicator state (Story 10.7): one accessible, announced
+	// label the author reads to know their work is safe - saving, saved-at-<time>, or
+	// failed-retry. Precedence: an in-flight save wins (it is the live truth), then a
+	// retry-able failure, otherwise the last saved-at confirmation. A 409 conflict is
+	// NOT a save status here - it owns the dedicated conflict banner with its own
+	// reload path. The kind drives the announcement + the retry affordance below.
+	type SaveStatus = { kind: 'saving' | 'saved' | 'error'; label: string };
+	const saveStatus: SaveStatus = $derived(
+		saving
+			? { kind: 'saving', label: 'Saving...' }
+			: saveFailed
+				? { kind: 'error', label: 'Save failed - retry' }
+				: { kind: 'saved', label: savedAtLabel(savedAt) }
+	);
+
 	// Keyed remount per report id (the page wraps this in {#key report.id}), so
 	// reading the id once at init is the intended lifecycle.
 	// svelte-ignore state_referenced_locally
@@ -562,6 +713,7 @@
 	onbeforeunload={(event) => {
 		if (dirty) event.preventDefault();
 	}}
+	onkeydown={onKeydown}
 />
 
 <div class="editor-toolbar">
@@ -573,6 +725,19 @@
 			<a class="toolbar-link" href={changesPath}>What changed</a>
 		{/if}
 	</nav>
+
+	<!-- In-tab undo/redo (Story 10.7): visible, labelled controls alongside the
+	     Ctrl/Cmd+Z keyboard path (an undo affordance must not be keyboard-only,
+	     NFR15). Shown only while editable - a published report is read-only, so there
+	     is no working-copy history to step. Disabled when the stack has nothing to
+	     step to, so a screen reader announces the unavailable state rather than a
+	     dead button. -->
+	{#if editable}
+		<div class="history-controls" role="group" aria-label="Undo and redo">
+			<Button variant="ghost" onclick={undo} disabled={!canUndo} aria-label="Undo">Undo</Button>
+			<Button variant="ghost" onclick={redo} disabled={!canRedo} aria-label="Redo">Redo</Button>
+		</div>
+	{/if}
 
 	<!-- Morphing primary action (UX): publish a draft, or unpublish to edit a
 	     published report. Kept outside the editor fieldset so the unpublish
@@ -618,9 +783,18 @@
 					{#if editable}
 						<Button type="submit" variant="secondary">Save</Button>
 					{/if}
-					<span class="saved-at" aria-live="polite">
-						{saving ? 'Saving...' : savedAtLabel(savedAt)}
+					<!-- Autosave status indicator (Story 10.7): an accessible, announced
+					     saving / saved-at / failed status so the author always knows whether
+					     their work is safe. `role="status"` + `aria-live="polite"` announces
+					     each transition without stealing focus; the failed state offers an
+					     explicit retry. The class drives a quiet colour cue (the text carries
+					     the meaning, not the colour alone, WCAG 1.4.1). -->
+					<span class="save-status {saveStatus.kind}" role="status" aria-live="polite">
+						{saveStatus.label}
 					</span>
+					{#if saveStatus.kind === 'error' && editable}
+						<Button variant="secondary" onclick={retrySave}>Retry</Button>
+					{/if}
 				</div>
 			</div>
 
@@ -830,10 +1004,24 @@
 		gap: var(--space-3);
 	}
 
-	.saved-at {
-		color: var(--color-ink-65);
+	/* Autosave status indicator (Story 10.7). The text carries the meaning; the
+	   colour is a secondary cue (WCAG 1.4.1). Saved is quiet ink, saving is the same
+	   quiet tone (transient), failed is danger to flag the work-at-risk state. */
+	.save-status {
 		font-size: var(--text-sm);
 		white-space: nowrap;
+		color: var(--color-ink-65);
+	}
+
+	.save-status.error {
+		color: var(--color-danger);
+		font-weight: 600;
+	}
+
+	.history-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
 	}
 
 	.report-settings {
