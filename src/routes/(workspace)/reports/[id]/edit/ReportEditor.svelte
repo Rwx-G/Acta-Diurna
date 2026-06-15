@@ -161,13 +161,10 @@
 	}
 
 	// One clone per settle, shared by the preview, the validation, and the undo
-	// history. Watching `doc` (deep) schedules a single deferred capture; a burst of
-	// keystrokes collapses to one snapshot. The capture itself is the only
-	// `$state.snapshot` of the live doc on the hot path - the heavy consumers read
-	// `settledSnapshot`, and the history records the same clone.
-	$effect(() => {
-		// Touch the document so the effect re-runs on any nested edit.
-		void doc;
+	// history. A burst of edits collapses to one snapshot ~200 ms after the last. The
+	// capture is the only `$state.snapshot` of the live doc on the hot path - the
+	// heavy consumers read `settledSnapshot`, and the history records the same clone.
+	function scheduleSettle(): void {
 		clearTimeout(settleTimer);
 		settleTimer = setTimeout(() => {
 			const snapshot = $state.snapshot(doc) as DocumentV1;
@@ -180,6 +177,17 @@
 				refreshHistoryFlags();
 			}
 		}, PREVIEW_DEBOUNCE_MS);
+	}
+
+	// Edits drive the settle through `onEdit` (every field handler and structural op
+	// calls it), which is deterministic for deep mutations: a nested `$state` write -
+	// notably ADDING a run mark - does not reliably re-run an effect that only reads
+	// the root `doc` reference, which left the preview one edit stale (~6% of mark
+	// toggles). This effect covers the OTHER trigger the root read DOES track: a `doc`
+	// REASSIGNMENT (a binding reconcile / reseed, and the initial mount).
+	$effect(() => {
+		void doc;
+		scheduleSettle();
 		return () => clearTimeout(settleTimer);
 	});
 
@@ -359,6 +367,9 @@
 		// with the new state, so the stale "Save failed" must not linger over a
 		// document the author has since moved on from.
 		saveFailed = false;
+		// Drive the preview/validation settle here, not off a `void doc` effect: this
+		// runs for every edit including a deep mark add the effect would miss.
+		scheduleSettle();
 		scheduleSave();
 	}
 
