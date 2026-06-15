@@ -73,15 +73,16 @@
 	--leading-relaxed: 1.6; /* report prose */
 
 	--measure-prose: 70ch; /* max line length for report prose (UX) */
-	/* The global content column is fluid: it fills the viewport minus a comfortable
-	   gutter, so a Full-HD-at-125% display (1536 CSS px) reads near edge to edge, and
-	   it keeps growing on larger displays up to a sane ceiling. The 96px gutter stays
-	   wider than the largest additive surface padding (--space-7, 48px each side, on a
-	   content-box layout with no global border-box reset), so no surface overflows
-	   horizontally at any viewport down to mobile. Prose is still capped at
-	   --measure-prose, so widening only gives wide blocks (tables, charts, matrices)
-	   more room - it never lengthens a prose line. */
-	--tool-width: min(2400px, calc(100vw - 96px));
+	/* The global content column scales with its container up to a ceiling: each surface
+	   fills 100% of where it actually lives (the workspace main cell, or the reader
+	   viewport) and only caps at 2400px on very wide displays - so a Full-HD-at-125%
+	   screen (1536 CSS px) reads near full width and larger displays keep growing.
+	   100% (NOT 100vw) keeps it rail-aware: a workspace surface caps at its cell width,
+	   never counting the 216px nav rail, so nothing overflows. Per-surface padding
+	   supplies the gutter, and prose stays capped at --measure-prose, so the extra room
+	   only benefits wide blocks (tables, charts, matrices) - it never lengthens a prose
+	   line. */
+	--tool-width: min(2400px, 100%);
 	/* List / form pages share the editor's width: one workspace column, so a
 	   report detail and the lists framing it line up. Kept as its own token (still
 	   referenced by the content pages and PageHeader) pointing at --tool-width, so

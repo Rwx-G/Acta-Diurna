@@ -184,7 +184,12 @@
 		min-width: 0;
 		width: 100%;
 		max-width: var(--tool-width);
+		/* border-box so the side padding sits INSIDE the 1fr grid cell (there is no
+		   global box-sizing reset). With the default content-box, width:100% + padding
+		   overflows the cell and clips the right edge of the tool strip (the Publish
+		   button). */
+		box-sizing: border-box;
 		margin-inline: auto;
-		padding: var(--space-6) var(--space-7) var(--space-8);
+		padding: var(--space-6) var(--space-5) var(--space-8);
 	}
 </style>
