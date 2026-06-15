@@ -50,6 +50,12 @@ describe('mailerConfig', () => {
 		expect(mailer.mailerConfig()).toBeNull();
 	});
 
+	it('carries the optional from display name', () => {
+		serverEnv.mockReturnValue({ ...baseSmtp, SMTP_FROM_NAME: 'Acta Diurna' });
+
+		expect(mailer.mailerConfig()?.fromName).toBe('Acta Diurna');
+	});
+
 	it('defaults the TLS mode to starttls', () => {
 		serverEnv.mockReturnValue({ ...baseSmtp, SMTP_TLS_MODE: undefined });
 

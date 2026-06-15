@@ -51,6 +51,19 @@ describe('sendMail success', () => {
 		});
 		expect(info).toHaveBeenCalledOnce();
 	});
+
+	it('renders the friendly display name when one is configured', async () => {
+		mailerConfig.mockReturnValue({ ...config, fromName: 'Acta Diurna' });
+		sendMailFn.mockResolvedValue({ messageId: '<abc@relay>' });
+
+		await sendMail({ to: 'me@example.com', subject: 'Hi', text: 'body' });
+
+		// The friendly name rides in nodemailer's { name, address } form so the
+		// recipient sees "Acta Diurna", not the bare address.
+		expect(sendMailFn).toHaveBeenCalledWith(
+			expect.objectContaining({ from: { name: 'Acta Diurna', address: 'reports@example.com' } })
+		);
+	});
 });
 
 describe('sendMail failure', () => {

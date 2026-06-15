@@ -15,6 +15,8 @@ export interface MailerConfig {
 	user?: string;
 	password?: string;
 	from: string;
+	/** Optional display name paired with `from` to render a friendly sender. */
+	fromName?: string;
 	tlsMode: 'starttls' | 'tls' | 'none';
 }
 
@@ -43,6 +45,7 @@ export function mailerConfig(): MailerConfig | null {
 		user: env.SMTP_USER,
 		password: env.SMTP_PASSWORD,
 		from: env.SMTP_FROM,
+		fromName: env.SMTP_FROM_NAME,
 		tlsMode: env.SMTP_TLS_MODE ?? 'starttls'
 	};
 }

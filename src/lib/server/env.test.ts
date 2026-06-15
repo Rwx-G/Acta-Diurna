@@ -108,6 +108,18 @@ describe('parseEnv', () => {
 		expect(env.SMTP_TLS_MODE).toBe('starttls');
 	});
 
+	it('parses the optional SMTP_FROM_NAME display name', () => {
+		const env = parseEnv({ ...validEnv, ...validSmtp, SMTP_FROM_NAME: 'Acta Diurna' });
+
+		expect(env.SMTP_FROM_NAME).toBe('Acta Diurna');
+	});
+
+	it('rejects a SMTP_FROM_NAME carrying a line break (header injection)', () => {
+		expect(() =>
+			parseEnv({ ...validEnv, ...validSmtp, SMTP_FROM_NAME: 'Acta\r\nBcc: evil@example.com' })
+		).toThrowError(/SMTP_FROM_NAME: must not contain a line break/);
+	});
+
 	it('accepts an absent SMTP block (relay configured later)', () => {
 		const env = parseEnv(validEnv);
 

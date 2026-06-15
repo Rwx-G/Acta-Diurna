@@ -137,6 +137,16 @@ const envSchema = z
 		SMTP_USER: z.string().min(1).optional(),
 		SMTP_PASSWORD: z.string().min(1).optional(),
 		SMTP_FROM: z.email('must be an email address, e.g. reports@example.com').optional(),
+		// Optional display name for the From header: set it to show a friendly sender
+		// ("Acta Diurna") instead of the bare address. The mailer encodes it via
+		// nodemailer's { name, address } form. CR/LF are rejected here so the value can
+		// never inject an extra header - defense in depth: the env is operator-set, but
+		// the From header reaches the recipient's mail client.
+		SMTP_FROM_NAME: z
+			.string()
+			.min(1)
+			.regex(/^[^\r\n]+$/, 'must not contain a line break')
+			.optional(),
 		// STARTTLS upgrades a plaintext connection on the SMTP port (587 typically);
 		// tls dials an implicit-TLS port (465); none is plaintext, dev/local only.
 		SMTP_TLS_MODE: z
@@ -237,6 +247,7 @@ const envSchema = z
 			'SMTP_USER',
 			'SMTP_PASSWORD',
 			'SMTP_FROM',
+			'SMTP_FROM_NAME',
 			'SMTP_TLS_MODE'
 		] as const;
 		const anySmtp = smtpKeys.some((key) => env[key] !== undefined);

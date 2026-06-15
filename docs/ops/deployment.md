@@ -257,6 +257,7 @@ These select and shape multi-author mode. All are read once at boot.
 | `SMTP_HOST` | for multi | Presence of the SMTP block is what selects multi mode |
 | `SMTP_PORT` | with SMTP | Relay port (e.g. `25`, `465`, `587`) |
 | `SMTP_FROM` | with SMTP | Envelope-from address for sign-in mail |
+| `SMTP_FROM_NAME` | optional | Friendly sender display name (e.g. `Acta Diurna`); rendered as `Name <address>` so recipients see a name, not the bare address. Unset means the address alone. Line breaks are rejected |
 | `SMTP_USER` / `SMTP_PASSWORD` | optional | Relay credentials; omit both for an unauthenticated relay |
 | `SMTP_TLS_MODE` | optional | `starttls`, `tls`, or `none` (plaintext, internal relay only) |
 | `AUTHOR_EMAIL_DOMAIN` | for multi | Bare domain (e.g. `example.com`); author self-sign-up is restricted to emails within it |

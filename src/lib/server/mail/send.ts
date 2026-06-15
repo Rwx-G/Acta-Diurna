@@ -62,8 +62,12 @@ export async function sendMail(message: MailMessage, requestId?: string): Promis
 	}
 
 	try {
+		// nodemailer's { name, address } form renders (and RFC 2047-encodes) a
+		// friendly display name when one is configured; without it, the bare address
+		// is sent unchanged.
+		const from = config.fromName ? { name: config.fromName, address: config.from } : config.from;
 		const info = await getMailer().sendMail({
-			from: config.from,
+			from,
 			to: message.to,
 			subject: message.subject,
 			text: message.text,
