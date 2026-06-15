@@ -29,3 +29,20 @@ export async function createDraft(page: Page): Promise<string> {
 	expect(reportId).toBeTruthy();
 	return reportId!;
 }
+
+/**
+ * Seeds a draft's document through the editor's OWN validated save action (`?/save`),
+ * the single write path every producer uses, so a spec can start from a richer
+ * document (declared scales, scale-driven blocks) than the empty starter without a
+ * second write seam. The editor has no scales-declaration UI in scope, so a
+ * scale-driven block test seeds the scales here and then edits the blocks in the UI.
+ * Posts the document JSON; asserts the action returned 200.
+ */
+export async function seedDocument(page: Page, reportId: string, document: unknown): Promise<void> {
+	const response = await page.request.post(`${E2E_BASE_URL}/reports/${reportId}/edit?/save`, {
+		headers: FORM_HEADERS,
+		form: { document: JSON.stringify(document) },
+		failOnStatusCode: false
+	});
+	expect(response.status()).toBe(200);
+}

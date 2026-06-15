@@ -92,7 +92,7 @@ describe('TextBlockEditor inline runs', () => {
 		});
 		const { getByRole } = render(TextBlockEditor, { block, onEdit: vi.fn() });
 
-		await getByRole('button', { name: 'Add run' }).click();
+		await getByRole('button', { name: 'Add run to paragraph 1' }).click();
 		expect(block.paragraphs[0]).toHaveLength(2);
 
 		// The remove control's accessible name comes from a visually-hidden span

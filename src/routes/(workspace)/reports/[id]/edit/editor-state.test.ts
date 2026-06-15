@@ -10,7 +10,6 @@ import {
 	newRun,
 	newSection,
 	optimisticDocumentIssues,
-	paragraphText,
 	setRunLink,
 	toggleRunMark
 } from './editor-state';
@@ -218,13 +217,6 @@ describe('moveItem', () => {
 		moveItem(items, 1, 1);
 
 		expect(items).toEqual(['a', 'b']);
-	});
-});
-
-describe('paragraphText', () => {
-	it('concatenates run text, dropping formatting', () => {
-		expect(paragraphText([{ text: 'One ' }, { text: 'two', bold: true }])).toBe('One two');
-		expect(paragraphText([])).toBe('');
 	});
 });
 
