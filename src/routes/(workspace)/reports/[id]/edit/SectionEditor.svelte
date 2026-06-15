@@ -3,6 +3,7 @@
 	import type { BlockType, DocumentV1, Scales, Section } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
+	import SectionNotesEditor from './SectionNotesEditor.svelte';
 	import BlockEditor from './BlockEditor.svelte';
 	import BlockPalette from './BlockPalette.svelte';
 	import IssueList from './IssueList.svelte';
@@ -136,6 +137,12 @@
 	</header>
 
 	<AudiencePicker bind:audiences={section.audiences} legend="Section audiences" {onEdit} />
+
+	<!-- Author-private speaker notes (Story 6.2 / 10.6): edited on the working copy
+	     and saved through the same validate-on-write path, but stripped server-side
+	     before any reader is served (`stripSpeakerNotes` at the publish chokepoint),
+	     so this affordance can never make notes reader-visible. -->
+	<SectionNotesEditor bind:notes={section.notes} {onEdit} />
 
 	<IssueList issues={sectionIssues} variant="section" />
 
