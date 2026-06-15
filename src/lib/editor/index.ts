@@ -24,8 +24,9 @@ export const MAX_DOCUMENT_BYTES: number = 1_000_000;
 export function moveItem<T>(items: T[], index: number, direction: -1 | 1): void {
 	const target = index + direction;
 	if (index < 0 || index >= items.length || target < 0 || target >= items.length) return;
-	const [moved] = items.splice(index, 1);
-	items.splice(target, 0, moved);
+	// The move is always to an ADJACENT slot (direction is -1 | 1), so a single
+	// in-place swap is equivalent to a remove-and-reinsert with one fewer array shift.
+	[items[index], items[target]] = [items[target], items[index]];
 }
 
 /**

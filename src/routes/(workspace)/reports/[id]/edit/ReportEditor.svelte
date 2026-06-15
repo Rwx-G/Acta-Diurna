@@ -61,29 +61,6 @@
 		onEdit();
 	}
 
-	// Data-bindable blocks in the live document (table/chart/kpi), labelled for
-	// the binder's block picker. Recomputed as the author adds/removes blocks.
-	const bindableBlocks = $derived(
-		doc.sections.flatMap((section) =>
-			section.blocks.filter(isBindable).map((block) => ({
-				id: block.id,
-				type: block.type,
-				label: `${section.title} - ${block.type}`
-			}))
-		)
-	);
-
-	// The comparison-matrix blocks in the live document, for the set-membership
-	// block editor's source picker (story 7.4): a set-membership block references
-	// one by id. Recomputed as the author adds/removes matrices.
-	const matrixBlocks = $derived(
-		doc.sections.flatMap((section) =>
-			section.blocks
-				.filter((block) => block.type === 'comparison-matrix')
-				.map((block) => ({ id: block.id, label: `${section.title} - ${block.id}` }))
-		)
-	);
-
 	let dirty = $state(false);
 	let saving = $state(false);
 	// svelte-ignore state_referenced_locally
@@ -155,6 +132,32 @@
 	// reuses the per-block/section schemas the renderer already ships, so it adds
 	// zero bytes to the reader path (it never imports the server-side validate-on-write helper).
 	const optimisticIssues: EditorIssue[] = $derived(optimisticDocumentIssues(settledSnapshot));
+
+	// Data-bindable blocks (table/chart/kpi), labelled for the binder's block
+	// picker. These are STRUCTURAL (which blocks exist), so they derive off the
+	// debounced `settledSnapshot` rather than the live `doc`: a binder list that
+	// lags the 200 ms settle is fine, and it keeps the flatMap off the keystroke
+	// hot path. Recomputed as the author adds/removes blocks (after the settle).
+	const bindableBlocks = $derived(
+		settledSnapshot.sections.flatMap((section) =>
+			section.blocks.filter(isBindable).map((block) => ({
+				id: block.id,
+				type: block.type,
+				label: `${section.title} - ${block.type}`
+			}))
+		)
+	);
+
+	// The comparison-matrix blocks, for the set-membership block editor's source
+	// picker (story 7.4): a set-membership block references one by id. Also
+	// structural, so it derives off the settled snapshot for the same reason.
+	const matrixBlocks = $derived(
+		settledSnapshot.sections.flatMap((section) =>
+			section.blocks
+				.filter((block) => block.type === 'comparison-matrix')
+				.map((block) => ({ id: block.id, label: `${section.title} - ${block.id}` }))
+		)
+	);
 
 	// What the inline placement renders. After a JS save that FAILED, the server's
 	// authoritative errors (`clientErrors`) take precedence and map against the
