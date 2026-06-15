@@ -46,6 +46,11 @@
 	// (or the palette when the section is emptied). The card is a `tabindex="-1"`
 	// region (focusable by script, not in the tab order) so focus can rest on it.
 	let blockListElement = $state<HTMLDivElement>();
+	// The palette's first entry button, the focus-fallback target when a delete
+	// empties the block list (no block card remains to land on). Ref-anchored, like
+	// the `addSectionButton` fallback in ReportEditor, so the empty-section focus
+	// path needs no DOM traversal.
+	let paletteFirstEntry = $state<HTMLButtonElement>();
 
 	async function focusBlock(blockId: string): Promise<void> {
 		await tick();
@@ -70,12 +75,7 @@
 		if (next) {
 			void focusBlock(next.id);
 		} else {
-			void tick().then(() => {
-				blockListElement
-					?.closest('section')
-					?.querySelector<HTMLElement>('[data-block-palette] button')
-					?.focus();
-			});
+			void tick().then(() => paletteFirstEntry?.focus());
 		}
 	}
 
@@ -146,9 +146,11 @@
 		{/each}
 	</div>
 
-	<div data-block-palette>
-		<BlockPalette label={`Add a block to ${section.title}`} onInsert={insertBlock} />
-	</div>
+	<BlockPalette
+		label={`Add a block to ${section.title}`}
+		onInsert={insertBlock}
+		bind:firstEntry={paletteFirstEntry}
+	/>
 </section>
 
 <style>

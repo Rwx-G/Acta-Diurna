@@ -20,16 +20,31 @@
 		onInsert: (type: BlockType) => void;
 		/** Labels the group so multiple palettes (one per section) read distinctly. */
 		label: string;
+		/**
+		 * Bindable handle to the palette's FIRST entry button, for the caller's
+		 * empty-section focus fallback (Story 10.2, NFR15): when a delete empties the
+		 * block list there is no block card left to land focus on, so `SectionEditor`
+		 * focuses this directly - ref-anchored, no DOM traversal.
+		 */
+		firstEntry?: HTMLButtonElement;
 	}
 
-	let { onInsert, label }: Props = $props();
+	let { onInsert, label, firstEntry = $bindable() }: Props = $props();
 </script>
 
 <div class="palette" role="group" aria-label={label}>
 	<span class="palette-title" aria-hidden="true">Add a block</span>
 	<div class="palette-grid">
-		{#each blockPaletteEntries as entry (entry.type)}
+		{#each blockPaletteEntries as entry, index (entry.type)}
 			<Button
+				bind:ref={
+					() => firstEntry,
+					(node) => {
+						// Only the FIRST entry owns the bindable handle (the focus-fallback
+						// target); the others ignore the setter so the last button does not win.
+						if (index === 0) firstEntry = node;
+					}
+				}
 				class="palette-entry"
 				aria-label={`Add a ${entry.label} block`}
 				onclick={() => onInsert(entry.type)}
