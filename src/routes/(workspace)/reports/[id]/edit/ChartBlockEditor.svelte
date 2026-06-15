@@ -2,6 +2,7 @@
 	import type { ChartBlock, ChartKind } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import BindingEditor from './BindingEditor.svelte';
+	import { moveItem } from './editor-state';
 
 	interface Props {
 		block: ChartBlock;
@@ -11,6 +12,16 @@
 	let { block = $bindable(), onEdit }: Props = $props();
 
 	const CHART_KINDS: ChartKind[] = ['line', 'bar', 'area', 'pie'];
+
+	// The optional label fields the chart schema carries. An optional field is
+	// OMITTED when blank (never stored as an empty string the schema's `.min(1)`
+	// would then reject), so clearing the input deletes the field.
+	type ChartLabelField = 'xAxisLabel' | 'yAxisLabel' | 'legendLabel';
+
+	function setLabel(field: ChartLabelField, value: string): void {
+		if (value === '') delete block[field];
+		else block[field] = value;
+	}
 </script>
 
 <label class="field-label" for={`chart-kind-${block.id}`}>Kind</label>
@@ -27,6 +38,37 @@
 	{/each}
 </select>
 
+<label class="field-label" for={`chart-x-axis-${block.id}`}>X-axis label (optional)</label>
+<input
+	id={`chart-x-axis-${block.id}`}
+	class="label-field"
+	value={block.xAxisLabel ?? ''}
+	oninput={(event) => {
+		setLabel('xAxisLabel', event.currentTarget.value);
+		onEdit();
+	}}
+/>
+<label class="field-label" for={`chart-y-axis-${block.id}`}>Y-axis label (optional)</label>
+<input
+	id={`chart-y-axis-${block.id}`}
+	class="label-field"
+	value={block.yAxisLabel ?? ''}
+	oninput={(event) => {
+		setLabel('yAxisLabel', event.currentTarget.value);
+		onEdit();
+	}}
+/>
+<label class="field-label" for={`chart-legend-${block.id}`}>Legend label (optional)</label>
+<input
+	id={`chart-legend-${block.id}`}
+	class="label-field"
+	value={block.legendLabel ?? ''}
+	oninput={(event) => {
+		setLabel('legendLabel', event.currentTarget.value);
+		onEdit();
+	}}
+/>
+
 {#each block.series ?? [] as series, seriesIndex (seriesIndex)}
 	<div class="series">
 		<div class="field-row">
@@ -39,6 +81,26 @@
 				}}
 				aria-label={`Series ${seriesIndex + 1} name`}
 			/>
+			<Button
+				onclick={() => {
+					moveItem(block.series!, seriesIndex, -1);
+					onEdit();
+				}}
+				disabled={seriesIndex === 0}
+				aria-label={`Move series ${seriesIndex + 1} up`}
+			>
+				Up
+			</Button>
+			<Button
+				onclick={() => {
+					moveItem(block.series!, seriesIndex, 1);
+					onEdit();
+				}}
+				disabled={seriesIndex === (block.series?.length ?? 0) - 1}
+				aria-label={`Move series ${seriesIndex + 1} down`}
+			>
+				Down
+			</Button>
 			<Button
 				variant="ghost"
 				onclick={() => {
@@ -144,5 +206,10 @@
 	.field-row input {
 		flex: 1;
 		min-width: 0;
+	}
+
+	.label-field {
+		display: block;
+		width: 100%;
 	}
 </style>

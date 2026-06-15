@@ -9,9 +9,20 @@
 	let { block = $bindable(), onEdit }: Props = $props();
 </script>
 
-<label class="field-label" for={`image-asset-${block.id}`}>Asset</label>
-<input id={`image-asset-${block.id}`} value={block.assetId} disabled placeholder="Asset UUID" />
-<p class="note">Uploads arrive with data injection (Epic 2); an existing asset id is kept.</p>
+<label class="field-label" for={`image-asset-${block.id}`}>Asset reference</label>
+<input
+	id={`image-asset-${block.id}`}
+	value={block.assetId}
+	placeholder="Asset UUID"
+	oninput={(event) => {
+		block.assetId = event.currentTarget.value;
+		onEdit();
+	}}
+/>
+<p class="note">
+	Point at an uploaded asset (Epic 2 ingestion); paste its UUID. This editor edits the existing
+	reference, not a new upload.
+</p>
 <label class="field-label" for={`image-alt-${block.id}`}>Alt text (required)</label>
 <input
 	id={`image-alt-${block.id}`}
@@ -51,11 +62,6 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-ink-25);
 		border-radius: var(--radius-sm);
-	}
-
-	input:disabled {
-		color: var(--color-ink-65);
-		background: var(--color-ink-12);
 	}
 
 	.note {

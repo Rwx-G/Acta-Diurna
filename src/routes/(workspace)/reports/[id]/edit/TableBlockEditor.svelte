@@ -2,6 +2,7 @@
 	import type { Scales, TableBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import BindingEditor from './BindingEditor.svelte';
+	import { moveItem } from './editor-state';
 
 	interface Props {
 		block: TableBlock;
@@ -74,6 +75,26 @@
 			{/each}
 		</select>
 		<Button
+			onclick={() => {
+				moveItem(block.columns, columnIndex, -1);
+				onEdit();
+			}}
+			disabled={columnIndex === 0}
+			aria-label={`Move column ${columnIndex + 1} left`}
+		>
+			Left
+		</Button>
+		<Button
+			onclick={() => {
+				moveItem(block.columns, columnIndex, 1);
+				onEdit();
+			}}
+			disabled={columnIndex === block.columns.length - 1}
+			aria-label={`Move column ${columnIndex + 1} right`}
+		>
+			Right
+		</Button>
+		<Button
 			variant="ghost"
 			onclick={() => {
 				removeColumn(columnIndex);
@@ -112,6 +133,26 @@
 				aria-label={`Row ${rowIndex + 1}, ${column.label}`}
 			/>
 		{/each}
+		<Button
+			onclick={() => {
+				moveItem(block.rows!, rowIndex, -1);
+				onEdit();
+			}}
+			disabled={rowIndex === 0}
+			aria-label={`Move row ${rowIndex + 1} up`}
+		>
+			Up
+		</Button>
+		<Button
+			onclick={() => {
+				moveItem(block.rows!, rowIndex, 1);
+				onEdit();
+			}}
+			disabled={rowIndex === (block.rows?.length ?? 0) - 1}
+			aria-label={`Move row ${rowIndex + 1} down`}
+		>
+			Down
+		</Button>
 		<Button
 			variant="ghost"
 			onclick={() => {

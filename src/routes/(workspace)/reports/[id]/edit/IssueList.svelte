@@ -14,16 +14,22 @@
 	let { issues, variant, showField = false }: Props = $props();
 </script>
 
+<!-- `role="alert"` lives on the WRAPPER, not the `<ul>`: an ARIA role on a list
+     element strips its implicit list semantics, orphaning the `<li>` children (axe
+     `listitem`). Keeping the alert role on a surrounding div lets the list stay a
+     real list while the whole group is still announced as an alert. -->
 {#if issues.length > 0}
-	<ul class="issue-list {variant}" role="alert">
-		{#each issues as issue (issue.path + issue.message)}
-			<li>
-				<strong>{issue.message}</strong>
-				{#if issue.hint}<span class="hint">{issue.hint}</span>{/if}
-				{#if showField}<span class="field">{humanizePath(issue.path)}</span>{/if}
-			</li>
-		{/each}
-	</ul>
+	<div class="issue-list {variant}" role="alert">
+		<ul>
+			{#each issues as issue (issue.path + issue.message)}
+				<li>
+					<strong>{issue.message}</strong>
+					{#if issue.hint}<span class="hint">{issue.hint}</span>{/if}
+					{#if showField}<span class="field">{humanizePath(issue.path)}</span>{/if}
+				</li>
+			{/each}
+		</ul>
+	</div>
 {/if}
 
 <style>
@@ -45,6 +51,11 @@
 
 	.issue-list.block {
 		padding: var(--space-2) var(--space-5);
+	}
+
+	.issue-list ul {
+		margin: 0;
+		padding-left: var(--space-5);
 	}
 
 	.hint {

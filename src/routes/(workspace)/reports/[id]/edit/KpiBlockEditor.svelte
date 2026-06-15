@@ -2,6 +2,7 @@
 	import type { KpiBlock, KpiItem, KpiTrend } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import BindingEditor from './BindingEditor.svelte';
+	import { moveItem } from './editor-state';
 
 	interface Props {
 		block: KpiBlock;
@@ -64,6 +65,26 @@
 				<option value={trend}>{trend}</option>
 			{/each}
 		</select>
+		<Button
+			onclick={() => {
+				moveItem(block.items!, itemIndex, -1);
+				onEdit();
+			}}
+			disabled={itemIndex === 0}
+			aria-label={`Move KPI ${itemIndex + 1} up`}
+		>
+			Up
+		</Button>
+		<Button
+			onclick={() => {
+				moveItem(block.items!, itemIndex, 1);
+				onEdit();
+			}}
+			disabled={itemIndex === (block.items?.length ?? 0) - 1}
+			aria-label={`Move KPI ${itemIndex + 1} down`}
+		>
+			Down
+		</Button>
 		<Button
 			variant="ghost"
 			onclick={() => {
