@@ -43,6 +43,16 @@
 		};
 	};
 
+	// Create without resetting the form (default enhance resets on success): the
+	// Access choice, expiry, and recipients carry to the next share, and the selector
+	// never snaps back to the restricted default - which read as if a just-created
+	// open share were restricted.
+	const keepFormOnCreate: SubmitFunction = () => {
+		return async ({ update }) => {
+			await update({ reset: false });
+		};
+	};
+
 	async function copyLink(url: string): Promise<void> {
 		// The raw token lives only in this URL and only on this action result; the
 		// copy gesture is the one-shot handoff (UX Flow B: "link copied in one
@@ -87,7 +97,7 @@
 				sharing needs SMTP. Expiry and one-click revocation still apply.
 			</p>
 		{/if}
-		<form method="POST" action="?/create-share" use:enhance>
+		<form method="POST" action="?/create-share" use:enhance={keepFormOnCreate}>
 			<div class="field">
 				<label for="expiresAt">Expires at (UTC, optional)</label>
 				<input id="expiresAt" name="expiresAt" type="datetime-local" />

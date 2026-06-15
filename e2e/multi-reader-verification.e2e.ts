@@ -161,6 +161,11 @@ test('the Access=Open form selection creates an open share, not restricted', asy
 		await expect(page.locator('.share-list li').filter({ hasText: 'open' }).first()).toContainText(
 			'Switch to restricted'
 		);
+
+		// The Access choice must survive generating: a reset would snap the selector back
+		// to the restricted default, misleadingly suggesting the just-created share is
+		// restricted (it is not). So the next share starts from the same choice.
+		await expect(page.getByLabel('Access')).toHaveValue('open');
 	} finally {
 		await context.close();
 	}
