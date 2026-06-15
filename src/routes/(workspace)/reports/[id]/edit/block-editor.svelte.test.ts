@@ -9,7 +9,6 @@ function renderBlock(block: Block, issues: { path: string; message: string; hint
 	const reactiveBlock = $state(block);
 	return render(BlockEditor, {
 		block: reactiveBlock,
-		sectionIndex: 0,
 		blockIndex: 0,
 		count: 1,
 		issues,
@@ -48,7 +47,7 @@ describe('BlockEditor inline validation', () => {
 			[]
 		);
 
-		await expect.element(getByLabelText('Paragraph 1', { exact: true })).toBeVisible();
+		await expect.element(getByLabelText('Paragraph 1, run 1 text', { exact: true })).toBeVisible();
 		expect(getByRole('alert').query()).toBeNull();
 	});
 });

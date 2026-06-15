@@ -7,9 +7,12 @@ import {
 	humanizePath,
 	moveItem,
 	newBlock,
+	newRun,
 	newSection,
 	optimisticDocumentIssues,
-	paragraphText
+	paragraphText,
+	setRunLink,
+	toggleRunMark
 } from './editor-state';
 
 function documentWith(blocks: DocumentV1Input['sections'][number]['blocks']): DocumentV1Input {
@@ -222,6 +225,46 @@ describe('paragraphText', () => {
 	it('concatenates run text, dropping formatting', () => {
 		expect(paragraphText([{ text: 'One ' }, { text: 'two', bold: true }])).toBe('One two');
 		expect(paragraphText([])).toBe('');
+	});
+});
+
+describe('newRun', () => {
+	it('creates a plain, unformatted run', () => {
+		expect(newRun()).toEqual({ text: '' });
+	});
+});
+
+describe('toggleRunMark', () => {
+	it('sets a mark to true when off and removes the field when on (never stores false)', () => {
+		const run = newRun();
+
+		toggleRunMark(run, 'bold');
+		expect(run).toEqual({ text: '', bold: true });
+
+		toggleRunMark(run, 'bold');
+		// Off is the field ABSENT, not `bold: false`, so a mark-free run is a plain run.
+		expect('bold' in run).toBe(false);
+		expect(run).toEqual({ text: '' });
+	});
+
+	it('toggles marks independently, so a run can carry several at once', () => {
+		const run = newRun();
+
+		toggleRunMark(run, 'bold');
+		toggleRunMark(run, 'code');
+		expect(run).toEqual({ text: '', bold: true, code: true });
+	});
+});
+
+describe('setRunLink', () => {
+	it('stores an http(s) link object for a non-empty href and removes it when emptied', () => {
+		const run = newRun();
+
+		setRunLink(run, 'https://example.com/x');
+		expect(run.link).toEqual({ href: 'https://example.com/x' });
+
+		setRunLink(run, '');
+		expect('link' in run).toBe(false);
 	});
 });
 
