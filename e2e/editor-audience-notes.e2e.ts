@@ -50,6 +50,8 @@ test('tags a block technical and the preview level switch hides and shows it', a
 	expect(((await seed.json()) as { type?: string }).type).toBe('success');
 
 	await page.goto(editPath);
+	// The split preview is off by default; open it to assert the live render.
+	await page.getByRole('button', { name: 'Split preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 

@@ -101,6 +101,8 @@ test('edits the rich block types in place, and the field edits persist across re
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
 
+	// The split preview is off by default; open it to assert the live render.
+	await page.getByRole('button', { name: 'Split preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 

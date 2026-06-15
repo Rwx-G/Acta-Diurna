@@ -43,6 +43,8 @@ test('opens a draft, edits in place, saves, and the edit persists across a reloa
 	// The editor loads into an editable working copy with the authoritative live
 	// preview (the same pure renderer the reader uses): the seeded paragraph shows
 	// in the preview pane.
+	// The split preview is off by default; open it to assert the live render.
+	await page.getByRole('button', { name: 'Split preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 
