@@ -57,6 +57,29 @@ export const tableBlockSchema = z
 			})
 			.optional()
 	})
-	.superRefine(requireStaticDataOrBinding('rows'));
+	.superRefine(requireStaticDataOrBinding('rows'))
+	.superRefine((block, ctx) => {
+		// Column keys index the row records (`row[column.key]`), so two columns
+		// sharing a key collapse to one cell per row: every cell for the second
+		// column overwrites the first, silently clobbering data the editor cannot
+		// recover. Nothing else in the schema enforces uniqueness (a row is a flat
+		// `z.record`), so a duplicate-key table would VALIDATE and persist with the
+		// loss baked in. Reject it here with the colliding key named, so the server
+		// is the authority that turns a dup-key document into a 422 on save.
+		const seen = new Set<string>();
+		block.columns.forEach((column, index) => {
+			if (seen.has(column.key)) {
+				ctx.addIssue({
+					code: 'custom',
+					message: `Duplicate table column key "${column.key}": column keys must be unique.`,
+					path: ['columns', index, 'key'],
+					params: {
+						hint: 'Two columns share this key, so their row cells collide. Give each column a distinct key.'
+					}
+				});
+			}
+			seen.add(column.key);
+		});
+	});
 
 export type TableBlock = z.infer<typeof tableBlockSchema>;

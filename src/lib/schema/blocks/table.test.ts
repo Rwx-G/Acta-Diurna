@@ -113,6 +113,47 @@ describe('table block - conditional-formatting cross reference (FR2)', () => {
 	});
 });
 
+describe('table block - duplicate column keys', () => {
+	it('rejects two columns sharing a key, naming the colliding key', () => {
+		const block = validBlock({
+			columns: [
+				{ key: 'name', label: 'Requirement' },
+				{ key: 'name', label: 'Duplicate' }
+			],
+			rows: [{ name: 'Login' }]
+		});
+		const result = tableBlockSchema.safeParse(block);
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const issue = result.error.issues.find((e) => e.path.join('.') === 'columns.1.key');
+			expect(issue).toBeDefined();
+			expect(issue?.message).toContain('name');
+		}
+	});
+
+	it('surfaces the duplicate-key 422 through the document validator at the column path', () => {
+		const block = validBlock({
+			columns: [
+				{ key: 'state', label: 'Status', scaleRef: 'status' },
+				{ key: 'state', label: 'Status again' }
+			],
+			rows: [{ state: 'done' }]
+		});
+		const result = validateDocument(documentWithTable(block));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			const issue = result.errors.find((e) => e.path.endsWith('columns[1].key'));
+			expect(issue?.path).toBe('sections[0].blocks[0].columns[1].key');
+			expect(issue?.message).toContain('state');
+		}
+	});
+
+	it('accepts distinct column keys', () => {
+		const result = tableBlockSchema.safeParse(validBlock());
+		expect(result.success).toBe(true);
+	});
+});
+
 describe('table block - additivity', () => {
 	it('validates a table with no scaleRef column unchanged', () => {
 		const result = validateDocument(
