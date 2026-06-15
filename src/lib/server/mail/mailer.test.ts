@@ -97,11 +97,18 @@ describe('getMailer', () => {
 		mailer.getMailer();
 
 		const options = createTransport.mock.calls[0][0];
-		expect(options).toEqual({ host: 'smtp.example.com', port: 25, secure: false });
+		expect(options).toEqual({
+			host: 'smtp.example.com',
+			port: 25,
+			secure: false,
+			ignoreTLS: true
+		});
 		// No auth object: an `auth: { user: undefined }` would coerce an unwanted
 		// AUTH on a relay that accepts anonymous submission (story 8.1).
 		expect(options).not.toHaveProperty('auth');
-		// No requireTLS: the relay does not advertise STARTTLS and must not be probed.
+		// ignoreTLS keeps the connection plaintext: nodemailer would otherwise do an
+		// opportunistic STARTTLS upgrade when the relay advertises it, which a
+		// none-mode relay (untrusted/self-signed cert) must never be pushed into.
 		expect(options).not.toHaveProperty('requireTLS');
 	});
 
