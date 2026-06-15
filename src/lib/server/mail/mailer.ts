@@ -53,9 +53,9 @@ export function mailerConfig(): MailerConfig | null {
  * - starttls: plaintext connect then mandatory STARTTLS upgrade
  *   (secure: false + requireTLS: true so a relay without STARTTLS is rejected
  *   rather than silently downgraded to plaintext).
- * - none: plaintext, no upgrade required (a bare internal smarthost / port 25).
- *   No `requireTLS` key at all so nodemailer never attempts STARTTLS on a relay
- *   that does not advertise it (story 8.1: the anonymous-smarthost profile).
+ * - none: plaintext, no STARTTLS even when the relay advertises it
+ *   (secure: false + ignoreTLS: true). The anonymous-smarthost profile
+ *   (story 8.1); a relay with an untrusted/self-signed cert never breaks send.
  *
  * The `auth` object is only attached when a user is configured - an absent user
  * yields no `auth` key, so nodemailer attempts no authentication on an anonymous
@@ -70,7 +70,7 @@ function transportOptions(config: MailerConfig) {
 		case 'starttls':
 			return { ...base, secure: false, requireTLS: true };
 		case 'none':
-			return { ...base, secure: false };
+			return { ...base, secure: false, ignoreTLS: true };
 	}
 }
 
