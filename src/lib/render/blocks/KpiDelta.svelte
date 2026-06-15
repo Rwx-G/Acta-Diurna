@@ -1,9 +1,7 @@
 <script lang="ts" module>
 	import type { BindingDelta } from '$lib/schema';
 
-	import { DIRECTION_GLYPH } from './direction.ts';
-
-	const DIRECTION_LABEL = { up: 'up', down: 'down', flat: 'no change' } as const;
+	import { DIRECTION_GLYPH, DIRECTION_WORD } from './direction.ts';
 
 	// Fixed locale + sign so the figure is byte-identical on the server and any
 	// client - a deterministic SSR string with no hydration mismatch and no
@@ -55,7 +53,7 @@
 {#if delta !== undefined}
 	<p class="kpi-delta kpi-delta-{delta.direction}">
 		<span class="glyph" aria-hidden="true">{DIRECTION_GLYPH[delta.direction]}</span>
-		<span class="sr-only">{DIRECTION_LABEL[delta.direction]}</span>
+		<span class="sr-only">{DIRECTION_WORD[delta.direction]}</span>
 		<span class="figure">{formatDelta(delta)}</span>
 		<span class="baseline">vs previous issue</span>
 	</p>

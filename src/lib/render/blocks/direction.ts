@@ -11,3 +11,16 @@ export const DIRECTION_GLYPH = { up: '▲', down: '▼', flat: '▬' } as const 
 	BindingDeltaDirection,
 	string
 >;
+
+/**
+ * The visually-hidden direction WORD that carries the meaning the `aria-hidden` glyph
+ * cannot (NFR14): the numeric delta indicator (`KpiDelta`) and the change-summary
+ * headline movement (`ChangeSummary`) both label a computed delta with the same plain
+ * word, so they share one map and cannot drift. The static KPI trend chip
+ * (`KpiBlock`) keeps its own "trending up" phrasing - it labels a trend, not a delta.
+ */
+export const DIRECTION_WORD = {
+	up: 'up',
+	down: 'down',
+	flat: 'no change'
+} as const satisfies Record<BindingDeltaDirection, string>;

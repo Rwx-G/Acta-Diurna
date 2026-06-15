@@ -1,11 +1,10 @@
 <script lang="ts" module>
 	import { audiencesAttr, type ChangeSummaryEntry } from '$lib/schema';
 
-	import { DIRECTION_GLYPH } from './blocks/direction.ts';
+	import { DIRECTION_GLYPH, DIRECTION_WORD } from './blocks/direction.ts';
 	import { formatDelta } from './blocks/KpiDelta.svelte';
 
 	const VERDICT_LABEL = { added: 'Added', removed: 'Removed', updated: 'Updated' } as const;
-	const DIRECTION_WORD = { up: 'up', down: 'down', flat: 'no change' } as const;
 </script>
 
 <script lang="ts">
