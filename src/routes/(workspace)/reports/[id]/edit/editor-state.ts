@@ -16,7 +16,6 @@ import {
 	type DocumentV1,
 	type DocumentV1Input,
 	type InlineRun,
-	type Paragraph,
 	type Section
 } from '$lib/schema';
 // The canonical issue-path formatter, shared with the server `errors.ts` so the
@@ -240,17 +239,6 @@ export const blockPaletteEntries: BlockPaletteEntry[] = blockSchema.options.map(
 	const type = option.shape.type.value;
 	return { type, ...BLOCK_CATALOGUE[type] };
 });
-
-/**
- * The MVP editor edits paragraphs as plain text: the displayed value is the
- * concatenated run text, and an edit replaces the paragraph with a single
- * unformatted run. Editor-created documents only ever contain plain runs;
- * formatting on agent-authored paragraphs is flattened only when that
- * paragraph is edited (accepted MVP trade-off, WYSIWYG arrives in v2).
- */
-export function paragraphText(paragraph: Paragraph): string {
-	return paragraph.map((run) => run.text).join('');
-}
 
 /**
  * The boolean inline marks the text editor (Story 10.3) exposes per run - the

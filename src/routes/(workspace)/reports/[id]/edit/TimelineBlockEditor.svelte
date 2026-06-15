@@ -2,14 +2,17 @@
 	import type { TimelineBlock } from '$lib/schema';
 	import { resolveScaleRef } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
-	import { paragraphText } from './editor-state';
+	import ParagraphsEditor from './ParagraphsEditor.svelte';
+	import { moveItem } from './editor-state';
 
 	// The timeline adds, edits and removes ordered milestones. Each milestone
 	// carries a `label`, an optional `date`/phase sub-label, an optional rich-text
-	// `detail` (edited as plain-text paragraphs - the same flatten-on-edit the
-	// callout and list editors use), and a `status` ({ scaleRef, entry }) picked
-	// from the document scales: the scale select offers the declared scales, the
-	// entry select offers that scale's entries by key (label shown). The `scales`
+	// `detail` (edited as inline RUNS through the shared ParagraphsEditor, Story 10.4
+	// - the SAME run-level editor the text, callout and list blocks use, so the
+	// detail's bold / italic / inline-code / link marks are editable in place, no
+	// flatten-on-edit and no freeform HTML), and a `status` ({ scaleRef, entry })
+	// picked from the document scales: the scale select offers the declared scales,
+	// the entry select offers that scale's entries by key (label shown). The `scales`
 	// prop is the document's scales, threaded down so the selects offer the declared
 	// scales. The shared BlockEditor frame supplies the audience picker.
 	import type { Scales } from '$lib/schema';
@@ -54,6 +57,26 @@
 					}}
 					aria-label={`Milestone ${milestoneIndex + 1} label`}
 				/>
+				<Button
+					onclick={() => {
+						moveItem(block.milestones, milestoneIndex, -1);
+						onEdit();
+					}}
+					disabled={milestoneIndex === 0}
+				>
+					<span class="sr-only">{`Move milestone ${milestoneIndex + 1} up`}</span>
+					<span aria-hidden="true">Up</span>
+				</Button>
+				<Button
+					onclick={() => {
+						moveItem(block.milestones, milestoneIndex, 1);
+						onEdit();
+					}}
+					disabled={milestoneIndex === block.milestones.length - 1}
+				>
+					<span class="sr-only">{`Move milestone ${milestoneIndex + 1} down`}</span>
+					<span aria-hidden="true">Down</span>
+				</Button>
 				<Button
 					variant="ghost"
 					onclick={() => {
@@ -119,41 +142,32 @@
 			</div>
 
 			{#if milestone.detail}
-				{#each milestone.detail as paragraph, paragraphIndex (paragraphIndex)}
-					<div class="field-row">
-						<textarea
-							value={paragraphText(paragraph)}
-							rows="2"
-							oninput={(event) => {
-								milestone.detail![paragraphIndex] = [{ text: event.currentTarget.value }];
-								onEdit();
-							}}
-							aria-label={`Milestone ${milestoneIndex + 1} detail paragraph ${paragraphIndex + 1}`}
-						></textarea>
-						<Button
-							variant="ghost"
-							onclick={() => {
-								milestone.detail!.splice(paragraphIndex, 1);
-								if (milestone.detail!.length === 0) delete milestone.detail;
-								onEdit();
-							}}
-							aria-label={`Remove milestone ${milestoneIndex + 1} detail paragraph ${paragraphIndex + 1}`}
-						>
-							Remove
-						</Button>
-					</div>
-				{/each}
+				<ParagraphsEditor
+					bind:paragraphs={milestone.detail}
+					label={`Milestone ${milestoneIndex + 1} detail`}
+					{onEdit}
+				/>
+				<Button
+					variant="ghost"
+					onclick={() => {
+						delete milestone.detail;
+						onEdit();
+					}}
+					aria-label={`Remove milestone ${milestoneIndex + 1} detail`}
+				>
+					Remove detail
+				</Button>
+			{:else}
+				<Button
+					onclick={() => {
+						milestone.detail = [[{ text: '' }]];
+						onEdit();
+					}}
+					aria-label={`Add detail to milestone ${milestoneIndex + 1}`}
+				>
+					Add detail
+				</Button>
 			{/if}
-			<Button
-				onclick={() => {
-					if (milestone.detail) milestone.detail.push([{ text: '' }]);
-					else milestone.detail = [[{ text: '' }]];
-					onEdit();
-				}}
-				aria-label={`Add detail paragraph to milestone ${milestoneIndex + 1}`}
-			>
-				Add detail paragraph
-			</Button>
 		</div>
 	{/each}
 
@@ -219,20 +233,8 @@
 		min-width: 0;
 	}
 
-	.field-row {
-		display: flex;
-		gap: var(--space-2);
-	}
-
-	.field-row textarea {
-		flex: 1;
-		min-width: 0;
-		resize: vertical;
-	}
-
 	input,
-	select,
-	textarea {
+	select {
 		min-width: 0;
 		padding: var(--space-2) var(--space-3);
 		font: inherit;
@@ -242,6 +244,21 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-ink-25);
 		border-radius: var(--radius-sm);
+	}
+
+	/* Accessible name for the icon-style milestone move controls (WCAG 2.5.3): the
+	   full descriptive name is in a visually-hidden span, the visible glyph is
+	   aria-hidden. Component-scoped so it holds outside the workspace layout too. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.hint {

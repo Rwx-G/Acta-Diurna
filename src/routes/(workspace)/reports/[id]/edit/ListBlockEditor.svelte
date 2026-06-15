@@ -1,17 +1,18 @@
 <script lang="ts">
 	import type { ListBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
-	import { paragraphText } from './editor-state';
+	import ParagraphsEditor from './ParagraphsEditor.svelte';
 
 	// The list picks ordered (a numbered procedure / steps list) or unordered, then
 	// adds, edits and removes items. Each item carries a lead `term` and an OPTIONAL
-	// rich-text `description` edited as plain-text paragraphs - the same flatten-on-
-	// edit the callout body editor uses (an edit replaces a paragraph with a single
-	// unformatted run; agent-authored formatting survives until the paragraph is
-	// touched). At least one of term / description is required per item (the schema
-	// rule), so removing the last description paragraph drops the whole description
-	// and the author keeps the term. The shared BlockEditor frame supplies the
-	// audience picker.
+	// rich-text `description` edited as inline RUNS through the shared ParagraphsEditor
+	// (Story 10.4) - the SAME run-level editor the text and callout blocks use, so the
+	// description's bold / italic / inline-code / link marks are editable in place (no
+	// more flatten-on-edit, no freeform HTML). At least one of term / description is
+	// required per item (the schema rule); the description is added and removed as a
+	// whole (the "Add description" / "Remove description" controls), and while present
+	// the inner Remove floors at one paragraph. The shared BlockEditor frame supplies
+	// the audience picker.
 	interface Props {
 		block: ListBlock;
 		onEdit: () => void;
@@ -64,41 +65,32 @@
 			</div>
 
 			{#if item.description}
-				{#each item.description as paragraph, paragraphIndex (paragraphIndex)}
-					<div class="field-row">
-						<textarea
-							value={paragraphText(paragraph)}
-							rows="2"
-							oninput={(event) => {
-								item.description![paragraphIndex] = [{ text: event.currentTarget.value }];
-								onEdit();
-							}}
-							aria-label={`Item ${itemIndex + 1} description paragraph ${paragraphIndex + 1}`}
-						></textarea>
-						<Button
-							variant="ghost"
-							onclick={() => {
-								item.description!.splice(paragraphIndex, 1);
-								if (item.description!.length === 0) delete item.description;
-								onEdit();
-							}}
-							aria-label={`Remove item ${itemIndex + 1} description paragraph ${paragraphIndex + 1}`}
-						>
-							Remove
-						</Button>
-					</div>
-				{/each}
+				<ParagraphsEditor
+					bind:paragraphs={item.description}
+					label={`Item ${itemIndex + 1} description`}
+					{onEdit}
+				/>
+				<Button
+					variant="ghost"
+					onclick={() => {
+						delete item.description;
+						onEdit();
+					}}
+					aria-label={`Remove item ${itemIndex + 1} description`}
+				>
+					Remove description
+				</Button>
+			{:else}
+				<Button
+					onclick={() => {
+						item.description = [[{ text: '' }]];
+						onEdit();
+					}}
+					aria-label={`Add description to item ${itemIndex + 1}`}
+				>
+					Add description
+				</Button>
 			{/if}
-			<Button
-				onclick={() => {
-					if (item.description) item.description.push([{ text: '' }]);
-					else item.description = [[{ text: '' }]];
-					onEdit();
-				}}
-				aria-label={`Add description paragraph to item ${itemIndex + 1}`}
-			>
-				Add description paragraph
-			</Button>
 		</div>
 	{/each}
 
@@ -148,20 +140,8 @@
 		flex: 1;
 	}
 
-	.field-row {
-		display: flex;
-		gap: var(--space-2);
-	}
-
-	.field-row textarea {
-		flex: 1;
-		min-width: 0;
-		resize: vertical;
-	}
-
 	input,
-	select,
-	textarea {
+	select {
 		min-width: 0;
 		padding: var(--space-2) var(--space-3);
 		font: inherit;

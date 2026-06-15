@@ -1,14 +1,15 @@
 <script lang="ts">
 	import type { CalloutBlock } from '$lib/schema';
 	import { CALLOUT_TONES, ICON_NAMES } from '$lib/schema';
-	import Button from '$lib/ui/Button.svelte';
-	import { paragraphText } from './editor-state';
+	import ParagraphsEditor from './ParagraphsEditor.svelte';
 
 	// The callout picks a tone (the closed enum), an optional icon (the 7.6
 	// registry, by name) and an optional kicker, then edits the rich-text body as
-	// plain-text paragraphs - the same flatten-on-edit the text block editor uses
-	// (an edit replaces a paragraph with a single unformatted run; agent-authored
-	// formatting survives until the paragraph is touched). The shared BlockEditor
+	// inline RUNS through the shared ParagraphsEditor (Story 10.4) - the SAME
+	// run-level editor the text block uses, so the callout's bold / italic /
+	// inline-code / link marks are editable in place and the preview reflects them
+	// (no more flatten-on-edit, no freeform HTML). The body is required (at least one
+	// paragraph), so the inner Remove control floors at one. The shared BlockEditor
 	// frame supplies the audience picker. No scale: the tone colour is theme-owned.
 	interface Props {
 		block: CalloutBlock;
@@ -70,38 +71,7 @@
 	</label>
 
 	<p class="field-label">Body</p>
-	{#each block.body as paragraph, paragraphIndex (paragraphIndex)}
-		<div class="field-row">
-			<textarea
-				value={paragraphText(paragraph)}
-				rows="3"
-				oninput={(event) => {
-					block.body[paragraphIndex] = [{ text: event.currentTarget.value }];
-					onEdit();
-				}}
-				aria-label={`Callout paragraph ${paragraphIndex + 1}`}
-			></textarea>
-			<Button
-				variant="ghost"
-				onclick={() => {
-					block.body.splice(paragraphIndex, 1);
-					onEdit();
-				}}
-				disabled={block.body.length === 1}
-				aria-label={`Remove callout paragraph ${paragraphIndex + 1}`}
-			>
-				Remove
-			</Button>
-		</div>
-	{/each}
-	<Button
-		onclick={() => {
-			block.body.push([{ text: '' }]);
-			onEdit();
-		}}
-	>
-		Add paragraph
-	</Button>
+	<ParagraphsEditor bind:paragraphs={block.body} label="Callout body" {onEdit} />
 </div>
 
 <style>
@@ -127,20 +97,8 @@
 		color: var(--color-ink-65);
 	}
 
-	.field-row {
-		display: flex;
-		gap: var(--space-2);
-	}
-
-	.field-row textarea {
-		flex: 1;
-		min-width: 0;
-		resize: vertical;
-	}
-
 	input,
-	select,
-	textarea {
+	select {
 		padding: var(--space-2) var(--space-3);
 		font: inherit;
 		font-weight: 400;
