@@ -8,11 +8,20 @@
 	} from '$lib/schema';
 	import { resolveScaleRef } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import { moveItem } from './editor-state';
 
-	// The comparison-matrix is authored as structured JSON in the document (epic:
-	// findings are NOT routed through the 2.4 flat-CSV binding path). The block has
-	// no `binding` field. The `scales` prop is the document's scales, threaded
-	// down so the severity/source selects offer the declared entry keys.
+	// The comparison-matrix is the most complex rich block (Story 10.4): the structured
+	// findings grid. The author edits the severity/source scale refs (from the declared
+	// scales), then per finding its category, label, severity (an entry of the severity
+	// scale), optional tag, the per-source cells (state + note, one row per sources-scale
+	// entry), and the treatment (before / after / status). Findings add / remove and
+	// reorder (move up / down). Every edit mutates the bound finding in place, so the
+	// optional `linkTo` (the Epic 11 internal-link twin) and any field this editor does
+	// not surface are PRESERVED untouched. SCOPED here: bulk paste of findings (a grid
+	// import) is explicitly DEFERRED, not silently missing - the structured per-finding
+	// authoring is the 10.4 deliverable. The block has no `binding` field (findings are
+	// NOT routed through the 2.4 flat-CSV path). The `scales` prop is the document's
+	// scales, threaded down so the severity/source selects offer the declared entry keys.
 	interface Props {
 		block: ComparisonMatrixBlock;
 		scales?: Scales;
@@ -109,6 +118,28 @@
 	{#each block.findings as finding, findingIndex (findingIndex)}
 		<fieldset class="finding">
 			<legend>Finding {findingIndex + 1}</legend>
+			<div class="finding-controls">
+				<Button
+					onclick={() => {
+						moveItem(block.findings, findingIndex, -1);
+						onEdit();
+					}}
+					disabled={findingIndex === 0}
+				>
+					<span class="sr-only">{`Move finding ${findingIndex + 1} up`}</span>
+					<span aria-hidden="true">Up</span>
+				</Button>
+				<Button
+					onclick={() => {
+						moveItem(block.findings, findingIndex, 1);
+						onEdit();
+					}}
+					disabled={findingIndex === block.findings.length - 1}
+				>
+					<span class="sr-only">{`Move finding ${findingIndex + 1} down`}</span>
+					<span aria-hidden="true">Down</span>
+				</Button>
+			</div>
 			<div class="field-row">
 				<input
 					value={finding.category}
@@ -274,6 +305,27 @@
 		font-size: var(--text-sm);
 		font-weight: 600;
 		color: var(--color-ink-65);
+	}
+
+	.finding-controls {
+		display: flex;
+		gap: var(--space-1);
+		margin-bottom: var(--space-3);
+	}
+
+	/* Accessible name for the icon-style finding move controls (WCAG 2.5.3): the full
+	   descriptive name is in a visually-hidden span, the visible glyph is aria-hidden.
+	   Component-scoped so it holds outside the workspace layout too. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.field-label {
