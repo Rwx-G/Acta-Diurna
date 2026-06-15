@@ -254,6 +254,16 @@ describe('toggleRunMark', () => {
 		toggleRunMark(run, 'code');
 		expect(run).toEqual({ text: '', bold: true, code: true });
 	});
+
+	it('toggles italic the same way (set true, then delete on the second toggle)', () => {
+		const run = newRun();
+
+		toggleRunMark(run, 'italic');
+		expect(run).toEqual({ text: '', italic: true });
+
+		toggleRunMark(run, 'italic');
+		expect('italic' in run).toBe(false);
+	});
 });
 
 describe('setRunLink', () => {

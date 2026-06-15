@@ -13,13 +13,14 @@
 <input
 	id={`image-asset-${block.id}`}
 	value={block.assetId}
-	placeholder="Asset UUID"
+	placeholder="e.g. 0190c0de-0000-7000-8000-000000000000"
+	aria-describedby={`image-asset-note-${block.id}`}
 	oninput={(event) => {
 		block.assetId = event.currentTarget.value;
 		onEdit();
 	}}
 />
-<p class="note">
+<p id={`image-asset-note-${block.id}`} class="note">
 	Point at an uploaded asset (Epic 2 ingestion); paste its UUID. This editor edits the existing
 	reference, not a new upload.
 </p>
@@ -45,23 +46,11 @@
 />
 
 <style>
-	.field-label {
-		display: block;
-		margin: var(--space-4) 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--color-ink-65);
-	}
-
+	/* `.field-label` and the input base reset live in the workspace-scoped
+	   form-fields.css (under `.block-card`); only the full-width override remains. */
 	input {
 		display: block;
 		width: 100%;
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
 	}
 
 	.note {

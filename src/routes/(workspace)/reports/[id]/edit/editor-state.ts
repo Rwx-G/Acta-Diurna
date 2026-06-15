@@ -257,12 +257,18 @@ export function paragraphText(paragraph: Paragraph): string {
  * SAME vocabulary the schema (`inlineRunSchema`) and the renderer
  * (`InlineRuns.svelte`) honour: bold, italic, and inline `code`. The `link` mark
  * is edited separately (it carries an href, not a boolean), and `linkTo` is the
- * Epic 11 internal-link twin the core text editor leaves untouched. Typed as
- * `keyof` the run so a renamed/added boolean mark is a compile error here.
+ * Epic 11 internal-link twin the core text editor leaves untouched. DERIVED from
+ * `InlineRun` (the schema's own type) so it is the schema that names the marks, not
+ * a hand-kept literal: renaming or removing `bold` / `italic` / `code` in
+ * `inlineRunSchema` narrows `keyof InlineRun` and breaks this `Extract`, and the
+ * `satisfies` below then fails the build - a renamed mark is the compile error.
  */
-export type RunMark = 'bold' | 'italic' | 'code';
+export type RunMark = Extract<keyof InlineRun, 'bold' | 'italic' | 'code'>;
 
-export const RUN_MARKS: readonly RunMark[] = ['bold', 'italic', 'code'];
+// The runtime list the editor iterates. `satisfies ReadonlyArray<RunMark>` binds it
+// to the schema-derived type, so a mark removed from `inlineRunSchema` (and thus from
+// `RunMark`) makes this assertion fail to compile rather than ship a stale entry.
+export const RUN_MARKS = ['bold', 'italic', 'code'] as const satisfies ReadonlyArray<RunMark>;
 
 /** A fresh, unformatted inline run - one keystroke from valid (an empty text run). */
 export function newRun(): InlineRun {

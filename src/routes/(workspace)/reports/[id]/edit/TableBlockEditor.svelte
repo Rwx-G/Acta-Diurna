@@ -15,9 +15,27 @@
 
 	const scaleOptions = $derived(scales ?? []);
 
+	// A live "duplicate key" hint per column index: the optimistic twin of the
+	// schema's dup-key 422, so the author sees the collision before the round-trip
+	// rather than discovering it as a save failure. Keyed by index because the key
+	// itself is what collides.
+	let duplicateKeyIndex = $state<number | null>(null);
+
 	function renameColumnKey(columnIndex: number, key: string): void {
 		const oldKey = block.columns[columnIndex].key;
-		if (key === oldKey) return;
+		if (key === oldKey) {
+			duplicateKeyIndex = null;
+			return;
+		}
+		// Column keys index the row records, so renaming a column onto a key another
+		// column already owns would overwrite that column's cells across every row -
+		// silent data loss the schema's dup-key refine also rejects. Guard it: keep
+		// the old key, surface the collision, and let the author choose another name.
+		if (block.columns.some((column, index) => index !== columnIndex && column.key === key)) {
+			duplicateKeyIndex = columnIndex;
+			return;
+		}
+		duplicateKeyIndex = null;
 		block.columns[columnIndex].key = key;
 		// Static rows are keyed by column key: migrate values so a rename never
 		// silently orphans a column of data.
@@ -39,6 +57,9 @@
 </script>
 
 <p class="field-label">Columns</p>
+<!-- Index-keyed `{#each}`: reorder is adjacent-swap-only (`moveItem` ±1), so the
+     keyed list never reshuffles non-adjacent entries and the index stays a stable
+     key. A non-swap mutation would need an item-stable key instead. -->
 {#each block.columns as column, columnIndex (columnIndex)}
 	<div class="field-row">
 		<input
@@ -49,6 +70,10 @@
 				onEdit();
 			}}
 			aria-label={`Column ${columnIndex + 1} key`}
+			aria-invalid={duplicateKeyIndex === columnIndex}
+			aria-describedby={duplicateKeyIndex === columnIndex
+				? `column-key-error-${block.id}`
+				: undefined}
 		/>
 		<input
 			value={column.label}
@@ -80,9 +105,9 @@
 				onEdit();
 			}}
 			disabled={columnIndex === 0}
-			aria-label={`Move column ${columnIndex + 1} left`}
 		>
-			Left
+			<span class="sr-only">{`Move column ${columnIndex + 1} left`}</span>
+			<span aria-hidden="true">Left</span>
 		</Button>
 		<Button
 			onclick={() => {
@@ -90,9 +115,9 @@
 				onEdit();
 			}}
 			disabled={columnIndex === block.columns.length - 1}
-			aria-label={`Move column ${columnIndex + 1} right`}
 		>
-			Right
+			<span class="sr-only">{`Move column ${columnIndex + 1} right`}</span>
+			<span aria-hidden="true">Right</span>
 		</Button>
 		<Button
 			variant="ghost"
@@ -101,16 +126,26 @@
 				onEdit();
 			}}
 			disabled={block.columns.length === 1}
-			aria-label={`Remove column ${columnIndex + 1}`}
 		>
-			Remove
+			<span class="sr-only">{`Remove column ${columnIndex + 1}`}</span>
+			<span aria-hidden="true">Remove</span>
 		</Button>
 	</div>
 {/each}
+{#if duplicateKeyIndex !== null}
+	<p id={`column-key-error-${block.id}`} class="field-error" role="alert">
+		That column key is already in use. Column keys must be unique, so the rename was not applied.
+		Choose a different key.
+	</p>
+{/if}
 <Button
 	onclick={() => {
+		// A collision-free key: a counter like `column-${length + 1}` reuses a stale
+		// key after a delete (delete column-2, "Add column" regenerates column-2), and
+		// the duplicate would clobber the surviving column's row cells. A UUID slug is
+		// unique by construction; the human-facing LABEL stays the friendly counter.
 		block.columns.push({
-			key: `column-${block.columns.length + 1}`,
+			key: crypto.randomUUID(),
 			label: `Column ${block.columns.length + 1}`
 		});
 		onEdit();
@@ -139,9 +174,9 @@
 				onEdit();
 			}}
 			disabled={rowIndex === 0}
-			aria-label={`Move row ${rowIndex + 1} up`}
 		>
-			Up
+			<span class="sr-only">{`Move row ${rowIndex + 1} up`}</span>
+			<span aria-hidden="true">Up</span>
 		</Button>
 		<Button
 			onclick={() => {
@@ -149,9 +184,9 @@
 				onEdit();
 			}}
 			disabled={rowIndex === (block.rows?.length ?? 0) - 1}
-			aria-label={`Move row ${rowIndex + 1} down`}
 		>
-			Down
+			<span class="sr-only">{`Move row ${rowIndex + 1} down`}</span>
+			<span aria-hidden="true">Down</span>
 		</Button>
 		<Button
 			variant="ghost"
@@ -160,9 +195,9 @@
 				if (block.rows!.length === 0) delete block.rows;
 				onEdit();
 			}}
-			aria-label={`Remove row ${rowIndex + 1}`}
 		>
-			Remove
+			<span class="sr-only">{`Remove row ${rowIndex + 1}`}</span>
+			<span aria-hidden="true">Remove</span>
 		</Button>
 	</div>
 {/each}
@@ -178,32 +213,37 @@
 <BindingEditor bind:binding={block.binding} {onEdit} />
 
 <style>
-	.field-label {
-		display: block;
-		margin: var(--space-4) 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--color-ink-65);
-	}
-
+	/* `.field-label` and the input/select base reset live in the workspace-scoped
+	   form-fields.css (under `.block-card`); only component-specific rules remain. */
 	.field-row {
 		display: flex;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
 	}
 
-	input,
-	select {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
-
 	.field-row input {
 		flex: 1;
 		min-width: 0;
+	}
+
+	.field-error {
+		margin: 0 0 var(--space-3);
+		font-size: var(--text-sm);
+		color: var(--color-danger);
+	}
+
+	/* Off-screen accessible name for the icon-style move/remove controls (WCAG 2.5.3);
+	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
+	   the workspace layout too. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

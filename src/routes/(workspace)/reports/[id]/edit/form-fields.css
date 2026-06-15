@@ -1,0 +1,37 @@
+/*
+ * Shared form-field base for the per-block-type editors (Story 10.3 QA
+ * remediation). The `.field-label` style and the input/select reset were
+ * copy-pasted across ~8 editor `<style>` blocks; a design-system change meant
+ * editing each one. They live here once, scoped under `.block-card` (the
+ * `BlockEditor` wrapper that contains every per-type editor body), so a per-type
+ * editor keeps only its component-specific overrides.
+ *
+ * WORKSPACE-ONLY: this file is imported by the workspace layout, never by a
+ * reader route. The reader budget (NFR3) measures the `/r/[token]` JS closure
+ * and excludes CSS entirely, so this adds zero reader bytes by construction.
+ */
+
+.block-card .field-label {
+	display: block;
+	margin: var(--space-4) 0 var(--space-2);
+	font-size: var(--text-sm);
+	font-weight: 600;
+	color: var(--color-ink-65);
+}
+
+.block-card input,
+.block-card select {
+	padding: var(--space-2) var(--space-3);
+	font: inherit;
+	color: inherit;
+	background: var(--color-surface);
+	border: 1px solid var(--color-ink-25);
+	border-radius: var(--radius-sm);
+}
+
+/*
+ * The `.sr-only` accessible-name helper for the icon-style move/remove controls
+ * (WCAG 2.5.3, label-in-name) is kept COMPONENT-scoped in each per-type editor
+ * rather than here, so a control stays off-screen even when an editor renders
+ * outside the workspace layout (component tests mount editors in isolation).
+ */

@@ -65,17 +65,18 @@
 	<header>
 		<span class="block-type">{block.type}</span>
 		<div class="controls">
-			<Button onclick={() => onMove(-1)} disabled={blockIndex === 0} aria-label="Move block up">
-				Up
+			<Button onclick={() => onMove(-1)} disabled={blockIndex === 0}>
+				<span class="sr-only">Move block up</span>
+				<span aria-hidden="true">Up</span>
 			</Button>
-			<Button
-				onclick={() => onMove(1)}
-				disabled={blockIndex === count - 1}
-				aria-label="Move block down"
-			>
-				Down
+			<Button onclick={() => onMove(1)} disabled={blockIndex === count - 1}>
+				<span class="sr-only">Move block down</span>
+				<span aria-hidden="true">Down</span>
 			</Button>
-			<Button variant="ghost" onclick={onRemove} aria-label="Remove block">Remove</Button>
+			<Button variant="ghost" onclick={onRemove}>
+				<span class="sr-only">Remove block</span>
+				<span aria-hidden="true">Remove</span>
+			</Button>
 		</div>
 	</header>
 
@@ -150,5 +151,20 @@
 	.controls {
 		display: flex;
 		gap: var(--space-1);
+	}
+
+	/* Off-screen accessible name for the block move/remove controls (WCAG 2.5.3);
+	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
+	   the workspace layout too. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

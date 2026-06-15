@@ -36,6 +36,84 @@ describe('TableBlockEditor renameColumnKey', () => {
 	});
 });
 
+describe('TableBlockEditor duplicate column keys (data-loss guard)', () => {
+	it('does not clobber another column when a key is renamed onto an existing key', async () => {
+		// Renaming "value" -> "region" would, without the guard, overwrite the region
+		// column's cells across every row (rows are keyed by column key). The guard
+		// no-ops the rename and keeps both columns' data intact.
+		const block: TableBlock = $state({
+			type: 'table',
+			id: 'metrics',
+			columns: [
+				{ key: 'region', label: 'Region' },
+				{ key: 'value', label: 'Value' }
+			],
+			rows: [{ region: 'EU', value: '42' }]
+		});
+		const { getByLabelText } = render(TableBlockEditor, { block, onEdit: vi.fn() });
+
+		await getByLabelText('Column 2 key').fill('region');
+
+		// The rename was rejected: the second column keeps its own key, and the first
+		// column's row data ("EU") is untouched - nothing was overwritten.
+		expect(block.columns.map((column) => column.key)).toEqual(['region', 'value']);
+		expect(block.rows?.[0]).toEqual({ region: 'EU', value: '42' });
+	});
+
+	it('surfaces the duplicate-key collision as an inline alert', async () => {
+		const block: TableBlock = $state({
+			type: 'table',
+			id: 'metrics',
+			columns: [
+				{ key: 'region', label: 'Region' },
+				{ key: 'value', label: 'Value' }
+			],
+			rows: [{ region: 'EU', value: '42' }]
+		});
+		const { getByLabelText, getByRole } = render(TableBlockEditor, { block, onEdit: vi.fn() });
+
+		await getByLabelText('Column 2 key').fill('region');
+
+		await expect.element(getByRole('alert')).toBeInTheDocument();
+	});
+
+	it('generates a collision-free key for an added column (never a stale counter key)', async () => {
+		const block: TableBlock = $state({
+			type: 'table',
+			id: 'metrics',
+			columns: [
+				{ key: 'a', label: 'A' },
+				{ key: 'b', label: 'B' }
+			],
+			rows: [{ a: '1', b: '2' }]
+		});
+		const { getByRole } = render(TableBlockEditor, { block, onEdit: vi.fn() });
+
+		await getByRole('button', { name: 'Add column' }).click();
+
+		const keys = block.columns.map((column) => column.key);
+		expect(new Set(keys).size).toBe(keys.length);
+		// The added column carries a fresh UUID key, not a `column-N` counter that could
+		// collide with a key freed by an earlier delete.
+		expect(keys[2]).not.toBe('column-3');
+		expect(keys[2]).toMatch(/^[0-9a-f-]+$/);
+	});
+});
+
+describe('disabled at the min boundary', () => {
+	it('disables the table column Remove control when only one column remains', async () => {
+		const block: TableBlock = $state({
+			type: 'table',
+			id: 'metrics',
+			columns: [{ key: 'only', label: 'Only' }],
+			rows: [{ only: 'x' }]
+		});
+		const { getByRole } = render(TableBlockEditor, { block, onEdit: vi.fn() });
+
+		await expect.element(getByRole('button', { name: 'Remove column 1' })).toBeDisabled();
+	});
+});
+
 describe('KpiBlockEditor trend', () => {
 	it('deletes the trend field when the selection is cleared to "no trend"', async () => {
 		const block: KpiBlock = $state({
@@ -80,9 +158,9 @@ describe('TableBlockEditor reorder', () => {
 			],
 			rows: [{ region: 'EU', value: '42' }]
 		});
-		const { getByLabelText } = render(TableBlockEditor, { block, onEdit: vi.fn() });
+		const { getByRole } = render(TableBlockEditor, { block, onEdit: vi.fn() });
 
-		await getByLabelText('Move column 2 left').click();
+		await getByRole('button', { name: 'Move column 2 left' }).click();
 
 		expect(block.columns.map((column) => column.key)).toEqual(['value', 'region']);
 		// The row data is keyed by column key, so reordering columns leaves the values
@@ -97,9 +175,9 @@ describe('TableBlockEditor reorder', () => {
 			columns: [{ key: 'region', label: 'Region' }],
 			rows: [{ region: 'EU' }, { region: 'US' }]
 		});
-		const { getByLabelText } = render(TableBlockEditor, { block, onEdit: vi.fn() });
+		const { getByRole } = render(TableBlockEditor, { block, onEdit: vi.fn() });
 
-		await getByLabelText('Move row 1 down').click();
+		await getByRole('button', { name: 'Move row 1 down' }).click();
 
 		expect(block.rows).toEqual([{ region: 'US' }, { region: 'EU' }]);
 	});
@@ -132,9 +210,9 @@ describe('ChartBlockEditor labels and reorder', () => {
 				{ name: 'Second', points: [] }
 			]
 		});
-		const { getByLabelText } = render(ChartBlockEditor, { block, onEdit: vi.fn() });
+		const { getByRole } = render(ChartBlockEditor, { block, onEdit: vi.fn() });
 
-		await getByLabelText('Move series 1 down').click();
+		await getByRole('button', { name: 'Move series 1 down' }).click();
 
 		expect(block.series!.map((series) => series.name)).toEqual(['Second', 'First']);
 	});
@@ -150,9 +228,9 @@ describe('KpiBlockEditor reorder', () => {
 				{ label: 'Latency', value: '120' }
 			]
 		});
-		const { getByLabelText } = render(KpiBlockEditor, { block, onEdit: vi.fn() });
+		const { getByRole } = render(KpiBlockEditor, { block, onEdit: vi.fn() });
 
-		await getByLabelText('Move KPI 1 down').click();
+		await getByRole('button', { name: 'Move KPI 1 down' }).click();
 
 		expect(block.items!.map((item) => item.label)).toEqual(['Latency', 'Uptime']);
 	});

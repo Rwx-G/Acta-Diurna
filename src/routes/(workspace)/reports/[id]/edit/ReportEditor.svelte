@@ -168,10 +168,20 @@
 			? clientErrors
 			: (form?.errors ?? optimisticIssues)
 	);
+	// The issue-to-block index source. `groupErrorsByLocation` is O(sections*blocks),
+	// and `issues` only change every PREVIEW_DEBOUNCE_MS (the optimistic pass runs off
+	// the settled snapshot), so indexing against the LIVE `doc` would re-run the whole
+	// placement on every keystroke for no benefit. Index against `settledSnapshot`
+	// instead, putting placement behind the same 200 ms debounce as the issues it
+	// places - block ids are stable across the settle, so inline errors still land on
+	// the right block. The failed-save branch keeps using the SUBMITTED document
+	// (`submittedDoc`), since those errors are indexed against what the server rejected.
 	const errorsByKey: ErrorsByKey = $derived(
 		groupErrorsByLocation(
 			issues,
-			clientErrors !== null && clientErrors.length > 0 ? (submittedDoc ?? doc) : doc
+			clientErrors !== null && clientErrors.length > 0
+				? (submittedDoc ?? settledSnapshot)
+				: settledSnapshot
 		)
 	);
 	const documentIssues: EditorIssue[] = $derived(errorsByKey['document'] ?? []);

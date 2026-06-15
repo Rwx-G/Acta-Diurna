@@ -4,6 +4,10 @@
 	import { resolve } from '$app/paths';
 	import Brand from '$lib/ui/Brand.svelte';
 	import type { LayoutData } from './$types';
+	// Shared per-block-editor form-field base + the `.sr-only` accessible-name
+	// helper, scoped under `.block-card`. Imported at the workspace layout (never a
+	// reader route), so it adds zero reader-path bytes (NFR3).
+	import './reports/[id]/edit/form-fields.css';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 

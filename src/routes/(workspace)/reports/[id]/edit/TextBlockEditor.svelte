@@ -48,9 +48,9 @@
 								onEdit();
 							}}
 							disabled={runIndex === 0}
-							aria-label={`Move run ${runIndex + 1} left`}
 						>
-							Left
+							<span class="sr-only">{`Move run ${runIndex + 1} left`}</span>
+							<span aria-hidden="true">Left</span>
 						</Button>
 						<Button
 							onclick={() => {
@@ -58,9 +58,9 @@
 								onEdit();
 							}}
 							disabled={runIndex === paragraph.length - 1}
-							aria-label={`Move run ${runIndex + 1} right`}
 						>
-							Right
+							<span class="sr-only">{`Move run ${runIndex + 1} right`}</span>
+							<span aria-hidden="true">Right</span>
 						</Button>
 						<Button
 							variant="ghost"
@@ -69,9 +69,9 @@
 								onEdit();
 							}}
 							disabled={paragraph.length === 1}
-							aria-label={`Remove run ${runIndex + 1}`}
 						>
-							Remove
+							<span class="sr-only">{`Remove run ${runIndex + 1}`}</span>
+							<span aria-hidden="true">Remove</span>
 						</Button>
 					</div>
 				</div>
@@ -216,5 +216,21 @@
 
 	input[type='checkbox'] {
 		padding: 0;
+	}
+
+	/* Accessible name for the icon-style move/remove controls (WCAG 2.5.3): the full
+	   descriptive name is in a visually-hidden span, the visible glyph is aria-hidden.
+	   Kept component-scoped (not only in the shared form-fields.css) so the control is
+	   off-screen even when this editor renders outside the workspace layout. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

@@ -71,9 +71,9 @@
 				onEdit();
 			}}
 			disabled={itemIndex === 0}
-			aria-label={`Move KPI ${itemIndex + 1} up`}
 		>
-			Up
+			<span class="sr-only">{`Move KPI ${itemIndex + 1} up`}</span>
+			<span aria-hidden="true">Up</span>
 		</Button>
 		<Button
 			onclick={() => {
@@ -81,9 +81,9 @@
 				onEdit();
 			}}
 			disabled={itemIndex === (block.items?.length ?? 0) - 1}
-			aria-label={`Move KPI ${itemIndex + 1} down`}
 		>
-			Down
+			<span class="sr-only">{`Move KPI ${itemIndex + 1} down`}</span>
+			<span aria-hidden="true">Down</span>
 		</Button>
 		<Button
 			variant="ghost"
@@ -92,9 +92,9 @@
 				if (block.items!.length === 0) delete block.items;
 				onEdit();
 			}}
-			aria-label={`Remove KPI ${itemIndex + 1}`}
 		>
-			Remove
+			<span class="sr-only">{`Remove KPI ${itemIndex + 1}`}</span>
+			<span aria-hidden="true">Remove</span>
 		</Button>
 	</div>
 {/each}
@@ -109,24 +109,31 @@
 <BindingEditor bind:binding={block.binding} {onEdit} />
 
 <style>
+	/* The input/select base reset lives in the workspace-scoped form-fields.css
+	   (under `.block-card`); only component-specific rules remain. */
 	.field-row {
 		display: flex;
 		gap: var(--space-2);
 		margin-bottom: var(--space-3);
 	}
 
-	input,
-	select {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
-
 	.field-row input {
 		flex: 1;
 		min-width: 0;
+	}
+
+	/* Off-screen accessible name for the icon-style move/remove controls (WCAG 2.5.3);
+	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
+	   the workspace layout too. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

@@ -90,12 +90,14 @@ describe('TextBlockEditor inline runs', () => {
 			id: 'intro',
 			paragraphs: [[{ text: 'one' }]]
 		});
-		const { getByRole, getByLabelText } = render(TextBlockEditor, { block, onEdit: vi.fn() });
+		const { getByRole } = render(TextBlockEditor, { block, onEdit: vi.fn() });
 
 		await getByRole('button', { name: 'Add run' }).click();
 		expect(block.paragraphs[0]).toHaveLength(2);
 
-		await getByLabelText('Remove run 2').click();
+		// The remove control's accessible name comes from a visually-hidden span
+		// (WCAG 2.5.3 label-in-name), so query it by role + name, not by aria-label.
+		await getByRole('button', { name: 'Remove run 2' }).click();
 		expect(block.paragraphs[0]).toHaveLength(1);
 	});
 });

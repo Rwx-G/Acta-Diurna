@@ -87,9 +87,9 @@
 					onEdit();
 				}}
 				disabled={seriesIndex === 0}
-				aria-label={`Move series ${seriesIndex + 1} up`}
 			>
-				Up
+				<span class="sr-only">{`Move series ${seriesIndex + 1} up`}</span>
+				<span aria-hidden="true">Up</span>
 			</Button>
 			<Button
 				onclick={() => {
@@ -97,9 +97,9 @@
 					onEdit();
 				}}
 				disabled={seriesIndex === (block.series?.length ?? 0) - 1}
-				aria-label={`Move series ${seriesIndex + 1} down`}
 			>
-				Down
+				<span class="sr-only">{`Move series ${seriesIndex + 1} down`}</span>
+				<span aria-hidden="true">Down</span>
 			</Button>
 			<Button
 				variant="ghost"
@@ -108,9 +108,9 @@
 					if (block.series!.length === 0) delete block.series;
 					onEdit();
 				}}
-				aria-label={`Remove series ${seriesIndex + 1}`}
 			>
-				Remove
+				<span class="sr-only">{`Remove series ${seriesIndex + 1}`}</span>
+				<span aria-hidden="true">Remove</span>
 			</Button>
 		</div>
 		{#each series.points as point, pointIndex (pointIndex)}
@@ -142,9 +142,9 @@
 						series.points.splice(pointIndex, 1);
 						onEdit();
 					}}
-					aria-label={`Remove point ${pointIndex + 1}`}
 				>
-					Remove
+					<span class="sr-only">{`Remove point ${pointIndex + 1}`}</span>
+					<span aria-hidden="true">Remove</span>
 				</Button>
 			</div>
 		{/each}
@@ -172,14 +172,8 @@
 <BindingEditor bind:binding={block.binding} {onEdit} />
 
 <style>
-	.field-label {
-		display: block;
-		margin: var(--space-4) 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--color-ink-65);
-	}
-
+	/* `.field-label` and the input/select base reset live in the workspace-scoped
+	   form-fields.css (under `.block-card`); only component-specific rules remain. */
 	.field-row {
 		display: flex;
 		gap: var(--space-2);
@@ -193,16 +187,6 @@
 		border-radius: var(--radius-sm);
 	}
 
-	input,
-	select {
-		padding: var(--space-2) var(--space-3);
-		font: inherit;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-ink-25);
-		border-radius: var(--radius-sm);
-	}
-
 	.field-row input {
 		flex: 1;
 		min-width: 0;
@@ -211,5 +195,20 @@
 	.label-field {
 		display: block;
 		width: 100%;
+	}
+
+	/* Off-screen accessible name for the icon-style move/remove controls (WCAG 2.5.3);
+	   the visible glyph beside it is aria-hidden. Component-scoped so it holds outside
+	   the workspace layout too. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>
