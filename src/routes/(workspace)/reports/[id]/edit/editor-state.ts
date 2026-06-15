@@ -9,6 +9,7 @@
  * existing consumers keep one import. No DOM, no Drizzle.
  */
 import {
+	blockSchema,
 	documentSchemaV1,
 	type Block,
 	type BlockType,
@@ -222,10 +223,22 @@ const BLOCK_CATALOGUE = {
 	timeline: { label: 'Timeline', description: 'A sequence of dated milestones.' }
 } satisfies Record<BlockType, { label: string; description: string }>;
 
-/** The palette entries in display order, one per block-union member. */
-export const blockPaletteEntries: BlockPaletteEntry[] = (
-	Object.keys(BLOCK_CATALOGUE) as BlockType[]
-).map((type) => ({ type, ...BLOCK_CATALOGUE[type] }));
+/**
+ * The palette entries in display order, one per block-union member. The TYPES
+ * come from the discriminated-union schema's typed public API
+ * (`blockSchema.options[].shape.type.value`, the same expression the palette
+ * exhaustiveness unit test asserts on), so the derivation is sound with no
+ * `as BlockType[]` cast: a type that is not in the union cannot appear here. The
+ * LABEL/DESCRIPTION come from `BLOCK_CATALOGUE`, whose `satisfies Record<BlockType>`
+ * keeps the catalogue exhaustive at compile time; a type the schema declares but
+ * the catalogue omits is already a compile error there, so the lookup is total.
+ * The schema's union order matches the catalogue's declared order, so this is the
+ * intended palette order.
+ */
+export const blockPaletteEntries: BlockPaletteEntry[] = blockSchema.options.map((option) => {
+	const type = option.shape.type.value;
+	return { type, ...BLOCK_CATALOGUE[type] };
+});
 
 /**
  * The MVP editor edits paragraphs as plain text: the displayed value is the

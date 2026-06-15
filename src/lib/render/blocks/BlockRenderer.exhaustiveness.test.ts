@@ -15,15 +15,13 @@ import { blockSchema } from '$lib/schema';
 
 /** Every block `type` literal the discriminated union declares, from the schema. */
 function allBlockTypes(): string[] {
-	// Zod 4 exposes the union members on `.options`; each is an object schema whose
-	// `type` field is a literal. Read the literal value defensively across the
-	// public and internal shapes so a zod minor bump does not silently empty this.
-	const options = (blockSchema as { options?: unknown[] }).options ?? [];
-	return options.map((option) => {
-		const def = (option as { def?: { shape?: { type?: { def?: { values?: unknown[] } } } } }).def;
-		const values = def?.shape?.type?.def?.values;
-		return String(Array.isArray(values) ? values[0] : '');
-	});
+	// Read the discriminant off the SAME public Zod API the palette derivation and
+	// the palette exhaustiveness unit test use (`blockSchema.options[].shape.type.value`),
+	// so both this backstop and the palette agree on one canonical introspection.
+	// `.value` is the literal's typed value; a zod shape change that broke it would
+	// fail the build (this is the public surface), not silently degrade to empty
+	// strings the count check could still pass over.
+	return blockSchema.options.map((option) => option.shape.type.value);
 }
 
 function readSource(relativeToHere: string): string {
