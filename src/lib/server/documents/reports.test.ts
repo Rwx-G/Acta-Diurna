@@ -146,17 +146,20 @@ vi.mock('$lib/server/db/client', () => {
 				// an orderBy. The first orderBy argument carries the sort column.
 				let lookup: { column: string; value: unknown } | null = null;
 				let seriesId: { column: string; value: unknown } | null = null;
+				let predecessorId: { column: string; value: unknown } | null = null;
 				let ordered = false;
 				const builder = {
 					$dynamic: () => builder,
 					where: (filter: SQL) => {
 						// The list keyset/owner WHERE is not a bare eq(id); only the id
 						// lookup is. Decode leniently and remember an eq(id) for the lookup
-						// branch; an eq(series_id) for the series-issues branch; anything
-						// else is a list predicate the mock ignores.
+						// branch; an eq(series_id) for the series-issues branch; an
+						// eq(predecessor_id) for the series-successor guard; anything else is
+						// a list predicate the mock ignores.
 						const decoded = decodeEqFilters(filter);
 						lookup = decoded.find((entry) => entry.column === 'id') ?? null;
 						seriesId = decoded.find((entry) => entry.column === 'series_id') ?? null;
+						predecessorId = decoded.find((entry) => entry.column === 'predecessor_id') ?? null;
 						return builder;
 					},
 					orderBy: (order: SQL) => {
@@ -180,6 +183,14 @@ vi.mock('$lib/server/db/client', () => {
 								(row) => String(row.seriesId) === String(seriesId!.value)
 							);
 							return Promise.resolve(rows.slice(0, count));
+						}
+						// The series-successor guard (deleteDraft) reads any report whose
+						// predecessor_id is the id being deleted, up to limit(1).
+						if (predecessorId !== null) {
+							const rows = [...dbState.rowsById.values()].filter(
+								(row) => String(row.predecessorId) === String(predecessorId!.value)
+							);
+							return Promise.resolve(rows.slice(0, count).map((row) => ({ id: row.id })));
 						}
 						dbState.listLimits.push(count);
 						return Promise.resolve([...dbState.rowsById.values()].slice(0, count));
@@ -811,14 +822,36 @@ describe('deleteDraft', () => {
 		expect(dbState.rowsById.has(row.id)).toBe(true);
 	});
 
-	it('reads only the status/metadata projection for the gate, never the JSONB columns (E1)', async () => {
+	it('reads only narrow projections for the gates, never the JSONB columns (E1)', async () => {
 		const row = seedReport();
 
 		await deleteDraft(row.id, TEST_SCOPE);
 
-		expect(dbState.selectProjections).toEqual([['id', 'status']]);
-		expect(dbState.selectProjections[0]).not.toContain('document');
-		expect(dbState.selectProjections[0]).not.toContain('published_document');
+		// The status/metadata gate, then the series-successor guard (an id-only read).
+		expect(dbState.selectProjections).toEqual([['id', 'status'], ['id']]);
+		for (const projection of dbState.selectProjections) {
+			expect(projection).not.toContain('document');
+			expect(projection).not.toContain('published_document');
+		}
+	});
+
+	it('refuses to delete a report that is a later issue predecessor with a clean 409, not a 500', async () => {
+		// A draft can be a predecessor (duplicate records the edge regardless of source
+		// status). The predecessor_id FK is ON DELETE RESTRICT, so deleting it would throw a
+		// raw 23503 -> 500; the guard turns it into an actionable 409.
+		const predecessor = seedReport({ id: '01970000-0000-7000-8000-0000000000a1', status: 'draft' });
+		seedReport({
+			id: '01970000-0000-7000-8000-0000000000a2',
+			predecessorId: predecessor.id,
+			status: 'draft'
+		});
+
+		const error = await expectAppError(deleteDraft(predecessor.id, TEST_SCOPE), 409);
+
+		expect(error.type).toBe('/problems/report-has-successor');
+		// The delete never ran: the guard short-circuits before the delete statement.
+		expect(dbState.deleteFilters).toHaveLength(0);
+		expect(dbState.rowsById.has(predecessor.id)).toBe(true);
 	});
 });
 

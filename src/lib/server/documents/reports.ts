@@ -112,6 +112,22 @@ function reportConflict(): AppError {
 	});
 }
 
+/**
+ * The 409 raised when a report is the predecessor of a later issue in its series. The
+ * `predecessor_id` FK is `ON DELETE RESTRICT`, so deleting such a report would throw a
+ * raw 23503 -> 500; this is the clean, actionable refusal the delete path raises
+ * instead. A draft can be a predecessor (`duplicateReport` records the edge regardless
+ * of source status), so this guards the draft-delete path, not only published reports.
+ */
+function reportHasSuccessor(): AppError {
+	return new AppError({
+		status: 409,
+		title: 'Report has a later issue',
+		type: '/problems/report-has-successor',
+		detail: 'This report is the predecessor of a later issue; delete the later issue first.'
+	});
+}
+
 /** 422 carrying the actionable errors[]; same fields as `toProblemDetails` (D9/FR2). */
 function validationFailed(errors: ValidationErrorDetail[]): AppError {
 	const problem = toProblemDetails(errors);
@@ -752,6 +768,20 @@ export async function updateReportTitle(
 	return writeDocument(row, { ...row.document, title });
 }
 
+/**
+ * Whether any owner-scoped report names `id` as its predecessor (story 9.1 lineage).
+ * Reads a single id under the owner predicate (no count aggregate, no JSONB column):
+ * one matching row is enough to know the edge exists. The owner predicate keeps a
+ * delete from being blocked by a foreign successor and keeps single mode byte-identical
+ * (the predicate is undefined there).
+ */
+async function hasSeriesSuccessor(id: string, scope: AuthorScope): Promise<boolean> {
+	const owner = ownerFilter(scope, reports.ownerId);
+	const where = owner ? and(eq(reports.predecessorId, id), owner)! : eq(reports.predecessorId, id);
+	const rows = await getDb().select({ id: reports.id }).from(reports).where(where).limit(1);
+	return rows.length > 0;
+}
+
 /** Deletes a draft; published reports refuse with 409 (no cascade exists yet). */
 export async function deleteDraft(id: string, scope: AuthorScope): Promise<void> {
 	// Status-only check: the metadata projection avoids pulling either JSONB
@@ -759,6 +789,13 @@ export async function deleteDraft(id: string, scope: AuthorScope): Promise<void>
 	const row = await getMetaRow(id, scope);
 	if (row.status === 'published') {
 		throw publishedConflict('Published reports cannot be deleted.');
+	}
+	// The `predecessor_id` FK is ON DELETE RESTRICT: deleting a report that a later issue
+	// points back at would throw a raw 23503 -> 500. A draft can be a predecessor
+	// (`duplicateReport` records the edge regardless of source status), so this guard runs
+	// on the draft path too. Refuse with a clean, actionable 409 instead of the FK 500.
+	if (await hasSeriesSuccessor(id, scope)) {
+		throw reportHasSuccessor();
 	}
 	await getDb().delete(reports).where(eq(reports.id, id));
 }
