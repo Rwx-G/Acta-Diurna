@@ -571,7 +571,7 @@
 		align-items: center;
 		gap: var(--space-2);
 		margin: var(--space-5) auto 0;
-		max-width: 880px;
+		max-width: var(--reader-width, 1280px);
 		padding: 0 var(--space-5);
 		font-family: var(--font-sans);
 		font-size: var(--text-sm);

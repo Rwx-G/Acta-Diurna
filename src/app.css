@@ -79,6 +79,13 @@
 	   referenced by the content pages and PageHeader) pointing at --tool-width, so
 	   the two move together. */
 	--content-width: var(--tool-width);
+	/* Reader content column (the SSR report: section body, detail back-link, reader
+	   change summary). Aligned to the workspace column so a report reads at the same
+	   width whether it is being edited or viewed. Prose stays capped at
+	   --measure-prose regardless, so widening this only gives wide blocks (tables,
+	   charts, matrices) more room - it never lengthens a prose line. Its own token so
+	   the reader measure can later diverge from the tool width in one place. */
+	--reader-width: var(--tool-width);
 
 	/* --- Spacing - base unit 4px ------------------------------------------- */
 	--space-1: 4px;

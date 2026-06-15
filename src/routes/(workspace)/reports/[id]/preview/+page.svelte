@@ -23,7 +23,7 @@
 
 <style>
 	.preview-page {
-		max-width: 1100px;
+		max-width: var(--tool-width);
 	}
 
 	.page-header {

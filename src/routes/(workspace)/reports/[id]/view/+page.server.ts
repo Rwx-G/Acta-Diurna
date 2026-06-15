@@ -26,8 +26,8 @@ export const load: PageServerLoad = async ({
 	params,
 	locals
 }): Promise<
-	| { document: DocumentV1; status: string; renderError: null }
-	| { document: null; status: string; renderError: ValidationErrorDetail[] }
+	| { reportId: string; document: DocumentV1; status: string; renderError: null }
+	| { reportId: string; document: null; status: string; renderError: ValidationErrorDetail[] }
 > => {
 	try {
 		const report = await getReport(
@@ -36,9 +36,19 @@ export const load: PageServerLoad = async ({
 		);
 		const result = validateStoredDocument(report.document);
 		if (result.ok) {
-			return { document: result.document, status: report.status, renderError: null };
+			return {
+				reportId: report.id,
+				document: result.document,
+				status: report.status,
+				renderError: null
+			};
 		}
-		return { document: null, status: report.status, renderError: result.errors };
+		return {
+			reportId: report.id,
+			document: null,
+			status: report.status,
+			renderError: result.errors
+		};
 	} catch (thrown) {
 		if (thrown instanceof AppError) error(thrown.status, errorPageShape(thrown));
 		throw thrown;

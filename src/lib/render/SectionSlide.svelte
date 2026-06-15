@@ -91,7 +91,12 @@
 
 	.section-inner {
 		width: 100%;
-		max-width: 880px;
+		max-width: var(--reader-width, 1280px);
+		/* border-box so the max-width is the BOX width incl. the horizontal padding:
+		   at the wider reader column the content fills its container instead of the
+		   padding pushing the box past it (a right-edge overflow in the bounded
+		   preview frame and on a viewport near the reader width). */
+		box-sizing: border-box;
 		margin: 0 auto;
 		padding: var(--space-8) var(--space-5) var(--space-7);
 		flex: 1 0 auto;

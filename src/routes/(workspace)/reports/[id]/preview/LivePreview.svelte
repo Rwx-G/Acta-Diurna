@@ -137,7 +137,7 @@
 	.frame {
 		margin: 0 auto;
 		width: 100%;
-		max-width: 1100px;
+		max-width: var(--tool-width);
 		max-height: 78vh;
 		overflow-y: auto;
 		background: var(--report-bg, var(--color-stone));

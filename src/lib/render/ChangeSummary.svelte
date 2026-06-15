@@ -77,7 +77,7 @@
 
 <style>
 	.change-summary {
-		max-width: 880px;
+		max-width: var(--reader-width, 1280px);
 		margin: var(--space-6) auto 0;
 		padding: var(--space-5);
 		font-family: var(--font-sans);
