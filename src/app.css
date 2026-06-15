@@ -73,8 +73,12 @@
 	--leading-relaxed: 1.6; /* report prose */
 
 	--measure-prose: 70ch; /* max line length for report prose (UX) */
-	--content-width: 960px; /* standard workspace content column (list/form pages) */
-	--tool-width: 1280px; /* wider bounded column for canvas pages (editor, composer) */
+	--tool-width: 1280px; /* bounded workspace column width (editor, composer) */
+	/* List / form pages share the editor's width: one workspace column, so a
+	   report detail and the lists framing it line up. Kept as its own token (still
+	   referenced by the content pages and PageHeader) pointing at --tool-width, so
+	   the two move together. */
+	--content-width: var(--tool-width);
 
 	/* --- Spacing - base unit 4px ------------------------------------------- */
 	--space-1: 4px;
