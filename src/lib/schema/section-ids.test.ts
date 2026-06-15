@@ -6,7 +6,11 @@ function textBlock(id = 'body') {
 	return { type: 'text', id, paragraphs: [[{ text: 'Body.' }]] };
 }
 
-function section(id: string, blocks: unknown[] = [textBlock()]) {
+// The default block id is derived from the section id so two DISTINCT sections get
+// distinct block ids (block-id uniqueness is document-wide). A caller that repeats a
+// section id intentionally also repeats the block id, but those cases assert on the
+// section-id errors and filter the block-id ones out.
+function section(id: string, blocks: unknown[] = [textBlock(`body-${id}`)]) {
 	return { id, title: `Section ${id}`, blocks };
 }
 

@@ -259,7 +259,7 @@ describe('validateDocument - size bounds (DoS protection)', () => {
 			sections: Array.from({ length: 101 }, (_, index) => ({
 				id: `section-${index}`,
 				title: 'Section',
-				blocks: [{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Intro.' }]] }]
+				blocks: [{ type: 'text', id: `intro-${index}`, paragraphs: [[{ text: 'Intro.' }]] }]
 			}))
 		});
 		expect(errors).toHaveLength(1);

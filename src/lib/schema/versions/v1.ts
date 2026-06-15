@@ -4,6 +4,7 @@ import { sectionSchema } from '../blocks/section.ts';
 import { scalesSchema, validateScaleReferences } from '../scales.ts';
 import { validateInternalLinks } from '../internal-links.ts';
 import { validateSectionIds } from '../section-ids.ts';
+import { validateBlockIds } from '../block-ids.ts';
 
 /** Document schema, version 1. The published contract (FR31, architecture D3). */
 export const documentSchemaV1 = z
@@ -48,6 +49,20 @@ export const documentSchemaV1 = z
 		// duplicated id (the internal link still resolves - the target exists - so
 		// the duplicate-id issue is the one that names the real problem).
 		for (const issue of validateSectionIds(document)) {
+			ctx.addIssue({
+				code: 'custom',
+				message: issue.message,
+				path: issue.path,
+				params: { hint: issue.hint }
+			});
+		}
+		// Block-id uniqueness pass (Epic 9+10 solidification): a block id is matched
+		// document-wide by the series diff (`placeBlocks`), the delta bake
+		// (`indexKpiByIdOf`), and the change-summary builder, all first-occurrence-wins.
+		// A duplicate id silently drops the second block's delta and movement at publish
+		// time, so it is rejected here as an FR2 problem-details error rather than left to
+		// degrade silently. The twin of the section-id pass above.
+		for (const issue of validateBlockIds(document)) {
 			ctx.addIssue({
 				code: 'custom',
 				message: issue.message,

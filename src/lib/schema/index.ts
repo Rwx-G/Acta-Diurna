@@ -177,6 +177,9 @@ export type {
 export { validateInternalLinks } from './internal-links.ts';
 export type { InternalLinkIssue } from './internal-links.ts';
 
+export { validateBlockIds } from './block-ids.ts';
+export type { BlockIdIssue } from './block-ids.ts';
+
 export { computeBindingDelta } from './binding-delta.ts';
 export type { ComparableValue } from './binding-delta.ts';
 
