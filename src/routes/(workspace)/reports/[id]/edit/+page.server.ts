@@ -47,15 +47,22 @@ function parseExpectedUpdatedAt(value: FormDataEntryValue | null): Date | undefi
 export const load: PageServerLoad = async ({ params, locals }) => {
 	try {
 		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
+		// The report, data-set list, and skeleton list are independent reads off the
+		// same scope, so issue them together rather than serializing three round trips.
+		const [report, dataSets, skeletons] = await Promise.all([
+			getReport(params.id, scope),
+			listDataSets(scope),
+			listSkeletons(scope)
+		]);
 		return {
-			report: await getReport(params.id, scope),
-			dataSets: (await listDataSets(scope)).items,
+			report,
+			dataSets: dataSets.items,
 			// FR33/FR32: the Generate-with-AI entry point is offered only when the
 			// connector is configured AND opted-in. When disabled the workspace hides
 			// the trigger (no offer of a capability that 503s); the panel renders the
 			// enable hint instead. Skeletons feed the generation request panel.
 			aiEnabled: isAiEnabled(),
-			skeletons: await listSkeletons(scope)
+			skeletons
 		};
 	} catch (thrown) {
 		// handleError cannot set a non-500 status for unexpected errors (1.4
