@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { BlockType, DocumentV1, Scales, Section } from '$lib/schema';
+	import { AUDIENCES, type BlockType, type Scales, type Section } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
-	import AudiencePicker from './AudiencePicker.svelte';
-	import SectionNotesEditor from './SectionNotesEditor.svelte';
 	import BlockEditor from './BlockEditor.svelte';
 	import BlockPalette from './BlockPalette.svelte';
 	import IssueList from './IssueList.svelte';
 	import { moveItem, newBlock, type ErrorsByKey, type MatrixBlockOption } from './editor-state';
-	import type { BindingGuard, DiagnosticContext } from './editor-types';
+	import type { DiagnosticContext, EditorSelection } from './editor-types';
 
 	interface Props {
 		section: Section;
@@ -19,12 +17,12 @@
 		scales?: Scales;
 		/** Comparison-matrix blocks in the document, for the set-membership editor. */
 		matrixBlocks?: MatrixBlockOption[];
-		/** Per-block binding diagnostics + the rebind source's fields / id (Epic 10.5). */
+		/** Per-block binding diagnostics, for the block's compact drift ("Derive") tag (Epic 10.5). */
 		diagnostics?: DiagnosticContext;
-		/** The editor's dirty/saving guard (Epic 10.5), for the block-level inline remap. */
-		bindingGuard?: BindingGuard;
-		/** Reports a successful inline remap UP so the editor reconciles the token (Epic 10.5). */
-		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
+		/** The currently selected element (drives the inspector + the selection ring). */
+		selected: EditorSelection;
+		/** Reports a new selection UP so the inspector follows (UX redesign). */
+		onSelect: (target: EditorSelection) => void;
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -38,14 +36,26 @@
 		scales,
 		matrixBlocks,
 		diagnostics,
-		bindingGuard,
-		onRemapped,
+		selected,
+		onSelect,
 		onEdit,
 		onRemove,
 		onMove
 	}: Props = $props();
 
 	const sectionIssues = $derived(errors[`section:${section.id}`] ?? []);
+	const isSelected = $derived(selected?.kind === 'section' && selected.id === section.id);
+
+	// Compact at-a-glance state for the calm header (UX redesign): show the audience
+	// tags only when the section is restricted to a subset of levels (the default,
+	// all-levels, reads as no badge), and a "Notes" dot when speaker notes are present.
+	// Non-interactive - the controls live in the inspector.
+	const audienceLabel = $derived(
+		section.audiences && section.audiences.length > 0 && section.audiences.length < AUDIENCES.length
+			? section.audiences.join(', ')
+			: null
+	);
+	const hasNotes = $derived((section.notes?.length ?? 0) > 0);
 
 	// Structural-edit focus management (Story 10.2, NFR15). A structural change
 	// (add / move / delete a block) tears down and rebuilds the keyed `{#each}`, so
@@ -58,10 +68,10 @@
 	// region (focusable by script, not in the tab order) so focus can rest on it.
 	let blockListElement = $state<HTMLDivElement>();
 	// The palette's first entry button, the focus-fallback target when a delete
-	// empties the block list (no block card remains to land on). Ref-anchored, like
-	// the `addSectionButton` fallback in ReportEditor, so the empty-section focus
-	// path needs no DOM traversal.
+	// empties the block list (no block card remains to land on). The palette is a
+	// disclosure now, so the empty-section path OPENS it before focusing the entry.
 	let paletteFirstEntry = $state<HTMLButtonElement>();
+	let paletteOpen = $state(false);
 
 	async function focusBlock(blockId: string): Promise<void> {
 		await tick();
@@ -81,11 +91,12 @@
 		section.blocks.splice(index, 1);
 		onEdit();
 		// Focus the block that slid into the removed slot, else the previous block,
-		// else nothing remains in the list - fall back to the palette's first entry.
+		// else nothing remains - open the palette and fall back to its first entry.
 		const next = section.blocks[index] ?? section.blocks[index - 1];
 		if (next) {
 			void focusBlock(next.id);
 		} else {
+			paletteOpen = true;
 			void tick().then(() => paletteFirstEntry?.focus());
 		}
 	}
@@ -98,6 +109,10 @@
 		// from the keyboard without re-acquiring the control.
 		void focusBlock(movedId);
 	}
+
+	function selectSection(): void {
+		onSelect({ kind: 'section', id: section.id });
+	}
 </script>
 
 <!-- `tabindex="-1"` + `data-section-id` make this card a scriptable focus target so
@@ -106,11 +121,16 @@
      order (Story 10.2, NFR15). -->
 <section
 	class="section-card"
+	class:selected={isSelected}
 	aria-label={`Section: ${section.title}`}
 	tabindex="-1"
 	data-section-id={section.id}
 >
-	<header>
+	<!-- The header is the section's selection target: clicking the title area or
+	     focusing into it selects the section, so the inspector shows its audience +
+	     notes. The gutter controls are revealed on hover/focus/selection with a
+	     persistent affordance hint (WCAG 2.2 SC 3.2.7). -->
+	<header class="section-head" onclickcapture={selectSection} onfocusin={selectSection}>
 		<input
 			class="section-title"
 			name={`section-title:${sectionIndex}`}
@@ -121,28 +141,31 @@
 			}}
 			aria-label="Section title"
 		/>
-		<div class="controls">
-			<Button onclick={() => onMove(-1)} disabled={sectionIndex === 0} aria-label="Move section up">
-				Up
-			</Button>
-			<Button
-				onclick={() => onMove(1)}
-				disabled={sectionIndex === count - 1}
-				aria-label="Move section down"
-			>
-				Down
-			</Button>
-			<Button variant="ghost" onclick={onRemove} aria-label="Remove section">Remove</Button>
+		<div class="section-meta" aria-hidden="true">
+			{#if audienceLabel}<span class="mini-tag">{audienceLabel}</span>{/if}
+			{#if hasNotes}<span class="notes-dot" title="Has speaker notes">Notes</span>{/if}
+		</div>
+		<div class="gutter">
+			<span class="gutter-hint" aria-hidden="true">&#8943;</span>
+			<div class="controls">
+				<Button
+					onclick={() => onMove(-1)}
+					disabled={sectionIndex === 0}
+					aria-label="Move section up"
+				>
+					Up
+				</Button>
+				<Button
+					onclick={() => onMove(1)}
+					disabled={sectionIndex === count - 1}
+					aria-label="Move section down"
+				>
+					Down
+				</Button>
+				<Button variant="ghost" onclick={onRemove} aria-label="Remove section">Remove</Button>
+			</div>
 		</div>
 	</header>
-
-	<AudiencePicker bind:audiences={section.audiences} legend="Section audiences" {onEdit} />
-
-	<!-- Author-private speaker notes (Story 6.2 / 10.6): edited on the working copy
-	     and saved through the same validate-on-write path, but stripped server-side
-	     before any reader is served (`stripSpeakerNotes` at the publish chokepoint),
-	     so this affordance can never make notes reader-visible. -->
-	<SectionNotesEditor bind:notes={section.notes} {onEdit} />
 
 	<IssueList issues={sectionIssues} variant="section" />
 
@@ -156,9 +179,8 @@
 				{scales}
 				{matrixBlocks}
 				diagnostic={diagnostics?.byBlock.get(block.id)}
-				diagnosticContext={diagnostics}
-				{bindingGuard}
-				{onRemapped}
+				selected={selected?.kind === 'block' && selected.id === block.id}
+				{onSelect}
 				{onEdit}
 				onRemove={() => removeBlock(blockIndex)}
 				onMove={(direction) => moveBlock(blockIndex, direction)}
@@ -170,6 +192,7 @@
 		label={`Add a block to ${section.title}`}
 		onInsert={insertBlock}
 		bind:firstEntry={paletteFirstEntry}
+		bind:open={paletteOpen}
 	/>
 </section>
 
@@ -189,7 +212,14 @@
 		outline-offset: 2px;
 	}
 
-	header {
+	/* The selected section carries the same purple ring as :focus-visible, so the
+	   selection state reads in the same visual language as keyboard focus. */
+	.section-card.selected {
+		border-color: var(--color-purple);
+		box-shadow: 0 0 0 1px var(--color-purple);
+	}
+
+	.section-head {
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
@@ -215,8 +245,66 @@
 		border-color: var(--color-ink-25);
 	}
 
+	.section-meta {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.mini-tag {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		padding: 1px var(--space-2);
+		color: var(--color-ink-65);
+		background: var(--color-ink-08);
+		border-radius: var(--radius-pill);
+		text-transform: capitalize;
+	}
+
+	.notes-dot {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		padding: 1px var(--space-2);
+		color: var(--color-ink-65);
+		background: var(--color-stone);
+		border: 1px solid var(--color-ink-12);
+		border-radius: var(--radius-pill);
+	}
+
+	/* Hover/focus-revealed gutter (UX redesign, WCAG 2.2 SC 3.2.7). At rest the
+	   control cluster is opacity:0 but the gutter keeps a PERSISTENT faint glyph so the
+	   author knows controls exist; hover, focus-within, and selection reveal the
+	   buttons. The buttons stay in the DOM and the tab order (a keyboard focus reveals
+	   them via :focus-within), so no control is hover-only. */
+	.gutter {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.gutter-hint {
+		color: var(--color-ink-25);
+		font-size: var(--text-sm);
+	}
+
 	.controls {
 		display: flex;
 		gap: var(--space-1);
+		opacity: 0;
+		transition: opacity 0.12s ease;
+	}
+
+	.section-card:hover .controls,
+	.section-card:focus-within .controls,
+	.section-card.selected .controls {
+		opacity: 1;
+	}
+
+	/* The ghost Remove button's default text (`--color-ink-65`) drops below the WCAG AA
+	   4.5:1 floor on the light `--color-surface` card; pin the gutter ghost text to a
+	   darker ink so the revealed control is AA-clean (the same discipline as the draft
+	   status chip fix). Scoped to the gutter so the global ghost variant is untouched. */
+	.controls :global(.btn.ghost) {
+		color: var(--color-ink-80);
 	}
 </style>

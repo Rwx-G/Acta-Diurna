@@ -19,6 +19,15 @@ import type { BindingSummary, BlockDiagnostic } from '$lib/server/ingestion';
  */
 export type BindingGuard = (cancel: () => void) => boolean;
 
+/**
+ * The currently selected editor element (UX redesign): a block or a section by stable
+ * id, or null at rest. Selection drives the right-pane inspector (it shows the
+ * selected element's settings only) and the purple selection ring on the card. An id
+ * (not an index) so the selection survives a structural reorder/delete of the keyed
+ * `{#each}`.
+ */
+export type EditorSelection = { kind: 'block' | 'section'; id: string } | null;
+
 /** The `?/bind` action result: the re-resolved document + its new timestamp. */
 export interface BindActionResult {
 	boundAt: string;

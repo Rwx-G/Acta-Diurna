@@ -93,8 +93,8 @@ describe('Story 10.6 audience-aware preview', () => {
 	it('switches the live preview between levels using the same filtering the reader uses', async () => {
 		const { container, getByRole } = renderEditor(taggedDocument());
 
-		// The split preview is off by default; open it via the toolbar toggle.
-		await getByRole('button', { name: 'Split preview' }).click();
+		// The right pane shows the inspector by default; switch it to the preview.
+		await getByRole('button', { name: 'Apercu' }).click();
 
 		// The tagged draft shows the embedded reader LevelSwitcher in the preview pane.
 		const preview = await vi.waitFor(() => {
@@ -154,20 +154,20 @@ describe('Story 10.6 audience-aware preview', () => {
 
 	it('reflects an audience tag set in the editor immediately in the level-switched preview', async () => {
 		const { container, getByRole } = renderEditor(plainDocument());
-		await getByRole('button', { name: 'Split preview' }).click();
-		const preview = await vi.waitFor(() => {
-			const el = container.querySelector<HTMLElement>('.editor-preview');
-			if (!el) throw new Error('preview pane not open');
+
+		// Select the section so its settings show in the inspector (UX redesign: the
+		// AudiencePicker lives in the right-pane inspector, not inline on the card). Open
+		// the section audiences disclosure and check technical.
+		const sectionCard = container.querySelector('[data-section-id="overview"]')! as HTMLElement;
+		(sectionCard.querySelector('.section-head') as HTMLElement).click();
+		const inspector = container.querySelector<HTMLElement>('.inspector')!;
+		const audiencesSummary = await vi.waitFor(() => {
+			const el = inspector.querySelector<HTMLElement>('details.audiences summary');
+			if (!el) throw new Error('section audiences not in inspector');
 			return el;
 		});
-
-		// No tags yet: no embedded reader switcher in the preview.
-		expect(preview.querySelector('input[name="audience-level"]')).toBeNull();
-
-		// Tag the section technical through the existing AudiencePicker (the section
-		// audiences disclosure). Check the technical box on the editor's section card.
-		const sectionCard = container.querySelector('[data-section-id="overview"]')! as HTMLElement;
-		const audiencesGroup = sectionCard.querySelector<HTMLElement>(
+		audiencesSummary.click();
+		const audiencesGroup = inspector.querySelector<HTMLElement>(
 			'[aria-label="Section audiences"]'
 		)!;
 		const technicalCheckbox = [...audiencesGroup.querySelectorAll('input[type="checkbox"]')].find(
@@ -175,9 +175,16 @@ describe('Story 10.6 audience-aware preview', () => {
 		) as HTMLInputElement;
 		technicalCheckbox.click();
 
-		// The tag lands on the working copy; once the settled snapshot renders, the
-		// level-switched preview surfaces the reader switcher (hasAudiences flipped true)
-		// and the section host carries the `data-audiences` attribute the reader CSS reads.
+		// Switch the right pane to the preview to observe the reader render. The tag landed
+		// on the working copy; once the settled snapshot renders, the level-switched preview
+		// surfaces the reader switcher (hasAudiences flipped true) and the section host
+		// carries the `data-audiences` attribute the reader CSS reads.
+		await getByRole('button', { name: 'Apercu' }).click();
+		const preview = await vi.waitFor(() => {
+			const el = container.querySelector<HTMLElement>('.editor-preview');
+			if (!el) throw new Error('preview pane not open');
+			return el;
+		});
 		await vi.waitFor(() => {
 			expect(preview.querySelector('input[name="audience-level"]')).not.toBeNull();
 			const host = preview.querySelector<HTMLElement>('[data-section-id="overview"]');
@@ -191,7 +198,18 @@ describe('Story 10.6 speaker notes editing', () => {
 		const document = plainDocument();
 		const { container } = renderEditor(document);
 
-		const notesField = container.querySelector<HTMLTextAreaElement>(
+		// Select the section so its notes editor shows in the inspector (UX redesign), then
+		// open the speaker-notes disclosure.
+		const sectionCard = container.querySelector('[data-section-id="overview"]')! as HTMLElement;
+		(sectionCard.querySelector('.section-head') as HTMLElement).click();
+		const inspector = container.querySelector<HTMLElement>('.inspector')!;
+		const notesSummary = await vi.waitFor(() => {
+			const el = inspector.querySelector<HTMLElement>('details.notes summary');
+			if (!el) throw new Error('speaker notes not in inspector');
+			return el;
+		});
+		notesSummary.click();
+		const notesField = inspector.querySelector<HTMLTextAreaElement>(
 			'textarea[aria-label="Speaker notes"]'
 		)!;
 		expect(notesField.value).toBe('');

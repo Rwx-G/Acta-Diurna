@@ -241,6 +241,59 @@ export const blockPaletteEntries: BlockPaletteEntry[] = blockSchema.options.map(
 });
 
 /**
+ * Palette categories (UX redesign): Hick's Law - a flat list of 15 inserts is a
+ * single overloaded choice, so the add-block menu groups them into four families
+ * (Text, Data, Layout, Media). The map assigns every block type to exactly one
+ * category; `satisfies Record<BlockType, ...>` keeps it EXHAUSTIVE, so a new block
+ * type with no category is a compile error - the categorized menu can never silently
+ * omit a type, the same guarantee the flat catalogue carries.
+ */
+export type PaletteCategory = 'text' | 'data' | 'layout' | 'media';
+
+const BLOCK_CATEGORY = {
+	text: 'text',
+	list: 'text',
+	callout: 'text',
+	code: 'text',
+	table: 'data',
+	chart: 'data',
+	kpi: 'data',
+	'comparison-matrix': 'data',
+	'set-membership': 'data',
+	'field-grid': 'layout',
+	'card-grid': 'layout',
+	timeline: 'layout',
+	legend: 'layout',
+	'chip-cluster': 'layout',
+	image: 'media'
+} satisfies Record<BlockType, PaletteCategory>;
+
+export interface PaletteGroup {
+	category: PaletteCategory;
+	label: string;
+	entries: BlockPaletteEntry[];
+}
+
+const CATEGORY_ORDER: { category: PaletteCategory; label: string }[] = [
+	{ category: 'text', label: 'Texte' },
+	{ category: 'data', label: 'Donnees' },
+	{ category: 'layout', label: 'Mise en page' },
+	{ category: 'media', label: 'Media' }
+];
+
+/**
+ * The palette entries grouped by category in display order. Each entry keeps its
+ * catalogue order WITHIN its group (the flat list order, filtered per category), so
+ * the menu reads as the same exhaustive catalogue, chunked. Empty groups are dropped
+ * (none today, but it keeps the menu honest if a category loses its last type).
+ */
+export const blockPaletteGroups: PaletteGroup[] = CATEGORY_ORDER.map(({ category, label }) => ({
+	category,
+	label,
+	entries: blockPaletteEntries.filter((entry) => BLOCK_CATEGORY[entry.type] === category)
+})).filter((group) => group.entries.length > 0);
+
+/**
  * The boolean inline marks the text editor (Story 10.3) exposes per run - the
  * SAME vocabulary the schema (`inlineRunSchema`) and the renderer
  * (`InlineRuns.svelte`) honour: bold, italic, and inline `code`. The `link` mark

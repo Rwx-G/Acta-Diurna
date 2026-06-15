@@ -187,8 +187,8 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		const report = sampleReport(staticTableDocument(), new Date('2026-06-12T09:30:00Z'));
 		const screen = await renderEditor(report);
 
-		// The bound result renders in the split preview, which is off by default.
-		await screen.getByRole('button', { name: 'Split preview' }).click();
+		// The bound result renders in the preview; switch the right pane to it ("Apercu").
+		await screen.getByRole('button', { name: 'Apercu' }).click();
 
 		const bound = boundTableDocument();
 		// Inject a resolved row into the bound document so the reseed is observable in the
@@ -235,14 +235,23 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 			}
 		});
 
-		// The drift chip surfaces at the block (the editor card carries a `?/remap` form
-		// once opened). The chip names the drift; open it to reach the inline remap.
-		const editorForm = screen.container.querySelector('.editor-form')!;
-		const chip = editorForm.querySelector('.binding-state button')!;
+		// The drift surfaces in the inspector for the SELECTED block (UX redesign: the
+		// binding state + remap moved off the card into the right-pane inspector). Select
+		// the block, then the inspector shows the chip; open it to reach the inline remap.
+		const blockCard = screen.container.querySelector(
+			'[data-block-id="severity-table"]'
+		) as HTMLElement;
+		blockCard.click();
+		const inspector = screen.container.querySelector('.inspector')!;
+		const chip = await vi.waitFor(() => {
+			const found = inspector.querySelector('.binding-state button');
+			if (!found) throw new Error('drift chip not in inspector');
+			return found;
+		});
 		expect(chip.textContent ?? '').toContain('Drifted');
 		(chip as HTMLButtonElement).click();
 		await vi.waitFor(() => {
-			expect(editorForm.querySelector('form[action="?/remap"]')).not.toBeNull();
+			expect(inspector.querySelector('form[action="?/remap"]')).not.toBeNull();
 		});
 	});
 
@@ -309,9 +318,14 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 				rebound: []
 			}
 		});
-		const editorForm = screen.container.querySelector('.editor-form')!;
+		// Select the block so the inspector shows its binding state (UX redesign).
+		const blockCard = screen.container.querySelector(
+			'[data-block-id="severity-table"]'
+		) as HTMLElement;
+		blockCard.click();
+		const inspector = screen.container.querySelector('.inspector')!;
 		await vi.waitFor(() => {
-			expect(editorForm.querySelector('.binding-state button')).not.toBeNull();
+			expect(inspector.querySelector('.binding-state button')).not.toBeNull();
 		});
 
 		// Now bind: onBound clears the diagnostics, so the drift chip is gone.
@@ -322,7 +336,7 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 			data: { boundAt: '2026-06-12T13:00:00.000Z', document: boundTableDocument() }
 		});
 		await vi.waitFor(() => {
-			expect(editorForm.querySelector('.binding-state button')).toBeNull();
+			expect(inspector.querySelector('.binding-state button')).toBeNull();
 		});
 	});
 });

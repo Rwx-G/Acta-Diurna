@@ -16,6 +16,7 @@
 	import GeneratePanel from './GeneratePanel.svelte';
 	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
+	import EditorInspector from './EditorInspector.svelte';
 	import LivePreview from '../preview/LivePreview.svelte';
 	import {
 		groupErrorsByLocation,
@@ -26,7 +27,7 @@
 		type ErrorsByKey
 	} from './editor-state';
 	import { EditHistory } from './editor-history';
-	import type { DiagnosticContext } from './editor-types';
+	import type { DiagnosticContext, EditorSelection } from './editor-types';
 	import type { ActionData, PageData } from './$types';
 
 	// The page remounts this component via {#key report.id}, so capturing the
@@ -322,12 +323,25 @@
 	// crashing).
 	const previewSnapshot = $derived(settledSnapshot);
 
-	// The embedded split preview is a VIEW concern, off by default so opening a
-	// report shows the editing form full-width rather than a preview the author did
-	// not ask for. The author reveals it on demand via the toolbar toggle; when open
-	// it sits BESIDE the form (a flex column), never over it. The full-page preview
+	// The right pane (UX redesign): a single stable column that shows EITHER the
+	// Inspector (default) or the embedded live preview. The Inspector carries the
+	// SELECTED element's secondary settings (audience, notes, binding state + remap),
+	// which used to crowd every block and section card inline. The preview is the same
+	// authoritative reader render as before, now reached by the "Apercu" segment of the
+	// pane toggle rather than a separate "Split preview" button. The full-page preview
 	// route and "View as reader" remain the other two ways to see the render.
-	let previewOpen = $state(false);
+	let rightPane = $state<'inspector' | 'preview'>('inspector');
+	const previewOpen = $derived(rightPane === 'preview');
+
+	// The selected editor element (UX redesign): a block or a section by id, or null at
+	// rest. Selection drives the inspector (it shows only the selected element's
+	// settings) and the purple selection ring on the card. It is a pure VIEW concern -
+	// selecting never mutates the document, marks dirty, or triggers a save.
+	let selected = $state<EditorSelection>(null);
+
+	function onSelect(target: EditorSelection): void {
+		selected = target;
+	}
 
 	/*
 	 * Autosave concurrency contract (story 1.5, made explicit in 10.1 ahead of
@@ -789,20 +803,31 @@
 	</div>
 
 	<div class="tool-strip">
-		<div class="tool-group" role="group" aria-label="Preview the report">
-			<span class="tool-group-label">View</span>
-			<!-- Toggles the embedded split preview (off by default). Distinct from the
-			     "Live preview" full-page link: this pane tracks the LIVE in-edit copy as the
-			     author types, the link renders the last-saved snapshot full-screen. -->
-			<Button
-				variant="secondary"
-				class="preview-toggle"
-				aria-expanded={previewOpen}
-				aria-controls="editor-preview"
-				onclick={() => (previewOpen = !previewOpen)}
-			>
-				Split preview
-			</Button>
+		<div class="tool-group" role="group" aria-label="Right pane">
+			<span class="tool-group-label">Panneau</span>
+			<!-- The right-pane segmented toggle (UX redesign): "Inspecteur" (default) shows
+			     the selected element's settings, "Apercu" shows the embedded live preview.
+			     The preview tracks the LIVE in-edit copy as the author types; the "Live
+			     preview" full-page link renders the last-saved snapshot full-screen. Each
+			     segment is a pressed-state button so the active pane reads on its own. -->
+			<div class="segmented" role="group" aria-label="Pane mode">
+				<Button
+					variant="secondary"
+					class="segment"
+					aria-pressed={rightPane === 'inspector'}
+					onclick={() => (rightPane = 'inspector')}
+				>
+					Inspecteur
+				</Button>
+				<Button
+					variant="secondary"
+					class="segment"
+					aria-pressed={rightPane === 'preview'}
+					onclick={() => (rightPane = 'preview')}
+				>
+					Apercu
+				</Button>
+			</div>
 			<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
 			<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
 			{#if !editable}
@@ -889,8 +914,8 @@
 						scales={doc.scales}
 						{matrixBlocks}
 						{diagnostics}
-						{bindingGuard}
-						{onRemapped}
+						{selected}
+						{onSelect}
 						{onEdit}
 						onRemove={() => removeSection(sectionIndex)}
 						onMove={(direction) => moveSection(sectionIndex, direction)}
@@ -904,16 +929,21 @@
 		</fieldset>
 	</form>
 
-	<!-- Authoritative live preview (Epic 10.1): the editor reuses the SAME embedded
-	     LivePreview the /preview route uses, fed the LIVE in-edit snapshot so it
-	     re-renders through the pure `$lib/render` tier on every edit. What the author
-	     edits is what the reader gets - the preview IS the reader render. Off by
-	     default (previewOpen), revealed beside the form via the toolbar toggle. -->
-	{#if previewOpen}
-		<aside id="editor-preview" class="editor-preview" aria-label="Live preview">
-			<LivePreview document={previewSnapshot} />
-		</aside>
-	{/if}
+	<!-- The right pane (UX redesign): the Inspector (default) carries the selected
+	     element's settings, or the Apercu segment swaps in the authoritative live
+	     preview. The preview reuses the SAME embedded LivePreview the /preview route
+	     uses, fed the LIVE in-edit snapshot so it re-renders through the pure
+	     `$lib/render` tier on every edit - what the author edits is what the reader gets.
+	     The pane is sticky so it stays in view while the author scrolls the stack. -->
+	<div class="editor-aside">
+		{#if previewOpen}
+			<aside id="editor-preview" class="editor-preview" aria-label="Live preview">
+				<LivePreview document={previewSnapshot} />
+			</aside>
+		{:else}
+			<EditorInspector bind:doc {selected} {diagnostics} {bindingGuard} {onRemapped} {onEdit} />
+		{/if}
+	</div>
 </div>
 
 <!-- Data binding from the editor (Epic 10.5): the bind / refill panels call the
@@ -1008,38 +1038,52 @@
 		color: var(--color-purple);
 	}
 
-	/* Open state of the split-preview toggle: a filled pressed look so the active
-	   state reads on its own, not only by the pane's presence. The selector reaches
-	   into the Button child via :global (the class is forwarded onto its <button>). */
-	:global(.preview-toggle[aria-expanded='true']) {
+	/* Pressed state of a pane-mode segment: a filled look so the active pane reads on
+	   its own, not only by the pane's contents. The selector reaches into the Button
+	   child via :global (the class is forwarded onto its <button>). The two segments
+	   butt together into one pill (no gap, shared border) for the segmented-control read. */
+	.segmented {
+		display: inline-flex;
+	}
+
+	:global(.segment[aria-pressed='true']) {
 		color: var(--color-purple);
 		border-color: var(--color-purple);
 		background: var(--color-purple-08);
 	}
 
-	/* Two-pane editor shell (Epic 10.1): the form on the left, the authoritative
-	   live preview on the right. The preview is sticky so it stays in view while the
-	   author scrolls the form. On a narrow viewport the panes stack (the editor is a
-	   desktop surface, NFR27 is a reader requirement, so this is graceful degradation
-	   not a mobile authoring target). */
+	/* Two-column editor shell (UX redesign): the document/section/block stack on the
+	   left (primary, flexible, min-width:0 so its content can shrink), a fixed-ish right
+	   pane (~340px, sticky) carrying the Inspector or the live preview. On a narrow
+	   viewport (<1000px) the right pane stacks below the stack (single column); the
+	   editor is a desktop surface (NFR27 is a reader requirement), so this is graceful
+	   degradation, not a mobile authoring target. */
 	.editor-layout {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 340px;
+		align-items: start;
 		gap: var(--space-5);
 	}
 
+	@media (max-width: 1000px) {
+		.editor-layout {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
 	.editor-form {
-		flex: 1 1 440px;
 		min-width: 0;
 		margin: 0;
 	}
 
-	.editor-preview {
-		flex: 1 1 440px;
+	.editor-aside {
 		min-width: 0;
 		position: sticky;
 		top: var(--space-4);
+	}
+
+	.editor-preview {
+		min-width: 0;
 	}
 
 	.editor {

@@ -50,16 +50,21 @@ test('tags a block technical and the preview level switch hides and shows it', a
 	expect(((await seed.json()) as { type?: string }).type).toBe('success');
 
 	await page.goto(editPath);
-	// The split preview is off by default; open it to assert the live render.
-	await page.getByRole('button', { name: 'Split preview' }).click();
+
+	// Tag the second block technical via its AudiencePicker, which now lives in the
+	// right-pane inspector for the SELECTED block (UX redesign). Select the block, open
+	// the block audiences disclosure in the inspector, and check technical.
+	const deepDiveCard = page.locator('[data-block-id="deep-dive"]');
+	await deepDiveCard.click();
+	const inspector = page.getByRole('complementary', { name: 'Inspector' });
+	await inspector.getByText('Block audiences:', { exact: false }).click();
+	const blockAudiences = inspector.getByRole('group', { name: 'Block audiences' });
+	await blockAudiences.getByRole('checkbox', { name: 'technical' }).check();
+
+	// Switch the right pane to the preview ("Apercu") to assert the level filtering.
+	await page.getByRole('button', { name: 'Apercu' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
-
-	// Tag the second block technical via its AudiencePicker (block audiences disclosure).
-	const deepDiveCard = page.locator('[data-block-id="deep-dive"]');
-	await deepDiveCard.getByText('Block audiences:', { exact: false }).click();
-	const blockAudiences = deepDiveCard.getByRole('group', { name: 'Block audiences' });
-	await blockAudiences.getByRole('checkbox', { name: 'technical' }).check();
 
 	// The tagged block is hidden at the default `full` preview level (the SAME audience
 	// CSS the reader uses) and the embedded reader switcher appears.
@@ -93,10 +98,13 @@ test('edits a speaker note, saves, and the note persists for the author across a
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
 
-	// Open the section's speaker-notes disclosure and type a note on the working copy.
+	// Select the section so its speaker-notes editor shows in the inspector (UX
+	// redesign), open the notes disclosure, and type a note on the working copy.
 	const sectionCard = page.getByRole('region', { name: /^Section:/ }).first();
-	await sectionCard.getByText('Speaker notes:', { exact: false }).click();
-	const notesField = sectionCard.getByLabel('Speaker notes');
+	await sectionCard.locator('.section-head').click();
+	const inspector = page.getByRole('complementary', { name: 'Inspector' });
+	await inspector.getByText('Speaker notes:', { exact: false }).click();
+	const notesField = inspector.getByLabel('Speaker notes');
 	await notesField.fill(SPEAKER_NOTE);
 
 	// Save through the validated path and wait for the confirmation.
@@ -106,9 +114,14 @@ test('edits a speaker note, saves, and the note persists for the author across a
 	// Reload: the note persisted for the author (the working copy round-tripped through
 	// the same save path every edit uses).
 	await page.goto(editPath);
-	const reloadedSection = page.getByRole('region', { name: /^Section:/ }).first();
-	await reloadedSection.getByText('Speaker notes:', { exact: false }).click();
-	await expect(reloadedSection.getByLabel('Speaker notes')).toHaveValue(SPEAKER_NOTE);
+	await page
+		.getByRole('region', { name: /^Section:/ })
+		.first()
+		.locator('.section-head')
+		.click();
+	const reloadedInspector = page.getByRole('complementary', { name: 'Inspector' });
+	await reloadedInspector.getByText('Speaker notes:', { exact: false }).click();
+	await expect(reloadedInspector.getByLabel('Speaker notes')).toHaveValue(SPEAKER_NOTE);
 });
 
 test('a speaker note never reaches the reader render (the notes-never-leak guard)', async ({
@@ -177,17 +190,21 @@ test('the editor surface with audience tags and speaker notes has no axe-core vi
 	const reportId = await createDraft(page);
 	await page.goto(`/reports/${reportId}/edit`);
 
-	// Open the section's audience and notes disclosures so axe scans them expanded.
+	// Select the section so its settings show in the inspector, then open the audience
+	// and notes disclosures so axe scans them expanded (UX redesign: these moved to the
+	// right-pane inspector).
 	const sectionCard = page.getByRole('region', { name: /^Section:/ }).first();
-	await sectionCard.getByText('Section audiences:', { exact: false }).click();
-	await sectionCard.getByText('Speaker notes:', { exact: false }).click();
-	await expect(sectionCard.getByLabel('Speaker notes')).toBeVisible();
+	await sectionCard.locator('.section-head').click();
+	const inspector = page.getByRole('complementary', { name: 'Inspector' });
+	await inspector.getByText('Section audiences:', { exact: false }).click();
+	await inspector.getByText('Speaker notes:', { exact: false }).click();
+	await expect(inspector.getByLabel('Speaker notes')).toBeVisible();
 
-	// Scope the scan to the editing FORM - the audience picker and notes editor this
-	// story delivers. The embedded live preview is the 10.1 surface (axe-gated on its
-	// own reader routes).
+	// Scope the scan to the editor LAYOUT (the form stack AND the right-pane inspector),
+	// since the audience picker and notes editor now live in the inspector. The embedded
+	// live preview is the 10.1 surface (axe-gated on its own reader routes).
 	const results = await new AxeBuilder({ page })
-		.include('.editor-form')
+		.include('.editor-layout')
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
 		.analyze();
 

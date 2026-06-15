@@ -101,8 +101,8 @@ test('edits the rich block types in place, and the field edits persist across re
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
 
-	// The split preview is off by default; open it to assert the live render.
-	await page.getByRole('button', { name: 'Split preview' }).click();
+	// The right pane shows the inspector by default; switch it to the preview ("Apercu").
+	await page.getByRole('button', { name: 'Apercu' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 
@@ -179,6 +179,7 @@ test('a scale-driven block with an unresolved reference surfaces the inline erro
 	// no declared scale), so the optimistic inline guidance names the unresolved scale
 	// reference at the block before any save round-trip - the editor only offers
 	// declared scales, so a dangling ref is caught, never free-typed.
+	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
 	await page.getByRole('button', { name: 'Add a Legend block' }).click();
 	const legend = page.getByRole('article', { name: 'legend block' });
 	await expect(legend).toBeVisible();
@@ -203,6 +204,7 @@ test('the rich-block editors have no axe-core violations', async ({ page }, test
 		'Add a Code block',
 		'Add a Field grid block'
 	]) {
+		await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
 		await page.getByRole('button', { name: label }).click();
 	}
 	await expect(page.getByRole('article', { name: 'field-grid block' })).toBeVisible();

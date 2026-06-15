@@ -62,8 +62,10 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
-	// The split preview is off by default; open it to assert the live render.
-	await page.getByRole('button', { name: 'Split preview' }).click();
+	// The right pane shows the inspector by default; switch it to the preview ("Apercu")
+	// to assert the live render. The binding state + remap then surface in the inspector
+	// for the SELECTED block, so we switch back to "Inspecteur" once a block is selected.
+	await page.getByRole('button', { name: 'Apercu' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 
@@ -87,9 +89,14 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 	await expect(preview.getByText('Critical')).toBeVisible();
 	await expect(preview.getByText('High')).toBeVisible();
 
-	// The block now shows its bound-vs-static state as BOUND inside the editor.
+	// The block now shows its bound-vs-static state as BOUND in the inspector (UX
+	// redesign: the binding state moved off the card into the right pane). Select the
+	// block, switch the pane back to the inspector, and assert the bound state there.
 	const block = page.getByRole('article', { name: 'table block' });
-	await expect(block.getByText('Bound to data set')).toBeVisible();
+	await block.click();
+	await page.getByRole('button', { name: 'Inspecteur' }).click();
+	const inspector = page.getByRole('complementary', { name: 'Inspector' });
+	await expect(inspector.getByText('Bound to data set')).toBeVisible();
 
 	// REFILL with a DRIFTED data set (count -> counts): the rebind re-resolves and the
 	// per-block diagnostic chips turn amber. The refill goes through `?/rebind`.
@@ -101,33 +108,39 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 	await refill.getByRole('button', { name: 'Rebind from this data set' }).click();
 	await rebindPosted;
 
-	// The drift surfaces AT THE BLOCK in the editor (Epic 10.5): an amber chip naming
-	// the drift count. Open it to reach the inline remap (the existing diagnostics).
-	const blockChip = block.getByRole('button', { name: /Drifted/ });
+	// The drift surfaces in the INSPECTOR for the selected block (Epic 10.5): an amber
+	// chip naming the drift count. Open it to reach the inline remap. A rebind reseeds
+	// the document, so re-select the block (the keyed card rebuilt) before reading the
+	// inspector.
+	await block.click();
+	const blockChip = inspector.getByRole('button', { name: /Drifted/ });
 	await expect(blockChip).toBeVisible();
 	await blockChip.click();
-	await expect(block.getByText('closest match')).toBeVisible();
+	await expect(inspector.getByText('closest match')).toBeVisible();
 	// The expected field "count" drifted; its closest available match in the drifted
 	// set (severity, counts) is "counts", proposed as the remap target.
-	await expect(block.locator('code.closest')).toHaveText('counts');
+	await expect(inspector.locator('code.closest')).toHaveText('counts');
 
-	// REMAP in place from the block's diagnostic: point the drifted "count" at the
+	// REMAP in place from the inspector's diagnostic: point the drifted "count" at the
 	// available "counts". The remap goes through `?/remap`; the block re-resolves and
 	// the chip clears.
-	const remapForm = block.locator('form[action="?/remap"]');
+	const remapForm = inspector.locator('form[action="?/remap"]');
 	await remapForm.getByLabel('Map to').selectOption('counts');
 	const remapPosted = page.waitForResponse(
 		(r) => r.url().includes('/edit?/remap') && r.request().method() === 'POST'
 	);
 	await remapForm.getByRole('button', { name: 'Remap' }).click();
 	await remapPosted;
-	await expect(block.getByRole('button', { name: /Drifted/ })).toHaveCount(0);
+	// The remap reseeds the document; re-select the block and assert the chip is gone.
+	await block.click();
+	await expect(inspector.getByRole('button', { name: /Drifted/ })).toHaveCount(0);
 
 	// The binding persists: reload and the block is still bound to the data set. The
 	// remap reconcile already cleared the editor (no pending save), so navigate straight.
 	await page.goto(editPath);
+	await page.getByRole('article', { name: 'table block' }).click();
 	await expect(
-		page.getByRole('article', { name: 'table block' }).getByText('Bound to data set')
+		page.getByRole('complementary', { name: 'Inspector' }).getByText('Bound to data set')
 	).toBeVisible();
 });
 
@@ -152,8 +165,10 @@ test('a save after a binding action does not 409 (concurrency token reconciled)'
 	);
 	await binder.getByRole('button', { name: 'Bind block' }).click();
 	await bindPosted;
+	// The bound state shows in the inspector for the selected block (UX redesign).
+	await page.getByRole('article', { name: 'table block' }).click();
 	await expect(
-		page.getByRole('article', { name: 'table block' }).getByText('Bound to data set')
+		page.getByRole('complementary', { name: 'Inspector' }).getByText('Bound to data set')
 	).toBeVisible();
 
 	// A bind advanced the report's updatedAt. Without token reconciliation, the next
@@ -197,16 +212,26 @@ test('the editor binding surface has no axe-core violations', async ({ page }, t
 	await binder.getByRole('row', { name: /count/ }).getByRole('combobox').selectOption('column');
 	await binder.getByRole('button', { name: 'Bind block' }).click();
 	const block = page.getByRole('article', { name: 'table block' });
-	await expect(block.getByText('Bound to data set')).toBeVisible();
+	// Select the block so the binding state + (after the rebind) the drift chip + inline
+	// remap are MOUNTED in the inspector for the scan (the editor binding surface this
+	// story adds, now hosted in the right-pane inspector).
+	await block.click();
+	const inspector = page.getByRole('complementary', { name: 'Inspector' });
+	await expect(inspector.getByText('Bound to data set')).toBeVisible();
 
 	const refill = page.locator('section[aria-label="Refill data"]');
 	await refill.locator('select').first().selectOption({ label: 'drifted.csv' });
 	await refill.getByRole('button', { name: 'Rebind from this data set' }).click();
-	await block.getByRole('button', { name: /Drifted/ }).click();
-	await expect(block.getByText('closest match')).toBeVisible();
+	// The rebind reseeds the document; re-select the block, then open the drift chip.
+	await block.click();
+	await inspector.getByRole('button', { name: /Drifted/ }).click();
+	await expect(inspector.getByText('closest match')).toBeVisible();
 
+	// Scope the scan to the editor LAYOUT (the form stack AND the right-pane inspector),
+	// since the binding state + diagnostic + inline remap now live in the inspector. The
+	// embedded live preview is the 10.1 surface, axe-gated on its own reader routes.
 	const results = await new AxeBuilder({ page })
-		.include('.editor-form')
+		.include('.editor-layout')
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
 		.analyze();
 

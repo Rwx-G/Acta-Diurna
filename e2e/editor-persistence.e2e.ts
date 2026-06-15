@@ -34,8 +34,8 @@ test('undo and redo step the document and the preview follows, then autosave con
 	await seedDocument(page, reportId, JSON.parse(draftDocument('Undo Baseline')));
 	await page.goto(`/reports/${reportId}/edit`);
 
-	// The split preview is off by default; open it to assert the live render.
-	await page.getByRole('button', { name: 'Split preview' }).click();
+	// The right pane shows the inspector by default; switch it to the preview ("Apercu").
+	await page.getByRole('button', { name: 'Apercu' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 	await expect(preview.getByRole('heading', { level: 1, name: 'Undo Baseline' })).toBeVisible();

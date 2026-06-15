@@ -27,6 +27,8 @@ function renderSection(section: Section, onEdit = vi.fn()) {
 		sectionIndex: 0,
 		count: 1,
 		errors: {},
+		selected: null,
+		onSelect: vi.fn(),
 		onEdit,
 		onRemove: vi.fn(),
 		onMove: vi.fn()
@@ -38,6 +40,8 @@ describe('SectionEditor structural block editing', () => {
 	it('adds a block of the chosen type from the palette and signals an edit', async () => {
 		const { getByRole, section, onEdit } = renderSection(fixtureSection());
 
+		// The palette is a disclosure now (UX redesign): open it, then pick the entry.
+		await getByRole('button', { name: '+ Ajouter un bloc' }).click();
 		await getByRole('button', { name: 'Add a KPI block' }).click();
 
 		// The new block lands at the end of the working copy with the chosen type.
@@ -78,6 +82,7 @@ describe('SectionEditor structural block editing', () => {
 		// assert is untouched by an add against the reactive copy.
 		const { getByRole } = renderSection(structuredClone(source));
 
+		await getByRole('button', { name: '+ Ajouter un bloc' }).click();
 		await getByRole('button', { name: 'Add a Code block' }).click();
 
 		expect(source.blocks).toHaveLength(2);

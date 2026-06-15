@@ -19,18 +19,21 @@ test('adds a block from the palette, reorders and deletes it, and the structure 
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
 
-	// The split preview is off by default; open it to assert the live render.
-	await page.getByRole('button', { name: 'Split preview' }).click();
+	// The right pane shows the inspector by default; switch it to the preview ("Apercu").
+	await page.getByRole('button', { name: 'Apercu' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 
-	// A fresh draft has one section with one empty text block. Add a KPI block from
-	// the palette: it inserts a default-shaped kpi block at the end of the section.
+	// A fresh draft has one section with one empty text block. The palette is a
+	// disclosure now: open the "+ Ajouter un bloc" menu, then pick KPI - it inserts a
+	// default-shaped kpi block at the end of the section.
+	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
 	await page.getByRole('button', { name: 'Add a KPI block' }).click();
 	await expect(page.getByRole('article', { name: 'kpi block' })).toBeVisible();
 
 	// Add a Code block too, then reorder it up past the kpi block via the
 	// keyboard-accessible move-up control (the NFR15 baseline).
+	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
 	await page.getByRole('button', { name: 'Add a Code block' }).click();
 	const codeBlock = page.getByRole('article', { name: 'code block' });
 	await expect(codeBlock).toBeVisible();
@@ -104,7 +107,8 @@ test('a keyboard-only block move reorders the structure', async ({ page }, testI
 	await page.goto(`/reports/${reportId}/edit`);
 
 	// Add a second block so there is something to move; the draft starts with one
-	// text block.
+	// text block. Open the add-block disclosure, then pick Callout.
+	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
 	await page.getByRole('button', { name: 'Add a Callout block' }).click();
 	await expect(page.getByRole('article', { name: 'callout block' })).toBeVisible();
 
@@ -159,6 +163,9 @@ test('the editor surface with the block palette has no axe-core violations', asy
 
 	const reportId = await createDraft(page);
 	await page.goto(`/reports/${reportId}/edit`);
+	// Open the add-block disclosure so the categorized palette popover is MOUNTED for
+	// the scan (it is on-demand now, not always-expanded).
+	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
 	await expect(page.getByRole('group', { name: /^Add a block to/ }).first()).toBeVisible();
 
 	// Scope the scan to the editing FORM - the palette and structural controls this

@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import type { Block, DocumentV1 } from '$lib/schema';
 import type { BlockDiagnostic } from '$lib/server/ingestion';
 import BlockEditor from './BlockEditor.svelte';
+import EditorInspector from './EditorInspector.svelte';
 import type { DiagnosticContext } from './editor-types';
 
 function renderBlock(block: Block, issues: { path: string; message: string; hint?: string }[]) {
@@ -14,13 +15,20 @@ function renderBlock(block: Block, issues: { path: string; message: string; hint
 		blockIndex: 0,
 		count: 1,
 		issues,
+		selected: false,
+		onSelect: vi.fn(),
 		onEdit: vi.fn(),
 		onRemove: vi.fn(),
 		onMove: vi.fn()
 	});
 }
 
-function renderBindableBlock(
+// The binding state + drift remap moved from the block card to the right-pane
+// inspector (UX redesign). These render the inspector with the bindable block
+// SELECTED, mirroring the editor flow: a block is selected, so its settings (audience,
+// binding state, remap) appear in the inspector. The block lives at section[0].block[0]
+// of a minimal one-section document so the inspector resolves it by id.
+function renderInspectorForBlock(
 	block: Block,
 	options: {
 		diagnostic?: BlockDiagnostic;
@@ -29,25 +37,30 @@ function renderBindableBlock(
 		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
 	} = {}
 ) {
-	const reactiveBlock = $state(block);
-	const diagnosticContext: DiagnosticContext = {
+	const doc = $state({
+		version: 1,
+		title: 'Inspector Fixture',
+		sections: [{ id: 'overview', title: 'Overview', blocks: [block] }]
+	} as DocumentV1);
+	const diagnostics: DiagnosticContext = {
 		byBlock: options.diagnostic
 			? new Map([[options.diagnostic.blockId, options.diagnostic]])
 			: new Map(),
 		fields: options.diagnosticFields ?? [],
 		dataSetId: options.diagnosticDataSetId ?? null
 	};
-	return render(BlockEditor, {
-		block: reactiveBlock,
-		blockIndex: 0,
-		count: 1,
-		issues: [],
-		diagnostic: options.diagnostic,
-		diagnosticContext,
-		onRemapped: options.onRemapped,
-		onEdit: vi.fn(),
-		onRemove: vi.fn(),
-		onMove: vi.fn()
+	return render(EditorInspector, {
+		get doc() {
+			return doc;
+		},
+		set doc(value: DocumentV1) {
+			Object.assign(doc, value);
+		},
+		selected: { kind: 'block', id: block.id },
+		diagnostics,
+		bindingGuard: () => true,
+		onRemapped: options.onRemapped ?? vi.fn(),
+		onEdit: vi.fn()
 	});
 }
 
@@ -85,12 +98,12 @@ describe('BlockEditor inline validation', () => {
 	});
 });
 
-describe('BlockEditor binding state (Epic 10.5)', () => {
+describe('Inspector binding state (Epic 10.5)', () => {
 	it('shows "Bound to data set" for a bindable block whose binding resolves a data set', async () => {
 		// A bound block's values come from the data set: its binding carries a resolved
-		// `dataSetId` (and a `dataAsOf` freshness instant). The editor surfaces the bound
-		// state clearly so the author knows the values are data-driven, not static.
-		const { getByText } = renderBindableBlock({
+		// `dataSetId` (and a `dataAsOf` freshness instant). The inspector surfaces the
+		// bound state clearly so the author knows the values are data-driven, not static.
+		const { getByText } = renderInspectorForBlock({
 			type: 'table',
 			id: 'metrics',
 			columns: [{ key: 'severity', label: 'Severity' }],
@@ -107,8 +120,8 @@ describe('BlockEditor binding state (Epic 10.5)', () => {
 
 	it('shows "Static data" for a bindable block with no resolved binding', async () => {
 		// A table carrying only static rows (edited in 10.3/10.4), no data-set binding:
-		// the editor labels it static so the bound-vs-static state is never ambiguous.
-		const { getByText } = renderBindableBlock({
+		// the inspector labels it static so the bound-vs-static state is never ambiguous.
+		const { getByText } = renderInspectorForBlock({
 			type: 'table',
 			id: 'metrics',
 			columns: [{ key: 'severity', label: 'Severity' }],
@@ -120,18 +133,20 @@ describe('BlockEditor binding state (Epic 10.5)', () => {
 	});
 
 	it('does not show a binding state row for a non-bindable block', async () => {
-		const { getByLabelText } = renderBlock(
-			{ type: 'text', id: 'intro', paragraphs: [[{ text: 'Plain.' }]] },
-			[]
-		);
+		const { getByLabelText } = renderInspectorForBlock({
+			type: 'text',
+			id: 'intro',
+			paragraphs: [[{ text: 'Plain.' }]]
+		});
 
 		expect(getByLabelText('Binding state').query()).toBeNull();
 	});
 
-	it('surfaces a drift diagnostic chip at the block and opens the inline remap', async () => {
-		// FR15 at the editor surface: a drifted field surfaces as an amber chip AT the
-		// block; opening it reveals the diagnostic naming the expected field and its
-		// closest match, with the inline remap reaching the existing `?/remap` action.
+	it('surfaces a drift diagnostic chip in the inspector and opens the inline remap', async () => {
+		// FR15 at the editor surface: a drifted field surfaces as an amber chip in the
+		// inspector for the selected block; opening it reveals the diagnostic naming the
+		// expected field and its closest match, with the inline remap reaching the
+		// existing `?/remap` action.
 		const diagnostic: BlockDiagnostic = {
 			blockId: 'metrics',
 			blockType: 'table',
@@ -139,7 +154,7 @@ describe('BlockEditor binding state (Epic 10.5)', () => {
 			state: 'drifted',
 			drifts: [{ expected: 'count', closest: 'counts', distance: 1 }]
 		};
-		const { getByRole, getByText, container } = renderBindableBlock(
+		const { getByRole, getByText, container } = renderInspectorForBlock(
 			{
 				type: 'table',
 				id: 'metrics',
@@ -178,7 +193,7 @@ describe('BlockEditor binding state (Epic 10.5)', () => {
 	});
 
 	it('shows no diagnostic chip when the block is clean (no drift)', async () => {
-		const { getByRole } = renderBindableBlock({
+		const { getByRole } = renderInspectorForBlock({
 			type: 'table',
 			id: 'metrics',
 			columns: [{ key: 'severity', label: 'Severity' }],

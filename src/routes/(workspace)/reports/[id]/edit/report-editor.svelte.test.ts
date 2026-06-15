@@ -68,29 +68,31 @@ describe('ReportEditor shell', () => {
 		expect(report.document.title).toBe('Shell Fixture');
 	});
 
-	it('keeps the split preview closed until the author opens it, then toggles it back', async () => {
+	it('shows the inspector by default and swaps the right pane to the preview on demand', async () => {
 		const { getByLabelText, getByRole } = renderEditor(sampleReport());
 
-		// Opening a report shows the editing form alone - no preview pane the author
-		// did not ask for (the split preview is off by default).
+		// The right pane shows the Inspector by default - no preview pane the author did
+		// not ask for (the "Apercu" segment is unpressed at rest).
 		expect(getByLabelText('Live preview').query()).toBeNull();
+		await expect.element(getByLabelText('Inspector')).toBeVisible();
 
-		const toggle = getByRole('button', { name: 'Split preview' });
-		await toggle.click();
+		// Switching the pane to "Apercu" swaps in the live preview.
+		await getByRole('button', { name: 'Apercu' }).click();
 		await expect.element(getByLabelText('Live preview')).toBeVisible();
 
-		// Toggling again hides it, returning the form to full width.
-		await toggle.click();
+		// Switching back to "Inspecteur" returns the pane to the inspector.
+		await getByRole('button', { name: 'Inspecteur' }).click();
 		await vi.waitFor(() => {
 			expect(getByLabelText('Live preview').query()).toBeNull();
 		});
+		await expect.element(getByLabelText('Inspector')).toBeVisible();
 	});
 
 	it('renders the authoritative live preview through the pure renderer', async () => {
 		const { getByText, getByLabelText, getByRole } = renderEditor(sampleReport());
 
 		// The split preview is off by default; reveal it via the toolbar toggle.
-		await getByRole('button', { name: 'Split preview' }).click();
+		await getByRole('button', { name: 'Apercu' }).click();
 
 		// The embedded LivePreview is the SAME `$lib/render` tier the reader uses, so
 		// the loaded paragraph appears in the preview pane, not a lookalike.
@@ -103,7 +105,7 @@ describe('ReportEditor shell', () => {
 	it('updates the live preview from the in-edit document as the author edits', async () => {
 		const { getByLabelText, getByRole } = renderEditor(sampleReport());
 
-		await getByRole('button', { name: 'Split preview' }).click();
+		await getByRole('button', { name: 'Apercu' }).click();
 		await getByLabelText('Report title').fill('Renamed Report');
 
 		// The preview re-renders from the in-edit document: the new title shows in the

@@ -1,15 +1,10 @@
 <script lang="ts">
-	import { formatUtcDate } from '$lib/format';
-	import type { Block, BlockType, DocumentV1, Scales } from '$lib/schema';
+	import { AUDIENCES, type Block } from '$lib/schema';
+	import type { Scales } from '$lib/schema';
 	import { isBindable } from '$lib/schema';
 	import type { BlockDiagnostic } from '$lib/server/ingestion';
-	import type { SubmitFunction } from '@sveltejs/kit';
 	import Button from '$lib/ui/Button.svelte';
-	import BindingChip from '$lib/ui/BindingChip.svelte';
-	import DiagnosticPanel from '$lib/ui/DiagnosticPanel.svelte';
-	import type { BindingGuard, DiagnosticContext, RemapActionResult } from './editor-types';
-	import RemapForm from './RemapForm.svelte';
-	import AudiencePicker from './AudiencePicker.svelte';
+	import type { EditorSelection } from './editor-types';
 	import CalloutBlockEditor from './CalloutBlockEditor.svelte';
 	import CardGridBlockEditor from './CardGridBlockEditor.svelte';
 	import ChartBlockEditor from './ChartBlockEditor.svelte';
@@ -26,13 +21,16 @@
 	import TableBlockEditor from './TableBlockEditor.svelte';
 	import TextBlockEditor from './TextBlockEditor.svelte';
 	import TimelineBlockEditor from './TimelineBlockEditor.svelte';
+	import type { BlockType } from '$lib/schema';
 	import type { EditorIssue, MatrixBlockOption } from './editor-state';
 
-	// Thin dispatcher: owns the shared block chrome (header controls, inline
-	// issue list, audience picker) and delegates the type-specific body to one
-	// of the five per-type editors. The `{@const}` narrows the block union so
-	// each child binds a precisely typed block (Svelte 5 ownership: a child that
-	// mutates a prop needs that prop bound, not the whole block re-derived).
+	// Thin dispatcher: owns the calm block chrome (a quiet type chip, a compact
+	// at-a-glance state row, the hover-revealed move/remove gutter, the inline issue
+	// list) and delegates the type-specific body to one of the per-type editors. The
+	// per-element SETTINGS (audience, binding state + remap) no longer live here; they
+	// surface in the right-pane inspector for the SELECTED block (UX redesign). The
+	// `diagnostic` prop is still threaded in - read-only here, for the compact "Derive"
+	// tag so the author sees drift status without selecting.
 	interface Props {
 		block: Block;
 		blockIndex: number;
@@ -44,12 +42,10 @@
 		matrixBlocks?: MatrixBlockOption[];
 		/** This block's binding diagnostic from the last rebind (Epic 10.5), if drifted/unresolved. */
 		diagnostic?: BlockDiagnostic;
-		/** The rebind source's available fields + data set id (Epic 10.5), for the inline remap. */
-		diagnosticContext?: DiagnosticContext;
-		/** The editor's dirty/saving guard (Epic 10.5): a remap reseed must not run with unsaved edits. */
-		bindingGuard?: BindingGuard;
-		/** Reports a successful inline remap UP so the editor reconciles the token (Epic 10.5). */
-		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
+		/** Whether this block is the selected element (drives the selection ring). */
+		selected: boolean;
+		/** Reports a new selection UP so the inspector follows (UX redesign). */
+		onSelect: (target: EditorSelection) => void;
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -63,59 +59,50 @@
 		scales,
 		matrixBlocks,
 		diagnostic,
-		diagnosticContext,
-		bindingGuard,
-		onRemapped,
+		selected,
+		onSelect,
 		onEdit,
 		onRemove,
 		onMove
 	}: Props = $props();
 
-	const diagnosticFields = $derived(diagnosticContext?.fields ?? []);
-	const diagnosticDataSetId = $derived(diagnosticContext?.dataSetId ?? null);
+	// A human type chip label (UX redesign): a calm capitalized name rather than the
+	// raw schema key. Falls back to the key for a forward-version type the validator let
+	// through.
+	const TYPE_LABEL = {
+		text: 'Texte',
+		table: 'Table',
+		chart: 'Graphique',
+		kpi: 'KPI',
+		image: 'Image',
+		'comparison-matrix': 'Matrice',
+		'field-grid': 'Field grid',
+		legend: 'Legende',
+		'set-membership': 'Set membership',
+		'chip-cluster': 'Chips',
+		callout: 'Callout',
+		code: 'Code',
+		'card-grid': 'Card grid',
+		list: 'Liste',
+		timeline: 'Timeline'
+	} satisfies Record<BlockType, string>;
+	const typeLabel = $derived((TYPE_LABEL as Record<string, string>)[block.type] ?? block.type);
 
-	// Bound-vs-static state (Epic 10.5): a bindable block whose `binding` carries a
-	// resolved `dataSetId` is BOUND (its values come from the data set); otherwise it
-	// carries static data (edited in 10.3/10.4) or only declares expected fields. The
-	// editor shows this state clearly so the author knows where the values come from.
-	// `isBindable(block)` is the schema's type guard: it narrows the block union so
-	// `block.binding` is reachable, which a boolean `blockIsBindable` would not do.
+	// Compact at-a-glance state, non-interactive (the controls live in the inspector):
+	// the audience tag only when the block is restricted to a subset of levels, a
+	// "Lie"/"Statique" tag for bindable blocks, and a "Derive" tag when a drift
+	// diagnostic exists - so the author reads status without selecting.
 	const blockIsBindable = $derived(isBindable(block));
-	const boundDataSetId = $derived(
-		isBindable(block) && block.binding ? (block.binding.dataSetId ?? null) : null
+	const isBound = $derived(isBindable(block) && block.binding ? !!block.binding.dataSetId : false);
+	const audienceLabel = $derived(
+		block.audiences && block.audiences.length > 0 && block.audiences.length < AUDIENCES.length
+			? block.audiences.join(', ')
+			: null
 	);
-	const dataAsOf = $derived(
-		isBindable(block) && block.binding ? (block.binding.dataAsOf ?? null) : null
-	);
 
-	let remapOpen = $state(false);
-
-	// Reset the inline remap panel when the block's diagnostic changes (Epic 10.5): a
-	// rebind replaces the per-block diagnostic, so a panel left open from the prior
-	// diagnostic would show a stale expand state against the new drift. Collapse it so
-	// the new diagnostic surfaces fresh (the author re-opens to act on the new drift).
-	$effect(() => {
-		void diagnostic;
-		remapOpen = false;
-	});
-
-	// The inline remap (Epic 10.5): reuses the EXISTING `?/remap` action and the
-	// shared DiagnosticPanel, surfaced AT the drifted block. On success the editor
-	// reconciles the concurrency token (onRemapped) - the binding mutated the report.
-	const submitRemap: SubmitFunction = ({ cancel }) => {
-		// Block the remap while the editor has unsaved edits in flight (the DATA-LOSS
-		// guard): a remap reseed would overwrite them. Let the autosave land, then retry.
-		if (bindingGuard && !bindingGuard(cancel)) return;
-		return async ({ result }) => {
-			if (result.type === 'success') {
-				remapOpen = false;
-				const payload = result.data as Partial<RemapActionResult> | undefined;
-				if (payload?.remappedAt && payload.document && onRemapped) {
-					onRemapped(payload.remappedAt, payload.document, block.id);
-				}
-			}
-		};
-	};
+	function selectBlock(): void {
+		onSelect({ kind: 'block', id: block.id });
+	}
 
 	// Exhaustiveness guard for the `{#if block.type === ...}` dispatch below, matching
 	// the renderer's BlockRenderer backstop. The template chain cannot itself be
@@ -147,73 +134,48 @@
 <!-- `tabindex="-1"` + `data-block-id` make this card a scriptable focus target so
      the section's structural-edit focus management (add / move / delete) can move
      focus to the right block without putting the card in the tab order (Story 10.2,
-     NFR15). -->
+     NFR15). Clicking anywhere in the card or focusing into it selects the block, so the
+     inspector shows its settings (UX redesign). -->
 <article
 	class="block-card"
+	class:selected
 	aria-label={`${block.type} block`}
 	tabindex="-1"
 	data-block-id={block.id}
+	onclickcapture={selectBlock}
+	onfocusin={selectBlock}
 >
 	<header>
-		<span class="block-type">{block.type}</span>
-		<div class="controls">
-			<Button onclick={() => onMove(-1)} disabled={blockIndex === 0}>
-				<span class="sr-only">Move block up</span>
-				<span aria-hidden="true">Up</span>
-			</Button>
-			<Button onclick={() => onMove(1)} disabled={blockIndex === count - 1}>
-				<span class="sr-only">Move block down</span>
-				<span aria-hidden="true">Down</span>
-			</Button>
-			<Button variant="ghost" onclick={onRemove}>
-				<span class="sr-only">Remove block</span>
-				<span aria-hidden="true">Remove</span>
-			</Button>
+		<div class="block-head">
+			<span class="type-chip">{typeLabel}</span>
+			<div class="state-tags" aria-hidden="true">
+				{#if blockIsBindable}
+					<span class="mini-tag" class:bound={isBound}>{isBound ? 'Lie' : 'Statique'}</span>
+				{/if}
+				{#if diagnostic}<span class="mini-tag drift">Derive</span>{/if}
+				{#if audienceLabel}<span class="mini-tag">{audienceLabel}</span>{/if}
+			</div>
+		</div>
+		<div class="gutter">
+			<span class="gutter-hint" aria-hidden="true">&#8943;</span>
+			<div class="controls">
+				<Button onclick={() => onMove(-1)} disabled={blockIndex === 0}>
+					<span class="sr-only">Move block up</span>
+					<span aria-hidden="true">Up</span>
+				</Button>
+				<Button onclick={() => onMove(1)} disabled={blockIndex === count - 1}>
+					<span class="sr-only">Move block down</span>
+					<span aria-hidden="true">Down</span>
+				</Button>
+				<Button variant="ghost" onclick={onRemove}>
+					<span class="sr-only">Remove block</span>
+					<span aria-hidden="true">Remove</span>
+				</Button>
+			</div>
 		</div>
 	</header>
 
 	<IssueList {issues} variant="block" showField />
-
-	<AudiencePicker bind:audiences={block.audiences} legend="Block audiences" {onEdit} />
-
-	<!-- Binding state at the block (Epic 10.5): a bindable block shows whether its
-	     values come from a data set (BOUND) or are static, plus any drift diagnostic
-	     from the last rebind, with the inline remap reaching the EXISTING `?/remap`
-	     action - the diagnostics surface where the author is editing, not on a
-	     separate screen. The renderer-purity boundary holds: this is a workspace-only
-	     editor surface, the type-only `BlockDiagnostic` import erases at build. -->
-	{#if blockIsBindable}
-		<div class="binding-state" aria-label="Binding state">
-			{#if boundDataSetId}
-				<span class="state-badge bound">Bound to data set</span>
-				{#if dataAsOf}<span class="data-as-of">Data as of {formatUtcDate(dataAsOf)}</span>{/if}
-			{:else}
-				<span class="state-badge static">Static data</span>
-			{/if}
-			{#if diagnostic}
-				<BindingChip
-					state={diagnostic.state}
-					count={diagnostic.drifts.length}
-					pressed={remapOpen}
-					onclick={() => (remapOpen = !remapOpen)}
-				/>
-			{/if}
-		</div>
-		{#if diagnostic && remapOpen}
-			<DiagnosticPanel {diagnostic} available={diagnosticFields}>
-				{#snippet remap(expectedField: string, suggested: string | null)}
-					<RemapForm
-						blockId={block.id}
-						dataSetId={diagnosticDataSetId ?? ''}
-						{expectedField}
-						{suggested}
-						fields={diagnosticFields}
-						submit={submitRemap}
-					/>
-				{/snippet}
-			</DiagnosticPanel>
-		{/if}
-	{/if}
 
 	{#if block.type === 'text'}
 		<TextBlockEditor bind:block {onEdit} />
@@ -262,7 +224,7 @@
 		margin-bottom: var(--space-4);
 		padding: var(--space-4) var(--space-5);
 		background: var(--color-stone);
-		border: 1px solid var(--color-ink-12);
+		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
 	}
 
@@ -273,76 +235,106 @@
 		outline-offset: 2px;
 	}
 
+	/* The selected block carries the same purple ring as :focus-visible, so the
+	   selection state reads in the same visual language as keyboard focus. */
+	.block-card.selected {
+		background: var(--color-surface);
+		border-color: var(--color-purple);
+		box-shadow: 0 0 0 1px var(--color-purple);
+	}
+
 	header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: var(--space-3);
 		margin-bottom: var(--space-3);
 	}
 
-	.block-type {
-		font-size: var(--text-sm);
-		font-weight: 600;
+	.block-head {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-wrap: wrap;
+		min-width: 0;
+	}
+
+	.type-chip {
+		display: inline-flex;
+		align-items: center;
+		font-size: var(--text-xs);
+		font-weight: 700;
+		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
 		color: var(--color-ink-65);
+		background: var(--color-ink-08);
+		padding: 2px var(--space-3);
+		border-radius: var(--radius-pill);
+	}
+
+	.state-tags {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+		flex-wrap: wrap;
+	}
+
+	.mini-tag {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		padding: 1px var(--space-2);
+		color: var(--color-ink-65);
+		background: var(--color-ink-08);
+		border-radius: var(--radius-pill);
+		text-transform: capitalize;
+	}
+
+	.mini-tag.bound {
+		color: var(--color-green);
+		background: color-mix(in srgb, var(--color-green) 14%, white);
+	}
+
+	.mini-tag.drift {
+		color: var(--color-amber);
+		background: color-mix(in srgb, var(--color-amber) 14%, white);
+	}
+
+	/* Hover/focus-revealed gutter (UX redesign, WCAG 2.2 SC 3.2.7). At rest the
+	   control cluster is opacity:0 but the gutter keeps a PERSISTENT faint glyph so the
+	   author knows controls exist; hover, focus-within, and selection reveal the
+	   buttons. The buttons stay in the DOM and the tab order (a keyboard focus reveals
+	   them via :focus-within), so no control is hover-only. */
+	.gutter {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-shrink: 0;
+	}
+
+	.gutter-hint {
+		color: var(--color-ink-25);
+		font-size: var(--text-sm);
 	}
 
 	.controls {
 		display: flex;
 		gap: var(--space-1);
+		opacity: 0;
+		transition: opacity 0.12s ease;
 	}
 
-	/* Binding state row (Epic 10.5): the bound-vs-static badge and any drift chip,
-	   shown above the block's editing fields so the author sees where the values come
-	   from before they edit. */
-	.binding-state {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2);
-		margin-bottom: var(--space-3);
+	.block-card:hover .controls,
+	.block-card:focus-within .controls,
+	.block-card.selected .controls {
+		opacity: 1;
 	}
 
-	/* The shared BindingChip composites its translucent state background over the
-	   element behind it. Inside the block card that element is `--color-stone`, where
-	   the amber chip's 12%-over-stone background drops the amber text to a 4.46:1
-	   contrast (just under the WCAG AA 4.5:1 floor). Give the chips inside this row an
-	   OPAQUE state surface (amber/green/danger mixed with white, not transparent) so the
-	   contrast is deterministic and AA-clean regardless of the card background. Scoped
-	   to `.binding-state` so the refill panel's own chips are untouched. */
-	.binding-state :global(.chip.drifted) {
-		background: color-mix(in srgb, var(--color-amber) 14%, white);
-	}
-
-	.binding-state :global(.chip.bound) {
-		background: color-mix(in srgb, var(--color-green) 14%, white);
-	}
-
-	.binding-state :global(.chip.unresolved) {
-		background: color-mix(in srgb, var(--color-danger) 12%, white);
-	}
-
-	.state-badge {
-		padding: 2px var(--space-3);
-		font-size: 12px;
-		font-weight: 600;
-		border-radius: var(--radius-pill);
-	}
-
-	.state-badge.bound {
-		color: var(--color-green);
-		background: var(--color-green-12);
-	}
-
-	.state-badge.static {
-		color: var(--color-ink-65);
-		background: var(--color-surface);
-	}
-
-	.data-as-of {
-		font-size: 12px;
-		color: var(--color-ink-65);
+	/* The ghost Remove button's default text (`--color-ink-65`) drops below the WCAG AA
+	   4.5:1 floor on the light card surface; pin the gutter ghost text to a darker ink so
+	   the revealed control is AA-clean. Scoped to the gutter so the global ghost variant
+	   is untouched. */
+	.controls :global(.btn.ghost) {
+		color: var(--color-ink-80);
 	}
 
 	/* The exhaustiveness fallback (forward-version block type): a neutral notice so an
