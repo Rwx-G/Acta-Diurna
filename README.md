@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.15.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.16.0-brightgreen.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-feature--complete-brightgreen.svg" alt="Status">
   <img src="https://img.shields.io/badge/SvelteKit-Svelte%205%20%2B%20TS-FF3E00.svg" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Node-22-339933.svg" alt="Node">
@@ -23,7 +23,7 @@ Acta Diurna replaces the slide deck for recurring reporting. A report is one dec
 
 The tool carries the skeleton - structure, templates, rendering, sharing, access control. Connected AI assistants build the content and data into it: an agent authors natively over MCP, or an author generates a draft outline-first, both through the same validated document model. *Acta Diurna* were the daily public gazettes of ancient Rome: the original recurring report.
 
-> **Status: feature-complete, not yet production-hardened.** Every capability below is implemented: the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing, the SMTP-gated single / multi-author model with per-author tenancy, multi-audience reading and governance (audience levels, presenter view, access audit and retention, data freshness, theme selection), and in-report drill-down (internal links to hidden detail pages). The codebase has been through a full security and quality audit with no high-severity findings outstanding, and its multi-author and reader-verification flows run end to end in CI. It is not yet production-ready - live-deploy hardening (reverse-proxy / TLS posture, an optional reader-session TTL) is still ahead. Two honest gaps: the Excel parser returns a "not enabled" stub (CSV / JSON are supported), and AI generation is tested against a mocked model in CI. See the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
+> **Status: feature-complete, not yet production-hardened.** Every capability below is implemented: the document model and renderer, the block catalogue, templates and data binding, the REST API and MCP server, outline-first AI generation, magic-link sharing, the SMTP-gated single / multi-author model with per-author tenancy, multi-audience reading and governance (audience levels, presenter view, access audit and retention, data freshness, theme selection), in-report drill-down (internal links to hidden detail pages), recurring report series with automatic issue-over-issue diffing (a workspace "what changed" view, numeric KPI deltas baked at publish, and an opt-in audience-aware reader change summary), and an in-browser WYSIWYG editor (block palette, per-block field editing, in-editor data binding, audience-aware live preview, autosave, and in-tab undo / redo) over the one validate-on-write service. The codebase has been through a full security and quality audit with no high-severity findings outstanding, and its multi-author and reader-verification flows run end to end in CI. The report-series and WYSIWYG-editor work is implemented and in review (not yet signed off). It is not yet production-ready - live-deploy hardening (reverse-proxy / TLS posture, an optional reader-session TTL) is still ahead. Two honest gaps: the Excel parser returns a "not enabled" stub (CSV / JSON are supported), and AI generation is tested against a mocked model in CI. See the [Roadmap](#roadmap). The product brief lives in [`docs/brief.md`](docs/brief.md).
 
 ## Key Features
 
@@ -59,6 +59,22 @@ The tool carries the skeleton - structure, templates, rendering, sharing, access
 - **Outline-first generation** - the author (or an agent) states an intent, the model proposes an outline, the outline is reviewed and approved, then the model fills a schema-valid draft. Approval is bound to the exact outline by a content hash, so content is never generated from an unapproved structure. Driveable from the workspace, the REST API (`POST /api/v1/reports/generate/outline` + `/fill`), and MCP, all over the one two-stage generation service
 - **Bring your own endpoint** - point `LLM_BASE_URL` at any OpenAI-compatible base (the OpenAI API, a local Ollama / llama.cpp runtime, or an Anthropic-compatible proxy). **No default cloud endpoint, no phone-home**; the API key is redacted everywhere
 - **Two explicit gates** - the connector makes an outbound call only when the endpoint is configured AND `AI_GENERATION_ENABLED=true`. Untrusted model output is always validated on write and never executed
+
+### :pencil2: In-browser WYSIWYG editor
+
+- **Edit a report visually** in the workspace, against an authoritative live preview rendered by the SAME pure renderer the reader gets - what you edit is what ships, not a lookalike. Just another producer over the one validate-on-write service: an invalid edit is the same RFC 9457 problem-details at the failing block, and a published report loads read-only
+- **Block palette + structural editing** - add any block type or section, reorder and delete, all keyboard-accessible with managed focus; the palette is exhaustive over the block union by construction (a new block type is a compile error here, never a silent omission)
+- **Per-block field editing** for every block type - a table as a grid, a chart as series config, text as inline-formatted runs (bold / italic / inline-code / internal or external link, no contenteditable, no raw-HTML path), the reporting and rich blocks (comparison matrix, timeline, callout, card grid and the rest) as structured forms over their declared scales
+- **Data binding from the editor** - bind, rebind, and remap a table / chart / KPI to an uploaded data set at the block being edited, with the same green / amber / red diagnostics and closest-field remap the refill panel uses, reconciled against optimistic concurrency
+- **Audience-aware live preview, tags, and speaker notes** - switch the preview between summary / full / technical with the reader's own mechanism, set audience tags per section / block, and edit author-only speaker notes in place (stripped server-side, type-enforced never to reach a reader)
+- **Autosave with an accessible status indicator** (saving / saved / failed-retry), **in-tab undo / redo** (coalesced so a typing burst is one step, reseeded on every server baseline so undo can never resurrect pre-publish state), and optimistic-concurrency **conflict handling** that preserves in-memory edits. Workspace-only: the reader bundle ships zero editor code
+
+### :arrows_counterclockwise: Report series & auto-diff
+
+- **Recurring report series** - starting the next issue links it to the previous one by an explicit lineage edge (a real, queryable predecessor chain, not a guess from titles or dates); a fresh report is its own one-issue series. Owner-scoped, a series never spans authors
+- **Workspace "what changed since last issue" view** - a readable changelog of the diff between an issue and its predecessor: sections and blocks added / removed / moved / kept, with data-changed and content-changed flags, from one pure isomorphic diff engine that matches strictly by stable id (no fabricated renames) and degrades to a neutral verdict on substantial drift
+- **Numeric KPI deltas, baked at publish** - a data-bound KPI shows its up / down / flat movement against the same figure in the previous issue (signed absolute and relative, a visually-hidden direction word so movement is never colour alone), computed server-side and baked onto the binding; the prior issue's raw data never ships to the reader, and a delta is omitted rather than shown misleading
+- **Opt-in, audience-aware reader change summary** - an author can optionally surface a "what changed" panel to readers, baked leak-safe at publish and filtered by the SAME audience CSS as the body, so a movement or section the reader's level hides is hidden in the summary too; off by default, omitted rather than misleading on a first issue or an unpublished predecessor
 
 ### :electric_plug: API & integration
 
@@ -201,9 +217,11 @@ Validation errors are RFC 9457 problem-details with the offending block path, fi
 |---------|-------|--------|
 | v1 | Document model + hybrid renderer, block catalogue, templates + data binding, file upload + API push, REST API, MCP server, outline-first AI generation, magic-link sharing with hardening, docker compose distribution | Implemented |
 | Phase 2 | AI-native authoring (MCP + outline-first generation), the rich block catalogue (comparison matrix, UpSet, scales, callouts, code, lists, timelines and more), SMTP-gated identity & multi-author tenancy, and multi-audience reading and governance: audience levels (reader picks summary / full / technical), presenter view, access audit and retention, data freshness, theme selection | Implemented |
-| v2 (in) | [Internal links + drill-down detail pages](docs/prd/epic-11.md): a finding in a table drills down to its dedicated detail page, hidden from the main flow and the TOC, reachable only via the internal link, renderer-pure | Implemented |
+| v2 | [Internal links + drill-down detail pages](docs/prd/epic-11.md): a finding in a table drills down to its dedicated detail page, hidden from the main flow and the TOC, reachable only via the internal link, renderer-pure | Implemented |
+| v2 | [Report series + auto-diff](docs/prd/epic-9.md): lineage chain, a workspace "what changed" view, numeric KPI deltas baked at publish, and an opt-in audience-aware reader change summary | Implemented (in review) |
+| v2 | [In-browser WYSIWYG editor](docs/prd/epic-10.md): block palette, per-block field editing, in-editor data binding, audience-aware live preview, autosave, and in-tab undo / redo over the one validate-on-write service | Implemented (in review) |
 | Live deploy | Live-deploy operational hardening: reverse-proxy / TLS posture, an optional reader-session TTL, the unencrypted-remote-DB note | Next |
-| v2 | Two drafted epics: [report series + auto-diff](docs/prd/epic-9.md) and the [in-browser WYSIWYG editor](docs/prd/epic-10.md). Further vision (not yet drafted): viewer analytics, synced blocks, SQL connectors, multi-tenant spaces | Planned |
+| Further | Not yet drafted: viewer analytics, synced blocks, SQL connectors, multi-tenant spaces | Planned |
 
 ## Documentation
 
