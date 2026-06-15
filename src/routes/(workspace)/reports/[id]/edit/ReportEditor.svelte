@@ -43,6 +43,9 @@
 	const editable = $derived(report.status === 'draft');
 
 	// svelte-ignore state_referenced_locally
+	// WHY: a one-time deep copy of the loaded row at init - reading `report.document`
+	// here is the intended capture (the page remounts per report.id), not a reactive
+	// dependency. We deliberately fork the in-edit state so edits never alias the row.
 	let doc = $state(structuredClone(report.document));
 
 	// Theme selection (Story 6.5). The picker offers only known built-in themes;
@@ -83,12 +86,17 @@
 	let dirty = $state(false);
 	let saving = $state(false);
 	// svelte-ignore state_referenced_locally
+	// WHY: a one-time seed of the displayed timestamp from the loaded row; thereafter
+	// `savedAt` is owned by the save callbacks, not derived from the prop.
 	let savedAt = $state(report.updatedAt.toISOString());
 	// Optimistic concurrency (Epic 10.1): the `updatedAt` the next save asserts.
 	// Seeded from the loaded row and advanced to each successful save's timestamp,
 	// so a write that lands after a concurrent edit (a second tab, an API push, an
 	// MCP write) is the 409 conflict the editor surfaces, never a silent overwrite.
 	// svelte-ignore state_referenced_locally
+	// WHY: a one-time seed of the concurrency token from the loaded row; the save and
+	// publish/unpublish callbacks own every later transition (the prop is not the source
+	// of truth once editing starts).
 	let expectedUpdatedAt = $state(report.updatedAt.toISOString());
 	// True once a save came back 409: the in-memory edits are ahead of a newer
 	// server state, so the author must reload to reconcile before saving again.
@@ -105,16 +113,47 @@
 	let saveFormElement: HTMLFormElement | undefined = $state();
 	let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
-	// Optimistic client validation (Epic 10.1): the editor parses the live in-edit
+	// Debounced "settled" snapshot (Epic 10.1 perf): the live preview render and
+	// the optimistic validation are both expensive (a full `documentSchemaV1`
+	// safeParse with three cross-reference passes, plus the `{#key}` remount of the
+	// whole Report tree). Running them on EVERY keystroke janks the editor. Instead
+	// a single `$state.snapshot(doc)` is captured at most once per
+	// PREVIEW_DEBOUNCE_MS and both consumers derive off it, so the heavy work fires
+	// ~200 ms after typing stops, not per character. This is independent of the
+	// 800 ms autosave debounce (which posts to the server); here we only throttle
+	// the in-tab preview + inline-error recompute.
+	const PREVIEW_DEBOUNCE_MS = 200;
+	// Seeded synchronously from the loaded doc so the first paint already shows the
+	// preview and any load-time issues; the $effect below keeps it settled-fresh.
+	let settledSnapshot = $state<DocumentV1>($state.snapshot(doc) as DocumentV1);
+	let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// One clone per settle, shared by the preview and the validation. Watching
+	// `doc` (deep) schedules a single deferred capture; a burst of keystrokes
+	// collapses to one snapshot. The capture itself is the only `$state.snapshot`
+	// of the live doc on the hot path - both heavy consumers read `settledSnapshot`.
+	$effect(() => {
+		// Touch the document so the effect re-runs on any nested edit.
+		void doc;
+		clearTimeout(settleTimer);
+		settleTimer = setTimeout(() => {
+			settledSnapshot = $state.snapshot(doc) as DocumentV1;
+		}, PREVIEW_DEBOUNCE_MS);
+		return () => clearTimeout(settleTimer);
+	});
+
+	// Optimistic client validation (Epic 10.1): the editor parses the in-edit
 	// document against the SAME isomorphic `documentSchemaV1` the server validates
 	// with, so a problem is placed inline at the failing block BEFORE any round-trip.
 	// Guidance, never a gate - the author keeps editing, and the server
 	// validate-on-write stays the only authority (an invalid document is rejected
-	// there even if this passed). Issues are grouped against the LIVE document so
-	// they track the block the author is editing. `optimisticDocumentIssues` reuses
-	// the per-block/section schemas the renderer already ships, so it adds zero bytes
-	// to the reader path (it never imports the server-side validate-on-write helper).
-	const optimisticIssues: EditorIssue[] = $derived(optimisticDocumentIssues($state.snapshot(doc)));
+	// there even if this passed). It runs off the DEBOUNCED `settledSnapshot`, not
+	// the live doc, so the full safeParse fires ~200 ms after typing stops rather
+	// than per keystroke. Issues still group against the live `doc` below (by stable
+	// block id), so they track the block the author is editing. `optimisticDocumentIssues`
+	// reuses the per-block/section schemas the renderer already ships, so it adds
+	// zero bytes to the reader path (it never imports the server-side validate-on-write helper).
+	const optimisticIssues: EditorIssue[] = $derived(optimisticDocumentIssues(settledSnapshot));
 
 	// What the inline placement renders. After a JS save that FAILED, the server's
 	// authoritative errors (`clientErrors`) take precedence and map against the
@@ -137,31 +176,54 @@
 			(clientErrors === null && (form?.errors?.length ?? 0) === 0 ? (form?.message ?? null) : null)
 	);
 
-	// The authoritative live preview (Epic 10.1): a plain snapshot of the in-edit
-	// document, fed to the SAME pure `$lib/render` tier the reader SSR path uses
-	// (through the embedded LivePreview). What the author edits is what the reader
-	// gets - this is the reader render, not a lookalike. The snapshot re-derives on
-	// every edit so the preview tracks the document live; a transiently-invalid
-	// snapshot still renders (LivePreview goes through `toPreviewView`, which renders
-	// valid blocks and flags invalid ones rather than crashing).
-	const previewSnapshot = $derived($state.snapshot(doc));
+	// The authoritative live preview (Epic 10.1): the SAME debounced `settledSnapshot`
+	// the optimistic validation reads, fed to the SAME pure `$lib/render` tier the
+	// reader SSR path uses (through the embedded LivePreview). What the author edits
+	// is what the reader gets - this is the reader render, not a lookalike. Feeding
+	// the SETTLED snapshot (one clone per settle, shared with the validation) means
+	// the LivePreview `{#key document}` remount throttles to ~200 ms after typing
+	// stops instead of tearing down and rebuilding the whole Report tree (onMount,
+	// IntersectionObserver, every chart's d3 geometry) on every keystroke. A
+	// transiently-invalid snapshot still renders (LivePreview goes through
+	// `toPreviewView`, which renders valid blocks and flags invalid ones rather than
+	// crashing).
+	const previewSnapshot = $derived(settledSnapshot);
 
 	/*
-	 * Autosave choice (story 1.5): the save form is a real form action with a
-	 * visible Save button (no-JS baseline posts the named narrative fields).
-	 * With JS, every edit debounces 800 ms then calls requestSubmit(), so the
-	 * autosave and the manual Save share one code path through use:enhance;
-	 * the enhance callback injects the serialized document and applies the
-	 * result without a data reload (a reload would clobber in-flight edits).
-	 * A beforeunload guard covers the window between an edit and its save.
+	 * Autosave concurrency contract (story 1.5, made explicit in 10.1 ahead of
+	 * 10.2-10.7 adding more save triggers). The save form is a real form action
+	 * with a visible Save button (no-JS baseline posts the named narrative fields).
+	 * With JS, the one code path is `scheduleSave()` -> debounce -> requestSubmit()
+	 * -> use:enhance (`submitSave`); the enhance callback injects the serialized
+	 * document and applies the result without a data reload (a reload would clobber
+	 * in-flight edits). A beforeunload guard covers the window between an edit and
+	 * its save.
+	 *
+	 * State machine (the invariant every save trigger obeys):
+	 *  - `saving` = at most ONE save is in flight at a time.
+	 *  - `pendingSave` = at most ONE save is queued behind the in-flight one. An
+	 *    edit (or a save fired while one is in flight) sets it; the in-flight
+	 *    callback's `finally` flushes it via `scheduleSave()`, so the latest state
+	 *    always lands without overlapping writes.
+	 *  - `conflict` is owned here: cleared on a successful save AND on the
+	 *    cancel-when-in-flight path (the queued save will re-assert), set only on a
+	 *    409. It is never left stale by a dropped submit.
 	 */
 	const AUTOSAVE_DEBOUNCE_MS = 800;
+	let pendingSave = false;
+
+	// The single named save seam: every autosave trigger (an edit today, the
+	// palette/binder writes 10.2-10.7 add) goes through here, never a raw timer.
+	function scheduleSave(): void {
+		if (!editable) return;
+		clearTimeout(autosaveTimer);
+		autosaveTimer = setTimeout(() => saveFormElement?.requestSubmit(), AUTOSAVE_DEBOUNCE_MS);
+	}
 
 	function onEdit(): void {
 		if (!editable) return;
 		dirty = true;
-		clearTimeout(autosaveTimer);
-		autosaveTimer = setTimeout(() => saveFormElement?.requestSubmit(), AUTOSAVE_DEBOUNCE_MS);
+		scheduleSave();
 	}
 
 	const submitSave: SubmitFunction = ({ formData, cancel }) => {
@@ -170,10 +232,13 @@
 			return;
 		}
 		if (saving) {
-			// A save is in flight: drop this one and reschedule so the latest
-			// state still lands.
+			// A save is in flight: drop this submit and QUEUE one. The in-flight
+			// callback's finally flushes the queue, so the latest state still lands
+			// (at-most-one-queued). Clear any stale conflict flag - the queued save
+			// re-asserts the current token.
 			cancel();
-			onEdit();
+			pendingSave = true;
+			conflict = false;
 			return;
 		}
 		clearTimeout(autosaveTimer);
@@ -185,39 +250,50 @@
 		formData.set('expectedUpdatedAt', expectedUpdatedAt);
 		saving = true;
 		return async ({ result }) => {
-			saving = false;
-			if (result.type === 'success') {
-				dirty = false;
-				conflict = false;
-				clientErrors = [];
-				saveMessage = null;
-				const payload = result.data as { savedAt?: string } | undefined;
-				if (payload?.savedAt) {
-					savedAt = payload.savedAt;
-					// Advance the concurrency token so the NEXT save asserts against the
-					// state this save just wrote, not the stale loaded value.
-					expectedUpdatedAt = payload.savedAt;
-				}
-			} else if (result.type === 'failure') {
-				if (result.status === 409) {
-					// A concurrent write landed between load and save: surface the conflict
-					// and the resolve path (reload). Do NOT advance the token or clear the
-					// in-memory edits - the author reloads to reconcile, never a silent
-					// last-writer-wins overwrite.
-					conflict = true;
+			try {
+				if (result.type === 'success') {
+					dirty = false;
+					conflict = false;
 					clientErrors = [];
-					const payload = result.data as { message?: string } | undefined;
-					saveMessage =
-						payload?.message ??
-						'This report changed since you opened it. Reload to get the latest version, then reapply your edits.';
-					return;
+					saveMessage = null;
+					const payload = result.data as { savedAt?: string } | undefined;
+					if (payload?.savedAt) {
+						savedAt = payload.savedAt;
+						// Advance the concurrency token so the NEXT save asserts against the
+						// state this save just wrote, not the stale loaded value.
+						expectedUpdatedAt = payload.savedAt;
+					}
+				} else if (result.type === 'failure') {
+					if (result.status === 409) {
+						// A concurrent write landed between load and save: surface the conflict
+						// and the resolve path (reload). Do NOT advance the token or clear the
+						// in-memory edits - the author reloads to reconcile, never a silent
+						// last-writer-wins overwrite. A 409 also drops any queued save: the
+						// author must reconcile first (a queued write would just 409 again).
+						conflict = true;
+						pendingSave = false;
+						clientErrors = [];
+						const payload = result.data as { message?: string } | undefined;
+						saveMessage =
+							payload?.message ??
+							'This report changed since you opened it. Reload to get the latest version, then reapply your edits.';
+						return;
+					}
+					const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
+					clientErrors = payload?.errors ?? [];
+					saveMessage = clientErrors.length === 0 ? (payload?.message ?? 'Save failed.') : null;
+				} else if (result.type === 'error') {
+					clientErrors = [];
+					saveMessage = 'Save failed: the server could not be reached.';
 				}
-				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
-				clientErrors = payload?.errors ?? [];
-				saveMessage = clientErrors.length === 0 ? (payload?.message ?? 'Save failed.') : null;
-			} else if (result.type === 'error') {
-				clientErrors = [];
-				saveMessage = 'Save failed: the server could not be reached.';
+			} finally {
+				saving = false;
+				// Flush the at-most-one queued save: an edit landed while this one was
+				// in flight, so re-arm the single save path to carry the latest state.
+				if (pendingSave) {
+					pendingSave = false;
+					scheduleSave();
+				}
 			}
 		};
 	};
@@ -243,12 +319,17 @@
 			if (result.type === 'success') {
 				clientErrors = [];
 				saveMessage = null;
+				// publish wrote a new `updatedAt`; reconcile the concurrency token from the
+				// action RESULT (self-contained) so a later unpublish-then-edit save asserts
+				// the latest state, not the stale pre-publish value. Seeding from the result
+				// rather than the post-invalidateAll prop removes the dependency on update
+				// ordering.
+				const payload = result.data as { savedAt?: string } | undefined;
+				if (payload?.savedAt) {
+					expectedUpdatedAt = payload.savedAt;
+					savedAt = payload.savedAt;
+				}
 				await invalidateAll();
-				// publish wrote a new `updatedAt`; reconcile the concurrency token so a
-				// later unpublish-then-edit save asserts the latest state, not the stale
-				// pre-publish value.
-				expectedUpdatedAt = report.updatedAt.toISOString();
-				savedAt = expectedUpdatedAt;
 			} else if (result.type === 'failure') {
 				const payload = result.data as { errors?: EditorIssue[]; message?: string } | undefined;
 				submittedDoc = $state.snapshot(doc) as DocumentV1;
@@ -269,12 +350,17 @@
 				clientErrors = [];
 				saveMessage = null;
 				conflict = false;
+				// unpublish wrote a new `updatedAt`; reconcile the concurrency token from
+				// the action RESULT (self-contained) so the first edit-and-save after
+				// returning to draft asserts the latest state instead of a stale one (a
+				// spurious 409). Seeding from the result rather than the post-invalidateAll
+				// prop removes the dependency on update ordering.
+				const payload = result.data as { savedAt?: string } | undefined;
+				if (payload?.savedAt) {
+					expectedUpdatedAt = payload.savedAt;
+					savedAt = payload.savedAt;
+				}
 				await invalidateAll();
-				// unpublish wrote a new `updatedAt`; reconcile the concurrency token so
-				// the first edit-and-save after returning to draft asserts the latest
-				// state instead of a stale one (a spurious 409).
-				expectedUpdatedAt = report.updatedAt.toISOString();
-				savedAt = expectedUpdatedAt;
 			} else if (result.type === 'failure') {
 				const payload = result.data as { message?: string } | undefined;
 				saveMessage = payload?.message ?? 'Unpublish failed.';

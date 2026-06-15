@@ -293,7 +293,10 @@ export const actions: Actions = {
 					params.id,
 					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
-				return { published: true, status: report.status };
+				// Return the new `updatedAt` so the editor reseeds its concurrency token
+				// from THIS result, self-contained, instead of depending on the prop
+				// refreshing after invalidateAll (an ordering the callback should not lean on).
+				return { published: true, status: report.status, savedAt: report.updatedAt.toISOString() };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
@@ -305,7 +308,9 @@ export const actions: Actions = {
 					params.id,
 					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
-				return { published: false, status: report.status };
+				// Return the new `updatedAt` so the editor reseeds its concurrency token
+				// from THIS result (see the publish action note).
+				return { published: false, status: report.status, savedAt: report.updatedAt.toISOString() };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);

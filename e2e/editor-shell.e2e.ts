@@ -101,9 +101,15 @@ test('a stale expectedUpdatedAt save surfaces the concurrency conflict', async (
 	const firstBody = (await firstSave.json()) as { type?: string; data?: string };
 	expect(firstBody.type).toBe('success');
 	// SvelteKit serializes the action data; the savedAt ISO is embedded in `data`.
+	// Guard the extraction explicitly: if the serialization shape changes and the
+	// regex stops matching, the test must FAIL loudly here rather than fall through
+	// to a stale/undefined token that would silently exercise the single-writer path
+	// (the whole point of this spec is the stale-token conflict).
 	const savedAtMatch = JSON.stringify(firstBody).match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/);
 	const firstSavedAt = savedAtMatch?.[0];
-	expect(firstSavedAt).toBeTruthy();
+	expect(firstSavedAt, 'first save must surface an ISO savedAt to replay as a stale token').toMatch(
+		/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/
+	);
 
 	// A concurrent write lands: a second save WITHOUT the stale token advances
 	// `updatedAt` past `firstSavedAt`.

@@ -424,8 +424,14 @@ describe('bind action', () => {
 });
 
 type RebindAction = typeof actions.rebind;
+type RemapAction = typeof actions.remap;
+// rebind and remap share the request-event shape, so the helper builds the common
+// shape rather than asserting it is specifically a rebind event (the previous
+// `as Parameters<RebindAction>[0]` mislabelled the remap calls below). The return
+// type is the intersection both action signatures accept.
+type PostEvent = Parameters<RebindAction>[0] & Parameters<RemapAction>[0];
 
-function postEvent(action: string, form: Record<string, string>): Parameters<RebindAction>[0] {
+function postEvent(action: string, form: Record<string, string>): PostEvent {
 	const data = new FormData();
 	for (const [key, value] of Object.entries(form)) data.set(key, value);
 	return {
@@ -435,7 +441,7 @@ function postEvent(action: string, form: Record<string, string>): Parameters<Reb
 			method: 'POST',
 			body: data
 		})
-	} as Parameters<RebindAction>[0];
+	} as PostEvent;
 }
 
 describe('rebind action (FR14)', () => {
@@ -802,13 +808,21 @@ describe('generate action rate limit (5.4 QA, per author session)', () => {
 });
 
 describe('publish action', () => {
-	it('publishes and returns the new status', async () => {
-		publishMock.mockResolvedValue(sampleReport({ status: 'published' }));
+	it('publishes and returns the new status and updatedAt', async () => {
+		publishMock.mockResolvedValue(
+			sampleReport({ status: 'published', updatedAt: new Date('2026-06-12T14:00:00Z') })
+		);
 
 		const result = await actions.publish(actionEvent() as Parameters<typeof actions.publish>[0]);
 
 		expect(publishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
-		expect(result).toEqual({ published: true, status: 'published' });
+		// The action returns the new `updatedAt` so the editor reseeds its concurrency
+		// token from this result, not the post-invalidateAll prop ordering.
+		expect(result).toEqual({
+			published: true,
+			status: 'published',
+			savedAt: '2026-06-12T14:00:00.000Z'
+		});
 	});
 
 	it('maps a 422 invalid-draft AppError to a failure carrying errors[]', async () => {
@@ -832,15 +846,21 @@ describe('publish action', () => {
 });
 
 describe('unpublish action', () => {
-	it('reverts to draft and returns the new status', async () => {
-		unpublishMock.mockResolvedValue(sampleReport({ status: 'draft' }));
+	it('reverts to draft and returns the new status and updatedAt', async () => {
+		unpublishMock.mockResolvedValue(
+			sampleReport({ status: 'draft', updatedAt: new Date('2026-06-12T14:30:00Z') })
+		);
 
 		const result = await actions.unpublish(
 			actionEvent() as Parameters<typeof actions.unpublish>[0]
 		);
 
 		expect(unpublishMock).toHaveBeenCalledExactlyOnceWith(REPORT_ID, TEST_SCOPE);
-		expect(result).toEqual({ published: false, status: 'draft' });
+		expect(result).toEqual({
+			published: false,
+			status: 'draft',
+			savedAt: '2026-06-12T14:30:00.000Z'
+		});
 	});
 });
 

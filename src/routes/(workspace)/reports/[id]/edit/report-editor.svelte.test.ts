@@ -89,6 +89,21 @@ describe('ReportEditor shell', () => {
 		await expect.element(getByRole('heading', { level: 1, name: 'Renamed Report' })).toBeVisible();
 	});
 
+	it('surfaces an optimistic inline issue from the debounced settled snapshot', async () => {
+		// The optimistic validation and the live preview both read the DEBOUNCED
+		// `settledSnapshot`, not the live doc, so the heavy safeParse fires ~200 ms
+		// after typing stops rather than per keystroke. Clearing the title makes the
+		// document transiently invalid; the inline document-level guidance ("A document
+		// needs a title.") appears once the snapshot settles. `expect.element` polls,
+		// so it waits out the debounce - proving the issue is driven off the settled
+		// snapshot reactively, not computed synchronously on the live doc per edit.
+		const { getByLabelText, getByText } = renderEditor(sampleReport());
+
+		await getByLabelText('Report title').fill('');
+
+		await expect.element(getByText('A document needs a title.')).toBeVisible();
+	});
+
 	it('renders a published report read-only with the unpublish-to-edit affordance', async () => {
 		const published = sampleReport({
 			status: 'published',
