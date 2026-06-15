@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import type { Block } from '$lib/schema';
+import type { Block, DocumentV1 } from '$lib/schema';
 import type { BlockDiagnostic } from '$lib/server/ingestion';
 import BlockEditor from './BlockEditor.svelte';
+import type { DiagnosticContext } from './editor-types';
 
 function renderBlock(block: Block, issues: { path: string; message: string; hint?: string }[]) {
 	// BlockEditor declares block = $bindable(); a $state source keeps the bind:
@@ -25,19 +26,25 @@ function renderBindableBlock(
 		diagnostic?: BlockDiagnostic;
 		diagnosticFields?: string[];
 		diagnosticDataSetId?: string | null;
-		onRemapped?: (savedAt: string, document: unknown) => void;
+		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
 	} = {}
 ) {
 	const reactiveBlock = $state(block);
+	const diagnosticContext: DiagnosticContext = {
+		byBlock: options.diagnostic
+			? new Map([[options.diagnostic.blockId, options.diagnostic]])
+			: new Map(),
+		fields: options.diagnosticFields ?? [],
+		dataSetId: options.diagnosticDataSetId ?? null
+	};
 	return render(BlockEditor, {
 		block: reactiveBlock,
 		blockIndex: 0,
 		count: 1,
 		issues: [],
 		diagnostic: options.diagnostic,
-		diagnosticFields: options.diagnosticFields,
-		diagnosticDataSetId: options.diagnosticDataSetId,
-		onRemapped: options.onRemapped as never,
+		diagnosticContext,
+		onRemapped: options.onRemapped,
 		onEdit: vi.fn(),
 		onRemove: vi.fn(),
 		onMove: vi.fn()
@@ -162,10 +169,12 @@ describe('BlockEditor binding state (Epic 10.5)', () => {
 		await expect.element(getByText('count', { exact: true })).toBeVisible();
 		const remapForm = container.querySelector('form[action="?/remap"]');
 		expect(remapForm).not.toBeNull();
-		expect(remapForm?.querySelector('input[name="blockId"]')?.getAttribute('value')).toBe('metrics');
-		expect(
-			remapForm?.querySelector('input[name="expectedField"]')?.getAttribute('value')
-		).toBe('count');
+		expect(remapForm?.querySelector('input[name="blockId"]')?.getAttribute('value')).toBe(
+			'metrics'
+		);
+		expect(remapForm?.querySelector('input[name="expectedField"]')?.getAttribute('value')).toBe(
+			'count'
+		);
 	});
 
 	it('shows no diagnostic chip when the block is clean (no drift)', async () => {

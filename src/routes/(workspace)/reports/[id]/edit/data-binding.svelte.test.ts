@@ -37,9 +37,7 @@ vi.mock('$app/forms', () => ({
 				controller: new AbortController(),
 				submitter: null,
 				cancel: () => {}
-			}) as
-				| ((opts: { result: ActionResult; formData: FormData }) => Promise<void>)
-				| undefined;
+			}) as ((opts: { result: ActionResult; formData: FormData }) => Promise<void>) | undefined;
 			const actionPath = form.getAttribute('action') ?? '';
 			submitDrivers.set(actionPath, async (result: ActionResult) => {
 				if (callback) await callback({ result, formData });
@@ -176,7 +174,9 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		// the advanced concurrency token: reconcileBinding sets savedAt = expectedUpdatedAt).
 		await expect.element(screen.getByText('Saved at', { exact: false })).toBeVisible();
 		const savedAtText = screen.container.querySelector('.saved-at')!.textContent ?? '';
-		// 11:00 UTC is the bound timestamp; the loaded 09:30 must no longer be shown.
+		// 11:00 UTC is the bound timestamp: it must be shown (the token advanced to it)
+		// and the loaded 09:30 must no longer be (the editor moved off the stale value).
+		expect(savedAtText).toContain('11:00');
 		expect(savedAtText).not.toContain('09:30');
 	});
 
@@ -240,6 +240,86 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		(chip as HTMLButtonElement).click();
 		await vi.waitFor(() => {
 			expect(editorForm.querySelector('form[action="?/remap"]')).not.toBeNull();
+		});
+	});
+
+	it('gates a bind while the editor is dirty so an unsaved edit is not clobbered', async () => {
+		// The DATA-LOSS guard (Epic 10.5): a binding action reseeds the working copy from
+		// the SERVER's last-saved document. If the author has an unsaved edit in flight (a
+		// typed title the 800 ms autosave has not yet posted), an unguarded bind would
+		// overwrite it with the server document. The guard cancels the bind while dirty,
+		// so the unsaved title survives and no reconcile runs.
+		const report = sampleReport(staticTableDocument(), new Date('2026-06-12T09:30:00Z'));
+		const screen = await renderEditor(report);
+
+		// Make the editor dirty with an unsaved title edit (no autosave has landed).
+		const titleInput = screen.container.querySelector(
+			'input[aria-label="Report title"]'
+		) as HTMLInputElement;
+		titleInput.value = 'Unsaved Title';
+		titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+		// Submit the bind: the guard cancels it (dirty), so submitBind returns early and
+		// registers no result callback. Even if the test drives a (stale) server document
+		// for it, the guard blocked the reconcile, so the unsaved title edit survives.
+		const bindForm = screen.container.querySelector('form[action="?/bind"]') as HTMLFormElement;
+		bindForm.requestSubmit();
+		await drive('?/bind', {
+			type: 'success',
+			status: 200,
+			data: { boundAt: '2026-06-12T11:00:00.000Z', document: boundTableDocument() }
+		});
+		expect(
+			(screen.container.querySelector('input[aria-label="Report title"]') as HTMLInputElement).value
+		).toBe('Unsaved Title');
+		// The token did NOT advance (no reconcile ran): the displayed saved-at stays at the
+		// loaded 09:30, and the guard surfaced the "saving your latest edits" prompt.
+		expect(screen.container.querySelector('.saved-at')!.textContent ?? '').toContain('09:30');
+	});
+
+	it('clears stale per-block diagnostics on a bind after a rebind', async () => {
+		// Finding: onRebound surfaces a drift chip at the block; a subsequent BIND
+		// re-resolves that block's state from scratch, so the prior drift no longer
+		// describes it. onBound must clear the surfaced diagnostics, otherwise a stale
+		// amber chip lingers on the just-bound block.
+		const report = sampleReport(boundTableDocument(), new Date('2026-06-12T09:30:00Z'));
+		const screen = await renderEditor(report);
+
+		const diagnostic: BlockDiagnostic = {
+			blockId: 'severity-table',
+			blockType: 'table',
+			label: 'Metrics - table',
+			state: 'drifted',
+			drifts: [{ expected: 'count', closest: 'counts', distance: 1 }]
+		};
+
+		// A rebind drifts the block: the chip surfaces.
+		(screen.container.querySelector('form[action="?/rebind"]') as HTMLFormElement).requestSubmit();
+		await drive('?/rebind', {
+			type: 'success',
+			status: 200,
+			data: {
+				reboundAt: '2026-06-12T12:00:00.000Z',
+				document: boundTableDocument(),
+				diagnostics: [diagnostic],
+				summary: { total: 1, bound: 0, drifted: 1, unresolved: 0, allGreen: false },
+				rebound: []
+			}
+		});
+		const editorForm = screen.container.querySelector('.editor-form')!;
+		await vi.waitFor(() => {
+			expect(editorForm.querySelector('.binding-state button')).not.toBeNull();
+		});
+
+		// Now bind: onBound clears the diagnostics, so the drift chip is gone.
+		(screen.container.querySelector('form[action="?/bind"]') as HTMLFormElement).requestSubmit();
+		await drive('?/bind', {
+			type: 'success',
+			status: 200,
+			data: { boundAt: '2026-06-12T13:00:00.000Z', document: boundTableDocument() }
+		});
+		await vi.waitFor(() => {
+			expect(editorForm.querySelector('.binding-state button')).toBeNull();
 		});
 	});
 });

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import type { BlockType, DocumentV1, Scales, Section } from '$lib/schema';
-	import type { BlockDiagnostic } from '$lib/server/ingestion';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import BlockEditor from './BlockEditor.svelte';
 	import BlockPalette from './BlockPalette.svelte';
 	import IssueList from './IssueList.svelte';
 	import { moveItem, newBlock, type ErrorsByKey, type MatrixBlockOption } from './editor-state';
+	import type { BindingGuard, DiagnosticContext } from './editor-types';
 
 	interface Props {
 		section: Section;
@@ -18,12 +18,10 @@
 		scales?: Scales;
 		/** Comparison-matrix blocks in the document, for the set-membership editor. */
 		matrixBlocks?: MatrixBlockOption[];
-		/** Per-block binding diagnostics from the last rebind (Epic 10.5), keyed by block id. */
-		diagnosticsByBlock?: Map<string, BlockDiagnostic>;
-		/** Field names behind the current diagnostics (the rebind source), for the inline remap. */
-		diagnosticFields?: string[];
-		/** The data set id behind the current diagnostics (the rebind source). */
-		diagnosticDataSetId?: string | null;
+		/** Per-block binding diagnostics + the rebind source's fields / id (Epic 10.5). */
+		diagnostics?: DiagnosticContext;
+		/** The editor's dirty/saving guard (Epic 10.5), for the block-level inline remap. */
+		bindingGuard?: BindingGuard;
 		/** Reports a successful inline remap UP so the editor reconciles the token (Epic 10.5). */
 		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
 		onEdit: () => void;
@@ -38,9 +36,8 @@
 		errors,
 		scales,
 		matrixBlocks,
-		diagnosticsByBlock,
-		diagnosticFields,
-		diagnosticDataSetId,
+		diagnostics,
+		bindingGuard,
 		onRemapped,
 		onEdit,
 		onRemove,
@@ -151,9 +148,9 @@
 				issues={errors[`block:${block.id}`] ?? []}
 				{scales}
 				{matrixBlocks}
-				diagnostic={diagnosticsByBlock?.get(block.id)}
-				{diagnosticFields}
-				{diagnosticDataSetId}
+				diagnostic={diagnostics?.byBlock.get(block.id)}
+				diagnosticContext={diagnostics}
+				{bindingGuard}
 				{onRemapped}
 				{onEdit}
 				onRemove={() => removeBlock(blockIndex)}

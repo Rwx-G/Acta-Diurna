@@ -29,6 +29,7 @@ import { AppError, errorPageShape, rateLimited } from '$lib/server/problem';
 import { runAction } from '$lib/server/action';
 import { parseSlotMapping } from './bind-form';
 import { applyNarrativeFields } from './editor-state';
+import type { BindActionResult, RebindActionResult, RemapActionResult } from './editor-types';
 
 /**
  * Parses the editor-posted `expectedUpdatedAt` (an ISO timestamp) into a Date for
@@ -137,7 +138,10 @@ export const actions: Actions = {
 				// result and advances the concurrency token, the same self-contained
 				// reconciliation publish/unpublish use - so the next document save asserts
 				// the post-bind state instead of spuriously 409-ing on the stale value.
-				return { boundAt: report.updatedAt.toISOString(), document: report.document };
+				return {
+					boundAt: report.updatedAt.toISOString(),
+					document: report.document
+				} satisfies BindActionResult;
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
@@ -158,16 +162,16 @@ export const actions: Actions = {
 					dataSetId,
 					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
+				// The re-resolved document (Epic 10.5): the editor reseeds its working copy
+				// from this and advances the concurrency token off `reboundAt`, so a later
+				// document save asserts the post-rebind state, not a stale value.
 				return {
 					reboundAt: result.report.updatedAt.toISOString(),
-						// The re-resolved document (Epic 10.5): the editor reseeds its working
-						// copy from this and advances the concurrency token off `reboundAt`, so a
-						// later document save asserts the post-rebind state, not a stale value.
-						document: result.report.document,
+					document: result.report.document,
 					diagnostics: result.diagnostics,
 					summary: result.summary,
 					rebound: result.rebound
-				};
+				} satisfies RebindActionResult;
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
@@ -196,7 +200,10 @@ export const actions: Actions = {
 				// Return the re-resolved document AND its new `updatedAt` (Epic 10.5): the
 				// editor reseeds its working copy and advances the concurrency token, so the
 				// next document save asserts the post-remap state rather than spuriously 409-ing.
-				return { remappedAt: report.updatedAt.toISOString(), document: report.document };
+				return {
+					remappedAt: report.updatedAt.toISOString(),
+					document: report.document
+				} satisfies RemapActionResult;
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);

@@ -25,6 +25,7 @@
 		type EditorIssue,
 		type ErrorsByKey
 	} from './editor-state';
+	import type { DiagnosticContext } from './editor-types';
 	import type { ActionData, PageData } from './$types';
 
 	// The page remounts this component via {#key report.id}, so capturing the
@@ -438,6 +439,26 @@
 		};
 	};
 
+	// Dirty/saving guard for a binding action (Epic 10.5, the DATA-LOSS fix). A
+	// bind / rebind / remap reads the SERVER's last-saved document (the binding
+	// services call getReport, not the editor's in-memory doc) and its result drives
+	// reconcileBinding, which REPLACES the working copy + cancels the pending autosave
+	// + clears dirty. If the author has unsaved edits in flight (a typed title, an
+	// added section the 800 ms autosave has not yet posted), submitting a binding
+	// action would overwrite those edits with the server-derived document - silently,
+	// no conflict surfaced. So mirror the publish guard exactly: while dirty or saving,
+	// do NOT submit; cancel, let the autosave land, prompt the author to retry. This
+	// also closes the saving-in-flight reconcile race (a bind cannot start mid-save).
+	function bindingGuard(cancel: () => void): boolean {
+		if (saving || dirty) {
+			cancel();
+			scheduleSave();
+			saveMessage = 'Saving your latest edits - try binding again in a moment.';
+			return false;
+		}
+		return true;
+	}
+
 	// Binding-action concurrency reconciliation (Epic 10.5, the key correctness
 	// point). A bind / rebind / remap is a server action that MUTATES the report
 	// through the same validate-on-write path a save uses, so it advances the row's
@@ -464,6 +485,12 @@
 
 	function onBound(savedAtIso: string, document: DocumentV1): void {
 		reconcileBinding(savedAtIso, document);
+		// A bind re-resolves this block's state from scratch, so any per-block
+		// diagnostics from a PRIOR rebind no longer describe the document. Clear them
+		// (and the diagnostic source) so a stale drift chip never lingers on a block the
+		// author just re-bound; a fresh rebind repopulates them.
+		bindingDiagnostics = [];
+		diagnosticDataSetId = null;
 	}
 
 	function onRebound(
@@ -500,6 +527,16 @@
 			? []
 			: (dataSets.find((set) => set.id === diagnosticDataSetId)?.fields.map((f) => f.name) ?? [])
 	);
+
+	// One diagnostic context object (Epic 10.5): the per-block index, the rebind
+	// source's available fields, and its data set id - threaded as a SINGLE prop
+	// through SectionEditor (a clean pass-through) to BlockEditor, instead of three
+	// sibling props that are always populated, threaded and cleared together.
+	const diagnostics: DiagnosticContext = $derived({
+		byBlock: diagnosticsByBlock,
+		fields: diagnosticFields,
+		dataSetId: diagnosticDataSetId
+	});
 
 	function savedAtLabel(iso: string): string {
 		return `Saved at ${formatUtcTime(iso)}`;
@@ -641,9 +678,8 @@
 						errors={errorsByKey}
 						scales={doc.scales}
 						{matrixBlocks}
-						{diagnosticsByBlock}
-						{diagnosticFields}
-						{diagnosticDataSetId}
+						{diagnostics}
+						{bindingGuard}
 						{onRemapped}
 						{onEdit}
 						onRemove={() => removeSection(sectionIndex)}
@@ -673,9 +709,9 @@
      its working copy and advances the concurrency token (reconcileBinding) instead
      of an invalidateAll that would clobber in-flight edits and leave the token
      stale. The per-block diagnostics surface at the block too (threaded above). -->
-<BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} {onBound} />
+<BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} {bindingGuard} {onBound} />
 
-<RefillPanel {dataSets} disabled={!editable} {onRebound} {onRemapped} />
+<RefillPanel {dataSets} disabled={!editable} {bindingGuard} {onRebound} {onRemapped} />
 
 <!-- UX Flow D (FR32): the Generate-with-AI entry point appears only when the
      connector is configured + opted-in; a disabled instance hides it entirely so

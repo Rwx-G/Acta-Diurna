@@ -7,6 +7,8 @@
 	import BindingChip from '$lib/ui/BindingChip.svelte';
 	import BindingSummaryView from '$lib/ui/BindingSummary.svelte';
 	import DiagnosticPanel from '$lib/ui/DiagnosticPanel.svelte';
+	import RemapForm from './RemapForm.svelte';
+	import type { BindingGuard, RebindActionResult, RemapActionResult } from './editor-types';
 	import type { PageData } from './$types';
 
 	// The refill (UX Flow B), story 2.5: pick a fresh data set, rebind every
@@ -31,9 +33,15 @@
 			dataSetId: string
 		) => void;
 		onRemapped: (savedAt: string, document: DocumentV1, blockId: string) => void;
+		/**
+		 * The editor's dirty/saving guard (Epic 10.5): a rebind / remap reseeds the
+		 * working copy from the server document, so it must not run while unsaved edits
+		 * are in flight or it would overwrite them. Returns false (and cancels) to block.
+		 */
+		bindingGuard: BindingGuard;
 	}
 
-	let { dataSets, disabled, onRebound, onRemapped }: Props = $props();
+	let { dataSets, disabled, onRebound, onRemapped, bindingGuard }: Props = $props();
 
 	// svelte-ignore state_referenced_locally
 	let dataSetId = $state(dataSets[0]?.id ?? '');
@@ -49,20 +57,17 @@
 	const availableFields = $derived(selectedDataSet?.fields.map((field) => field.name) ?? []);
 	const driftedDiagnostics = $derived(diagnostics.filter((d) => d.state !== 'bound'));
 
-	const submitRebind: SubmitFunction = ({ formData }) => {
+	const submitRebind: SubmitFunction = ({ formData, cancel }) => {
+		// Block the rebind while the editor has unsaved edits in flight (the DATA-LOSS
+		// guard): a rebind reseed would overwrite them. Let the autosave land, then retry.
+		if (!bindingGuard(cancel)) return;
 		formData.set('dataSetId', dataSetId);
 		rebinding = true;
 		message = null;
 		return async ({ result }) => {
 			rebinding = false;
 			if (result.type === 'success') {
-				const payload = result.data as {
-					reboundAt?: string;
-					document?: DocumentV1;
-					diagnostics?: BlockDiagnostic[];
-					summary?: Summary;
-					rebound?: string[];
-				};
+				const payload = result.data as Partial<RebindActionResult>;
 				diagnostics = payload.diagnostics ?? [];
 				summary = payload.summary ?? null;
 				rebound = payload.rebound ?? [];
@@ -87,7 +92,10 @@
 		};
 	};
 
-	const submitRemap: SubmitFunction = ({ formData }) => {
+	const submitRemap: SubmitFunction = ({ formData, cancel }) => {
+		// Block the remap while the editor has unsaved edits in flight (the DATA-LOSS
+		// guard): a remap reseed would overwrite them. Let the autosave land, then retry.
+		if (!bindingGuard(cancel)) return;
 		const remappedBlockId = String(formData.get('blockId') ?? '');
 		return async ({ result }) => {
 			if (result.type === 'success') {
@@ -97,7 +105,7 @@
 				// Drop the now-green block from the panel's local diagnostics too, so its
 				// amber chip clears here (the editor clears the block-level one via onRemapped).
 				diagnostics = diagnostics.filter((d) => d.blockId !== remappedBlockId);
-				const payload = result.data as { remappedAt?: string; document?: DocumentV1 } | undefined;
+				const payload = result.data as Partial<RemapActionResult> | undefined;
 				if (payload?.remappedAt && payload.document) {
 					onRemapped(payload.remappedAt, payload.document, remappedBlockId);
 				}
@@ -165,30 +173,15 @@
 			{#if openBlockId === diagnostic.blockId}
 				<DiagnosticPanel {diagnostic} available={availableFields}>
 					{#snippet remap(expectedField: string, suggested: string | null)}
-						<form method="POST" action="?/remap" use:enhance={submitRemap} class="remap">
-							<input type="hidden" name="blockId" value={diagnostic.blockId} />
-							<input type="hidden" name="dataSetId" value={dataSetId} />
-							<input type="hidden" name="expectedField" value={expectedField} />
-							<label class="remap-pick">
-								Map to
-								<select
-									name="availableField"
-									value={suggested ?? ''}
-									disabled={availableFields.length === 0}
-								>
-									{#each availableFields as name (name)}
-										<option value={name}>{name}</option>
-									{/each}
-								</select>
-							</label>
-							<Button
-								type="submit"
-								variant="secondary"
-								disabled={disabled || availableFields.length === 0}
-							>
-								Remap
-							</Button>
-						</form>
+						<RemapForm
+							blockId={diagnostic.blockId}
+							{dataSetId}
+							{expectedField}
+							{suggested}
+							fields={availableFields}
+							{disabled}
+							submit={submitRemap}
+						/>
 					{/snippet}
 				</DiagnosticPanel>
 			{/if}
@@ -265,17 +258,6 @@
 	.chip-label {
 		font-size: var(--text-sm);
 		color: var(--color-ink-65);
-	}
-
-	.remap {
-		display: flex;
-		align-items: end;
-		gap: var(--space-2);
-		margin: 0;
-	}
-
-	.remap-pick {
-		font-size: 12px;
 	}
 
 	.message {

@@ -1,12 +1,14 @@
 <script lang="ts">
+	import { formatUtcDate } from '$lib/format';
 	import type { Block, DocumentV1, Scales } from '$lib/schema';
 	import { isBindable } from '$lib/schema';
 	import type { BlockDiagnostic } from '$lib/server/ingestion';
-	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import Button from '$lib/ui/Button.svelte';
 	import BindingChip from '$lib/ui/BindingChip.svelte';
 	import DiagnosticPanel from '$lib/ui/DiagnosticPanel.svelte';
+	import type { BindingGuard, DiagnosticContext, RemapActionResult } from './editor-types';
+	import RemapForm from './RemapForm.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import CalloutBlockEditor from './CalloutBlockEditor.svelte';
 	import CardGridBlockEditor from './CardGridBlockEditor.svelte';
@@ -42,10 +44,10 @@
 		matrixBlocks?: MatrixBlockOption[];
 		/** This block's binding diagnostic from the last rebind (Epic 10.5), if drifted/unresolved. */
 		diagnostic?: BlockDiagnostic;
-		/** Field names behind the current diagnostics (the rebind source), for the inline remap. */
-		diagnosticFields?: string[];
-		/** The data set id behind the current diagnostics (the rebind source). */
-		diagnosticDataSetId?: string | null;
+		/** The rebind source's available fields + data set id (Epic 10.5), for the inline remap. */
+		diagnosticContext?: DiagnosticContext;
+		/** The editor's dirty/saving guard (Epic 10.5): a remap reseed must not run with unsaved edits. */
+		bindingGuard?: BindingGuard;
 		/** Reports a successful inline remap UP so the editor reconciles the token (Epic 10.5). */
 		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
 		onEdit: () => void;
@@ -61,18 +63,23 @@
 		scales,
 		matrixBlocks,
 		diagnostic,
-		diagnosticFields,
-		diagnosticDataSetId,
+		diagnosticContext,
+		bindingGuard,
 		onRemapped,
 		onEdit,
 		onRemove,
 		onMove
 	}: Props = $props();
 
+	const diagnosticFields = $derived(diagnosticContext?.fields ?? []);
+	const diagnosticDataSetId = $derived(diagnosticContext?.dataSetId ?? null);
+
 	// Bound-vs-static state (Epic 10.5): a bindable block whose `binding` carries a
 	// resolved `dataSetId` is BOUND (its values come from the data set); otherwise it
 	// carries static data (edited in 10.3/10.4) or only declares expected fields. The
 	// editor shows this state clearly so the author knows where the values come from.
+	// `isBindable(block)` is the schema's type guard: it narrows the block union so
+	// `block.binding` is reachable, which a boolean `blockIsBindable` would not do.
 	const blockIsBindable = $derived(isBindable(block));
 	const boundDataSetId = $derived(
 		isBindable(block) && block.binding ? (block.binding.dataSetId ?? null) : null
@@ -83,14 +90,26 @@
 
 	let remapOpen = $state(false);
 
+	// Reset the inline remap panel when the block's diagnostic changes (Epic 10.5): a
+	// rebind replaces the per-block diagnostic, so a panel left open from the prior
+	// diagnostic would show a stale expand state against the new drift. Collapse it so
+	// the new diagnostic surfaces fresh (the author re-opens to act on the new drift).
+	$effect(() => {
+		void diagnostic;
+		remapOpen = false;
+	});
+
 	// The inline remap (Epic 10.5): reuses the EXISTING `?/remap` action and the
 	// shared DiagnosticPanel, surfaced AT the drifted block. On success the editor
 	// reconciles the concurrency token (onRemapped) - the binding mutated the report.
-	const submitRemap: SubmitFunction = () => {
+	const submitRemap: SubmitFunction = ({ cancel }) => {
+		// Block the remap while the editor has unsaved edits in flight (the DATA-LOSS
+		// guard): a remap reseed would overwrite them. Let the autosave land, then retry.
+		if (bindingGuard && !bindingGuard(cancel)) return;
 		return async ({ result }) => {
 			if (result.type === 'success') {
 				remapOpen = false;
-				const payload = result.data as { remappedAt?: string; document?: DocumentV1 } | undefined;
+				const payload = result.data as Partial<RemapActionResult> | undefined;
 				if (payload?.remappedAt && payload.document && onRemapped) {
 					onRemapped(payload.remappedAt, payload.document, block.id);
 				}
@@ -141,7 +160,7 @@
 		<div class="binding-state" aria-label="Binding state">
 			{#if boundDataSetId}
 				<span class="state-badge bound">Bound to data set</span>
-				{#if dataAsOf}<span class="data-as-of">Data as of {dataAsOf.slice(0, 10)}</span>{/if}
+				{#if dataAsOf}<span class="data-as-of">Data as of {formatUtcDate(dataAsOf)}</span>{/if}
 			{:else}
 				<span class="state-badge static">Static data</span>
 			{/if}
@@ -155,28 +174,16 @@
 			{/if}
 		</div>
 		{#if diagnostic && remapOpen}
-			<DiagnosticPanel {diagnostic} available={diagnosticFields ?? []}>
+			<DiagnosticPanel {diagnostic} available={diagnosticFields}>
 				{#snippet remap(expectedField: string, suggested: string | null)}
-					<form method="POST" action="?/remap" use:enhance={submitRemap} class="remap">
-						<input type="hidden" name="blockId" value={block.id} />
-						<input type="hidden" name="dataSetId" value={diagnosticDataSetId ?? ''} />
-						<input type="hidden" name="expectedField" value={expectedField} />
-						<label class="remap-pick">
-							Map to
-							<select
-								name="availableField"
-								value={suggested ?? ''}
-								disabled={(diagnosticFields?.length ?? 0) === 0}
-							>
-								{#each diagnosticFields ?? [] as name (name)}
-									<option value={name}>{name}</option>
-								{/each}
-							</select>
-						</label>
-						<Button type="submit" variant="secondary" disabled={(diagnosticFields?.length ?? 0) === 0}>
-							Remap
-						</Button>
-					</form>
+					<RemapForm
+						blockId={block.id}
+						dataSetId={diagnosticDataSetId ?? ''}
+						{expectedField}
+						{suggested}
+						fields={diagnosticFields}
+						submit={submitRemap}
+					/>
 				{/snippet}
 			</DiagnosticPanel>
 		{/if}
@@ -301,17 +308,6 @@
 	.data-as-of {
 		font-size: 12px;
 		color: var(--color-ink-65);
-	}
-
-	.remap {
-		display: flex;
-		align-items: end;
-		gap: var(--space-2);
-		margin: 0;
-	}
-
-	.remap-pick {
-		font-size: 12px;
 	}
 
 	/* `.sr-only` is the shared workspace base (sr-only.css), scoped under

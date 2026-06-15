@@ -9,6 +9,11 @@ export function formatUtcTime(iso: string): string {
 	return `${iso.slice(11, 16)} UTC`;
 }
 
+/** The `YYYY-MM-DD` date portion of an ISO-8601 timestamp string. */
+export function formatUtcDate(iso: string): string {
+	return iso.slice(0, 10);
+}
+
 /** Full `YYYY-MM-DD HH:MM UTC` rendering of a Date, for list timestamps. */
 export function formatUtcDateTime(date: Date): string {
 	const iso = date.toISOString();

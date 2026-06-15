@@ -69,7 +69,10 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 	// a column slot, and bind. The bind goes through the EXISTING `?/bind` action.
 	const binder = page.locator('section[aria-label="Bind data"]');
 	await binder.getByLabel('Data set').selectOption({ label: 'initial.csv' });
-	await binder.getByRole('row', { name: /severity/ }).getByRole('combobox').selectOption('column');
+	await binder
+		.getByRole('row', { name: /severity/ })
+		.getByRole('combobox')
+		.selectOption('column');
 	await binder.getByRole('row', { name: /count/ }).getByRole('combobox').selectOption('column');
 	const bindPosted = page.waitForResponse(
 		(r) => r.url().includes('/edit?/bind') && r.request().method() === 'POST'
@@ -118,8 +121,8 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 	await remapPosted;
 	await expect(block.getByRole('button', { name: /Drifted/ })).toHaveCount(0);
 
-	// The binding persists: reload and the block is still bound to the data set.
-	await page.waitForLoadState('networkidle');
+	// The binding persists: reload and the block is still bound to the data set. The
+	// remap reconcile already cleared the editor (no pending save), so navigate straight.
 	await page.goto(editPath);
 	await expect(
 		page.getByRole('article', { name: 'table block' }).getByText('Bound to data set')
@@ -138,27 +141,30 @@ test('a save after a binding action does not 409 (concurrency token reconciled)'
 	await page.goto(`/reports/${reportId}/edit`);
 	const binder = page.locator('section[aria-label="Bind data"]');
 	await binder.getByLabel('Data set').selectOption({ label: 'initial.csv' });
-	await binder.getByRole('row', { name: /severity/ }).getByRole('combobox').selectOption('column');
+	await binder
+		.getByRole('row', { name: /severity/ })
+		.getByRole('combobox')
+		.selectOption('column');
 	const bindPosted = page.waitForResponse(
 		(r) => r.url().includes('/edit?/bind') && r.request().method() === 'POST'
 	);
 	await binder.getByRole('button', { name: 'Bind block' }).click();
 	await bindPosted;
-	await expect(page.getByRole('article', { name: 'table block' }).getByText('Bound to data set')).toBeVisible();
+	await expect(
+		page.getByRole('article', { name: 'table block' }).getByText('Bound to data set')
+	).toBeVisible();
 
 	// A bind advanced the report's updatedAt. Without token reconciliation, the next
-	// document save would assert the stale loaded timestamp and 409. Edit the title and
-	// save: the save must SUCCEED (200), proving the editor advanced expectedUpdatedAt
-	// after the bind.
-	await page.getByLabel('Report title').fill('Renamed After Bind');
-	await page.waitForLoadState('networkidle');
-	const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-	await expect(saveButton).toBeEnabled();
-	const saveResponse = page.waitForResponse(
+	// document save would assert the stale loaded timestamp and 409. Edit the title: the
+	// edit schedules the 800 ms autosave. Wait for THAT save response explicitly (a
+	// deterministic signal the in-flight save landed, not a flaky networkidle), then
+	// assert it SUCCEEDED (200), proving the editor advanced expectedUpdatedAt after the
+	// bind. The editor is clean again, so a subsequent explicit Save is unnecessary.
+	const autosaveResponse = page.waitForResponse(
 		(r) => r.url().includes('/edit?/save') && r.request().method() === 'POST'
 	);
-	await saveButton.click({ force: true });
-	const response = await saveResponse;
+	await page.getByLabel('Report title').fill('Renamed After Bind');
+	const response = await autosaveResponse;
 	expect(response.status()).toBe(200);
 
 	// The title edit persisted (not lost to a conflict) across reload.
@@ -180,7 +186,10 @@ test('the editor binding surface has no axe-core violations', async ({ page }, t
 	// remap are MOUNTED for the scan (the new editor binding surface this story adds).
 	const binder = page.locator('section[aria-label="Bind data"]');
 	await binder.getByLabel('Data set').selectOption({ label: 'initial.csv' });
-	await binder.getByRole('row', { name: /severity/ }).getByRole('combobox').selectOption('column');
+	await binder
+		.getByRole('row', { name: /severity/ })
+		.getByRole('combobox')
+		.selectOption('column');
 	// Map "count" too so the drifted set (count -> counts) actually drifts and mounts
 	// the per-block diagnostic chip + inline remap the scan needs to cover.
 	await binder.getByRole('row', { name: /count/ }).getByRole('combobox').selectOption('column');

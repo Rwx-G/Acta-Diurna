@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { BindingSlot, DocumentV1 } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import type { BindActionResult, BindingGuard } from './editor-types';
 	import type { PageData } from './$types';
 
 	type DataSet = PageData['dataSets'][number];
@@ -19,9 +20,15 @@
 		 * in-flight edits and leave the token stale.
 		 */
 		onBound: (savedAt: string, document: DocumentV1) => void;
+		/**
+		 * The editor's dirty/saving guard (Epic 10.5): a bind reseeds the working copy
+		 * from the server document, so it must not run while unsaved edits are in flight
+		 * or it would overwrite them. Returns false (and cancels) to block the submit.
+		 */
+		bindingGuard: BindingGuard;
 	}
 
-	let { blocks, dataSets, disabled, onBound }: Props = $props();
+	let { blocks, dataSets, disabled, onBound, bindingGuard }: Props = $props();
 
 	// Initial selection only; the selects below bind these and the lists are
 	// stable for the editor's lifetime (a remount via {#key} resets them).
@@ -66,6 +73,9 @@
 			cancel();
 			return;
 		}
+		// Block the bind while the editor has unsaved edits in flight (the DATA-LOSS
+		// guard): a bind reseed would overwrite them. Let the autosave land, then retry.
+		if (!bindingGuard(cancel)) return;
 		formData.set('blockId', blockId);
 		formData.set('dataSetId', dataSetId);
 		formData.set('slotMapping', slotMappingJson());
@@ -76,7 +86,7 @@
 			if (result.type === 'success') {
 				message = 'Block bound to the data set.';
 				messageVariant = 'ok';
-				const payload = result.data as { boundAt?: string; document?: DocumentV1 } | undefined;
+				const payload = result.data as Partial<BindActionResult> | undefined;
 				if (payload?.boundAt && payload.document) {
 					onBound(payload.boundAt, payload.document);
 				}
