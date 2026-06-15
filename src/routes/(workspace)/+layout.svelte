@@ -78,7 +78,17 @@
 		min-height: 100vh;
 	}
 
+	/* The rail stays pinned while the page scrolls: a grid cell otherwise
+	   stretches to the full content height and the nav scrolls away with it.
+	   `align-self: start` opts out of that stretch so the 100vh sticky box has
+	   room to move; `overflow-y: auto` lets the rail's own content scroll on a
+	   viewport too short to hold it (account block included). */
 	.rail {
+		position: sticky;
+		top: 0;
+		align-self: start;
+		height: 100vh;
+		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-1);
