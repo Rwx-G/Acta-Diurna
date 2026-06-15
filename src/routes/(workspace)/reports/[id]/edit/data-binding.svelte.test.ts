@@ -173,7 +173,7 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		// The displayed saved-at advances to the bind's timestamp (the visible proxy for
 		// the advanced concurrency token: reconcileBinding sets savedAt = expectedUpdatedAt).
 		await expect.element(screen.getByText('Saved at', { exact: false })).toBeVisible();
-		const savedAtText = screen.container.querySelector('.saved-at')!.textContent ?? '';
+		const savedAtText = screen.container.querySelector('.save-status')!.textContent ?? '';
 		// 11:00 UTC is the bound timestamp: it must be shown (the token advanced to it)
 		// and the loaded 09:30 must no longer be (the editor moved off the stale value).
 		expect(savedAtText).toContain('11:00');
@@ -274,7 +274,7 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		).toBe('Unsaved Title');
 		// The token did NOT advance (no reconcile ran): the displayed saved-at stays at the
 		// loaded 09:30, and the guard surfaced the "saving your latest edits" prompt.
-		expect(screen.container.querySelector('.saved-at')!.textContent ?? '').toContain('09:30');
+		expect(screen.container.querySelector('.save-status')!.textContent ?? '').toContain('09:30');
 	});
 
 	it('clears stale per-block diagnostics on a bind after a rebind', async () => {
