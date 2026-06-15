@@ -55,6 +55,16 @@ export interface SectionView {
 	detail: boolean;
 	/** Section-level audience tags (Story 6.1); see {@link BlockView.audiences}. */
 	audiences?: readonly Audience[];
+	/**
+	 * Author-only speaker notes (Story 6.2) are NEVER part of the render view-model:
+	 * the reader-facing render (and the editor's own live preview, which IS the reader
+	 * output) must not carry them. `never` makes that a COMPILE error - a contributor
+	 * cannot add a `notes` field to either `toReportView` or `toPreviewView` without
+	 * the type rejecting it, so the load-bearing privacy guarantee is type-enforced,
+	 * not just convention. The notes live on the document (the presenter view and the
+	 * draft read them) and are stripped server-side at the reader serve (Story 6.2).
+	 */
+	notes?: never;
 	blocks: BlockView[];
 	/** True when the section frame itself (id/title) failed - preview only. */
 	invalid: boolean;

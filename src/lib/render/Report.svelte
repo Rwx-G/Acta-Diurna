@@ -34,6 +34,15 @@
 		 * reader and the workspace per-level preview both drive the SAME control:
 		 * the level sets `data-level` on the report root and CSS hides blocks whose
 		 * `data-audiences` excludes it - content stays SSR, only visibility toggles.
+		 *
+		 * CALLER CONTRACT: `level` SEEDS `activeLevel` ONCE per mount (the `$state`
+		 * below captures it at construction, not reactively). The embedded preview
+		 * reseeds it by remounting the whole tree on every settled edit (`{#key
+		 * document}` in LivePreview), NOT through prop reactivity - so a changing
+		 * `level` prop on an ALREADY-MOUNTED component is silently ignored. A caller
+		 * that needs live level changes without a remount must remount the component
+		 * or own the level through `onlevelchange` + a `{#key}` reseed (the pattern
+		 * LivePreview uses), not mutate the prop in place.
 		 */
 		level?: Audience;
 		/**
@@ -55,6 +64,11 @@
 	}: Props = $props();
 
 	// svelte-ignore state_referenced_locally
+	// WHY: one-time seed of the active level from the `level` prop at construction.
+	// Per the `level` prop contract above, this is intentionally NOT reactive - the
+	// preview reseeds by remounting (`{#key document}`), so reading the prop here is
+	// the seed value, never a live alias. A caller needing live changes remounts or
+	// owns the level via `onlevelchange`.
 	let activeLevel = $state<Audience>(level);
 
 	const theme = $derived(resolveTheme(view.theme));
@@ -74,12 +88,17 @@
 	// the preview remounts when the snapshot identity changes), so the section
 	// count and starting mode are read once at construction.
 	// svelte-ignore state_referenced_locally
+	// WHY: one-time read of the section count at construction; the component
+	// remounts when the document identity changes, so this never goes stale.
 	const nav = new ReaderNavigation({ sectionCount: view.sections.length });
 
 	let container = $state<HTMLElement | null>(null);
 	let sectionEls = $state<HTMLElement[]>([]);
 	// Effective mode: slide on a roomy viewport, scroll on narrow/touch-first.
 	// svelte-ignore state_referenced_locally
+	// WHY: one-time seed of the starting mode from the `mode` prop; `onMount`
+	// recomputes it against the viewport and owns it thereafter, so the prop is
+	// the initial value only, not a live dependency.
 	let effectiveMode = $state<'slide' | 'scroll'>(mode);
 	let mounted = $state(false);
 
@@ -301,22 +320,31 @@
 		// a technical-only section would land nowhere. Promote the level to one that
 		// reveals the section first, then scroll - a deep link expresses intent to
 		// read that section, regardless of the reader's default level.
-		const detailId = detailIdForFragment(window.location.hash, detailSectionIds);
-		if (detailId) {
-			// A detail-section fragment opens the detail page directly (Epic 11): the
-			// CSS `:target` reveal shows it, we promote the level if it is audience-
-			// hidden and move focus into it - the same path a click takes, so flow and
-			// detail deep links share one mechanism. No origin was recorded (a fresh
-			// load), so "back" falls back to the first flow section.
-			const detail = view.detailSections.find((section) => section.id === detailId);
-			if (detail) promoteLevelForDetail(detail);
-			focusDetail(detailId);
-		} else {
-			const initial = indexForFragment(window.location.hash, sectionIds);
-			if (initial > 0) {
-				promoteLevelFor(view.sections[initial].audiences);
-				nav.current = initial;
-				requestAnimationFrame(() => scrollToSection(initial, false));
+		//
+		// Reader-only: the embedded preview has no meaningful URL hash of its own, and
+		// the author owns the previewed level explicitly (the LevelSwitcher + the
+		// `level` prop). Reading `window.location.hash` here in embedded mode could
+		// promote `activeLevel` off the editor URL's section fragment on every remount,
+		// diverging from the author's `previewLevel`. So skip reader hash promotion in
+		// the preview.
+		if (!embedded) {
+			const detailId = detailIdForFragment(window.location.hash, detailSectionIds);
+			if (detailId) {
+				// A detail-section fragment opens the detail page directly (Epic 11): the
+				// CSS `:target` reveal shows it, we promote the level if it is audience-
+				// hidden and move focus into it - the same path a click takes, so flow and
+				// detail deep links share one mechanism. No origin was recorded (a fresh
+				// load), so "back" falls back to the first flow section.
+				const detail = view.detailSections.find((section) => section.id === detailId);
+				if (detail) promoteLevelForDetail(detail);
+				focusDetail(detailId);
+			} else {
+				const initial = indexForFragment(window.location.hash, sectionIds);
+				if (initial > 0) {
+					promoteLevelFor(view.sections[initial].audiences);
+					nav.current = initial;
+					requestAnimationFrame(() => scrollToSection(initial, false));
+				}
 			}
 		}
 
