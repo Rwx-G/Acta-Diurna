@@ -243,29 +243,33 @@
  * palette.ts).
  */
 [data-theme='meridian'] {
-	--report-bg: #faf4ec;
-	--report-surface: #fffdf8;
+	/* A markedly warmer amber paper than the default stone, so Warm Meridian reads
+	   as its own identity at a glance, not a near-twin of the default. The accent is
+	   re-tuned to a rust terracotta that still clears AAA (7:1) on the warmer paper
+	   (a darker paper lowers a dark accent's ratio, so the accent moved with it). */
+	--report-bg: #f8edd5;
+	--report-surface: #fffaef;
 	--report-text: #2a2018;
-	--report-text-muted: #5a4636; /* 8.1:1 on bg, AAA */
+	--report-text-muted: #5a4636; /* 7.6:1 on bg, AAA */
 	--report-heading: #241a12;
-	--report-accent: #922d13; /* 7.4:1 on bg, AAA */
-	--report-accent-fill: #922d13;
-	--report-accent-contrast: #faf4ec;
+	--report-accent: #8a2a10; /* 7.5:1 on bg, AAA */
+	--report-accent-fill: #8a2a10;
+	--report-accent-contrast: #f8edd5;
 	--report-rule: color-mix(in srgb, #2a2018 12%, transparent);
 	--report-rule-strong: color-mix(in srgb, #2a2018 25%, transparent);
-	--report-chart-1: #922d13;
+	--report-chart-1: #8a2a10;
 	--report-chart-2: #2f6b4a;
 	--report-chart-3: #1c4a7e;
 	--report-chart-4: #7a5a13;
 	--report-chart-5: #6a4a86;
 	--report-chart-6: #8a2f3a;
-	--report-trend-up: #2f6b4a; /* 5.8:1 on bg */
-	--report-trend-down: #a23b3b; /* 6.0:1 on bg */
-	--report-tone-info: #1c5a8e; /* 6.6:1 on bg */
-	--report-tone-success: #2f6b4a; /* 5.8:1 on bg */
-	--report-tone-warning: #7a5a13; /* 5.8:1 on bg */
-	--report-tone-danger: #a23b3b; /* 6.0:1 on bg */
-	--report-tone-neutral: #5a4636; /* 8.1:1 on bg */
+	--report-trend-up: #2f6b4a; /* 5.4:1 on bg */
+	--report-trend-down: #a23b3b; /* 5.6:1 on bg */
+	--report-tone-info: #1c5a8e; /* 6.2:1 on bg */
+	--report-tone-success: #2f6b4a; /* 5.4:1 on bg */
+	--report-tone-warning: #7a5a13; /* 5.5:1 on bg */
+	--report-tone-danger: #a23b3b; /* 5.6:1 on bg */
+	--report-tone-neutral: #5a4636; /* 7.6:1 on bg */
 	--report-scrim: color-mix(in srgb, #2a2018 55%, transparent);
 }
 

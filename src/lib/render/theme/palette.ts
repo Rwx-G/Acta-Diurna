@@ -61,17 +61,18 @@ export const AURORA_THEME: ThemePalette = {
 	trendDown: '#a23b3b' // --report-trend-down
 };
 
-// "Warm Meridian": a warm editorial identity - cream paper, sepia ink, a
-// terracotta accent. Reads inviting and human; suits narrative-led reports.
-// Accent is darkened to clear AAA (7:1) on the warm cream paper.
+// "Warm Meridian": a warm editorial identity - amber paper, sepia ink, a rust
+// terracotta accent. Reads inviting and human; suits narrative-led reports. The
+// paper is markedly warmer than the default stone so the theme is distinct at a
+// glance; the accent is darkened to clear AAA (7:1) on that warmer paper.
 export const MERIDIAN_THEME: ThemePalette = {
-	bg: '#faf4ec', // --report-bg
-	surface: '#fffdf8', // --report-surface
+	bg: '#f8edd5', // --report-bg
+	surface: '#fffaef', // --report-surface
 	text: '#2a2018', // --report-text
-	textMuted: '#5a4636', // --report-text-muted (8.1:1 on bg)
+	textMuted: '#5a4636', // --report-text-muted (7.6:1 on bg)
 	heading: '#241a12', // --report-heading
-	accent: '#922d13', // --report-accent (7.4:1 on bg, AAA)
-	accentContrast: '#faf4ec', // --report-accent-contrast
+	accent: '#8a2a10', // --report-accent (7.5:1 on bg, AAA)
+	accentContrast: '#f8edd5', // --report-accent-contrast
 	trendUp: '#2f6b4a', // --report-trend-up
 	trendDown: '#a23b3b' // --report-trend-down
 };
@@ -124,7 +125,7 @@ export const AURORA_CATEGORICAL_PALETTE: readonly string[] = [
 ];
 
 export const MERIDIAN_CATEGORICAL_PALETTE: readonly string[] = [
-	'#922d13', // --report-chart-1 (matches the accent)
+	'#8a2a10', // --report-chart-1 (matches the accent)
 	'#2f6b4a', // --report-chart-2
 	'#1c4a7e', // --report-chart-3
 	'#7a5a13', // --report-chart-4
