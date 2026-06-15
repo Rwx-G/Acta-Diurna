@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatUtcDate } from '$lib/format';
-	import type { Block, DocumentV1, Scales } from '$lib/schema';
+	import type { Block, BlockType, DocumentV1, Scales } from '$lib/schema';
 	import { isBindable } from '$lib/schema';
 	import type { BlockDiagnostic } from '$lib/server/ingestion';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -116,6 +116,32 @@
 			}
 		};
 	};
+
+	// Exhaustiveness guard for the `{#if block.type === ...}` dispatch below, matching
+	// the renderer's BlockRenderer backstop. The template chain cannot itself be
+	// exhaustiveness-checked, so this `satisfies Record<BlockType, true>` is the
+	// compile-time backstop: a new block type missing a per-type editor arm is a
+	// compile error here. The terminal `{:else}` only catches a forward-version block
+	// the validator let through, never a forgotten v1 type. Keep this set in lockstep
+	// with the dispatch arms.
+	const HANDLED_BLOCK_TYPES = {
+		text: true,
+		table: true,
+		chart: true,
+		kpi: true,
+		image: true,
+		'comparison-matrix': true,
+		'field-grid': true,
+		legend: true,
+		'chip-cluster': true,
+		callout: true,
+		code: true,
+		'set-membership': true,
+		'card-grid': true,
+		list: true,
+		timeline: true
+	} satisfies Record<BlockType, true>;
+	void HANDLED_BLOCK_TYPES;
 </script>
 
 <!-- `tabindex="-1"` + `data-block-id` make this card a scriptable focus target so
@@ -219,6 +245,15 @@
 		<ListBlockEditor bind:block {onEdit} />
 	{:else if block.type === 'timeline'}
 		<TimelineBlockEditor bind:block {scales} {onEdit} />
+	{:else}
+		<!-- A validated-but-unhandled block (a forward-version type the validator let
+		     through). Show a neutral placeholder rather than blanking the card, so an
+		     unknown/future type degrades gracefully. The HANDLED_BLOCK_TYPES guard above
+		     makes a forgotten v1 type a compile error, so this only fires for a future
+		     schema version. -->
+		<p class="unsupported" role="status">
+			This block type is not editable in this version of the workspace.
+		</p>
 	{/if}
 </article>
 
@@ -308,6 +343,17 @@
 	.data-as-of {
 		font-size: 12px;
 		color: var(--color-ink-65);
+	}
+
+	/* The exhaustiveness fallback (forward-version block type): a neutral notice so an
+	   unknown block degrades gracefully instead of blanking the card. */
+	.unsupported {
+		margin: 0;
+		padding: var(--space-3) var(--space-4);
+		font-size: var(--text-sm);
+		color: var(--color-amber);
+		background: var(--color-amber-12);
+		border-radius: var(--radius-sm);
 	}
 
 	/* `.sr-only` is the shared workspace base (sr-only.css), scoped under
