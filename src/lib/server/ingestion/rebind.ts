@@ -141,8 +141,15 @@ export async function rebindReport(
 	// Persist only when something actually re-resolved; a refill that matches
 	// nothing must not churn the draft's updatedAt or risk a 409 on a published
 	// report when there was no work to do.
+	//
+	// Optimistic concurrency (Epic 10.5): the write asserts `report.updatedAt`, the
+	// token read at the start of this action, so a concurrent producer write (a
+	// second tab, the editor autosave, an MCP/API push) landing between the read and
+	// the write 409s with `/problems/report-conflict` instead of silently stomping it.
 	const persisted =
-		rebound.length > 0 ? await updateReportDocument(reportId, document, scope) : report;
+		rebound.length > 0
+			? await updateReportDocument(reportId, document, scope, report.updatedAt)
+			: report;
 
 	const diagnostics = diagnoseDocument(persisted.document, available);
 	return { report: persisted, diagnostics, summary: summarize(diagnostics), rebound };
@@ -256,7 +263,11 @@ export async function remapField(
 			if (error instanceof ParseError) throw unparseable(error);
 			throw error;
 		}
-		return updateReportDocument(reportId, document, scope);
+		// Optimistic concurrency (Epic 10.5): assert `report.updatedAt`, the token read
+		// at the start of this action, so a concurrent producer write landing between
+		// the read and this write 409s with `/problems/report-conflict` instead of
+		// silently stomping it - the same invariant bind/rebind enforce.
+		return updateReportDocument(reportId, document, scope, report.updatedAt);
 	}
 	throw blockNotFound();
 }

@@ -29,7 +29,11 @@ const dbState = vi.hoisted(() => ({
 	data_sets: new Map<string, Record<string, unknown>>(),
 	reports: new Map<string, Record<string, unknown>>(),
 	listProjections: [] as (string[] | undefined)[],
-	listLimits: [] as number[]
+	listLimits: [] as number[],
+	// When armed, a single reports read bumps the stored `updated_at` right after
+	// returning the row, simulating a concurrent producer write that lands between
+	// bindBlock's read and its write. The optimistic-concurrency WHERE then misses.
+	bumpReportTokenAfterNextRead: false
 }));
 
 function storeFor(name: string): Map<string, Record<string, unknown>> {
@@ -50,6 +54,27 @@ function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	const param = chunks.find((chunk): chunk is Param => chunk instanceof Param);
 	if (!column || !param) throw new Error('mock only supports eq(column, value)');
 	return { column: column.name, value: param.value };
+}
+
+/**
+ * Decodes an optimistic-concurrency WHERE - `eq(id)` or `and(eq(id), eq(updated_at))`
+ * - into the id and the optional expected `updated_at`. A drizzle `and(...)` nests
+ * each `eq` as its own SQL node a few levels deep, so this flattens the whole tree in
+ * traversal order, pairing each Column with the next Param. Mirrors how
+ * `updateReportDocument` builds the WHERE when a caller threads a token.
+ */
+function decodeUpdateWhere(filter: unknown): { id: unknown; expectedUpdatedAt?: unknown } {
+	const columns: string[] = [];
+	const params: unknown[] = [];
+	const walk = (node: unknown): void => {
+		if (node instanceof Column) columns.push(node.name);
+		else if (node instanceof Param) params.push(node.value);
+		const chunks = (node as { queryChunks?: unknown[] })?.queryChunks;
+		if (Array.isArray(chunks)) for (const chunk of chunks) walk(chunk);
+	};
+	walk(filter);
+	const byColumn = new Map(columns.map((name, index) => [name, params[index]]));
+	return { id: byColumn.get('id'), expectedUpdatedAt: byColumn.get('updated_at') };
 }
 
 vi.mock('$lib/server/db/client', () => ({
@@ -83,6 +108,18 @@ vi.mock('$lib/server/db/client', () => ({
 					limit: (count: number) => {
 						if (!ordered) {
 							const row = store.get(String(lookupValue));
+							// Simulate a concurrent producer write landing between bindBlock's
+							// read and its write: return the loaded row, then advance the stored
+							// token so the optimistic-concurrency WHERE misses on the write.
+							if (row && store === dbState.reports && dbState.bumpReportTokenAfterNextRead) {
+								dbState.bumpReportTokenAfterNextRead = false;
+								const snapshot = { ...row };
+								store.set(String(lookupValue), {
+									...row,
+									updatedAt: new Date((row.updatedAt as Date).getTime() + 1000)
+								});
+								return Promise.resolve([snapshot]);
+							}
 							return Promise.resolve(row ? [row] : []);
 						}
 						dbState.listLimits.push(count);
@@ -97,10 +134,18 @@ vi.mock('$lib/server/db/client', () => ({
 			return {
 				set: (values: Record<string, unknown>) => ({
 					where: (filter: SQL) => {
-						const decoded = decodeEqFilter(filter);
-						const existing = store.get(String(decoded.value));
-						if (existing) store.set(String(decoded.value), { ...existing, ...values });
-						return Promise.resolve({ rowCount: existing ? 1 : 0 });
+						const decoded = decodeUpdateWhere(filter);
+						const existing = store.get(String(decoded.id));
+						// Optimistic concurrency: when the WHERE pins `updated_at`, a row whose
+						// stored token has advanced does not match - zero rows, which the service
+						// maps to a 409 conflict, exactly as Postgres would.
+						const matches =
+							existing !== undefined &&
+							(decoded.expectedUpdatedAt === undefined ||
+								(existing.updatedAt as Date).getTime() ===
+									(decoded.expectedUpdatedAt as Date).getTime());
+						if (matches) store.set(String(decoded.id), { ...existing, ...values });
+						return Promise.resolve({ rowCount: matches ? 1 : 0 });
 					}
 				})
 			};
@@ -166,6 +211,7 @@ beforeEach(async () => {
 	dbState.data_sets.clear();
 	dbState.listProjections = [];
 	dbState.listLimits = [];
+	dbState.bumpReportTokenAfterNextRead = false;
 	// A data set is immutable in production, so the parsed-table cache never goes
 	// stale; the tests rewrite the stored file under a reused id, so clear it to
 	// force a fresh read per test.
@@ -233,6 +279,24 @@ describe('bindBlock', () => {
 			return;
 		}
 		throw new Error('expected a 422');
+	});
+
+	it('409s with report-conflict when a concurrent write lands between the read and the bind write', async () => {
+		// A concurrent producer write (a second tab, an MCP/API push, the editor
+		// autosave) bumps the stored token between bindBlock's read and its write. The
+		// bind threads the loaded token, so the stale write 409s rather than silently
+		// stomping the concurrent edit.
+		dbState.bumpReportTokenAfterNextRead = true;
+
+		await expect(
+			bindBlock(
+				REPORT_ID,
+				'weekly-table',
+				DATA_SET_ID,
+				{ week: { role: 'column' }, count: { role: 'column' } },
+				TEST_SCOPE
+			)
+		).rejects.toMatchObject({ status: 409, type: '/problems/report-conflict' });
 	});
 });
 

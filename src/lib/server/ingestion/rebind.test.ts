@@ -18,7 +18,11 @@ const uploadsDir = await mkdtemp(join(tmpdir(), 'acta-rebind-'));
 
 const dbState = vi.hoisted(() => ({
 	data_sets: new Map<string, Record<string, unknown>>(),
-	reports: new Map<string, Record<string, unknown>>()
+	reports: new Map<string, Record<string, unknown>>(),
+	// When armed, a single reports read bumps the stored `updated_at` right after
+	// returning the row, simulating a concurrent producer write that lands between an
+	// action's read and its write. The optimistic-concurrency WHERE then misses.
+	bumpReportTokenAfterNextRead: false
 }));
 
 function storeFor(name: string): Map<string, Record<string, unknown>> {
@@ -33,6 +37,27 @@ function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	return { column: column.name, value: param.value };
 }
 
+/**
+ * Decodes an optimistic-concurrency WHERE - `eq(id)` or `and(eq(id), eq(updated_at))`
+ * - into the id and the optional expected `updated_at`. A drizzle `and(...)` nests
+ * each `eq` as its own SQL node a few levels deep, so this flattens the whole tree in
+ * traversal order, pairing each Column with the next Param. Mirrors how
+ * `updateReportDocument` builds the WHERE when a caller threads `expectedUpdatedAt`.
+ */
+function decodeUpdateWhere(filter: unknown): { id: unknown; expectedUpdatedAt?: unknown } {
+	const columns: string[] = [];
+	const params: unknown[] = [];
+	const walk = (node: unknown): void => {
+		if (node instanceof Column) columns.push(node.name);
+		else if (node instanceof Param) params.push(node.value);
+		const chunks = (node as { queryChunks?: unknown[] })?.queryChunks;
+		if (Array.isArray(chunks)) for (const chunk of chunks) walk(chunk);
+	};
+	walk(filter);
+	const byColumn = new Map(columns.map((name, index) => [name, params[index]]));
+	return { id: byColumn.get('id'), expectedUpdatedAt: byColumn.get('updated_at') };
+}
+
 vi.mock('$lib/server/db/client', () => ({
 	getDb: () => ({
 		select: () => ({
@@ -44,6 +69,18 @@ vi.mock('$lib/server/db/client', () => ({
 						return {
 							limit: () => {
 								const row = store.get(String(decoded.value));
+								// Simulate a concurrent producer write landing between this read and
+								// the action's later write: hand back the row the action loads, then
+								// advance the stored token so the optimistic-concurrency WHERE misses.
+								if (row && store === dbState.reports && dbState.bumpReportTokenAfterNextRead) {
+									dbState.bumpReportTokenAfterNextRead = false;
+									const snapshot = { ...row };
+									store.set(String(decoded.value), {
+										...row,
+										updatedAt: new Date((row.updatedAt as Date).getTime() + 1000)
+									});
+									return Promise.resolve([snapshot]);
+								}
 								return Promise.resolve(row ? [row] : []);
 							}
 						};
@@ -56,10 +93,18 @@ vi.mock('$lib/server/db/client', () => ({
 			return {
 				set: (values: Record<string, unknown>) => ({
 					where: (filter: SQL) => {
-						const decoded = decodeEqFilter(filter);
-						const existing = store.get(String(decoded.value));
-						if (existing) store.set(String(decoded.value), { ...existing, ...values });
-						return Promise.resolve({ rowCount: existing ? 1 : 0 });
+						const decoded = decodeUpdateWhere(filter);
+						const existing = store.get(String(decoded.id));
+						// Optimistic concurrency: when the WHERE pins `updated_at`, a row whose
+						// stored token has moved on does not match - zero rows, which the service
+						// maps to a 409 conflict, exactly as Postgres would.
+						const matches =
+							existing !== undefined &&
+							(decoded.expectedUpdatedAt === undefined ||
+								(existing.updatedAt as Date).getTime() ===
+									(decoded.expectedUpdatedAt as Date).getTime());
+						if (matches) store.set(String(decoded.id), { ...existing, ...values });
+						return Promise.resolve({ rowCount: matches ? 1 : 0 });
 					}
 				})
 			};
@@ -131,6 +176,7 @@ async function seedDataSet(csv: string, fields: { name: string; type: string }[]
 beforeEach(() => {
 	dbState.reports.clear();
 	dbState.data_sets.clear();
+	dbState.bumpReportTokenAfterNextRead = false;
 	// Each test reseeds the same data-set id with different CSV under the same
 	// stored path; clear the immutable-table cache so a test reads its own file.
 	__clearParsedTableCache();
@@ -198,6 +244,22 @@ describe('rebindReport (FR14)', () => {
 		expect(result.rebound).toEqual([]);
 		expect(result.summary.unresolved).toBe(1);
 		expect(result.diagnostics[0].state).toBe('unresolved');
+	});
+
+	it('409s with report-conflict when a concurrent write lands between the read and the rebind write', async () => {
+		await seedDataSet('severity,count\nCritical,4\nHigh,9', [
+			{ name: 'severity', type: 'string' },
+			{ name: 'count', type: 'number' }
+		]);
+		// A concurrent producer write bumps the stored token between this action's read
+		// and its write. The rebind threads the loaded token into the write, so the
+		// stale write must 409 instead of silently stomping the concurrent edit.
+		dbState.bumpReportTokenAfterNextRead = true;
+
+		await expect(rebindReport(REPORT_ID, DATA_SET_ID, TEST_SCOPE)).rejects.toMatchObject({
+			status: 409,
+			type: '/problems/report-conflict'
+		});
 	});
 });
 
@@ -281,5 +343,19 @@ describe('remapField (FR15)', () => {
 		).rejects.toMatchObject({ status: 409, type: '/problems/field-already-bound' });
 
 		expect(dbState.reports.get(REPORT_ID)!.document).toEqual(before);
+	});
+
+	it('409s with report-conflict when a concurrent write lands between the read and the remap write', async () => {
+		await seedDataSet('severity,counts\nCritical,4\nHigh,9', [
+			{ name: 'severity', type: 'string' },
+			{ name: 'counts', type: 'number' }
+		]);
+		// A concurrent producer write bumps the stored token between the read and the
+		// remap write; the threaded token makes the stale write 409 rather than stomp it.
+		dbState.bumpReportTokenAfterNextRead = true;
+
+		await expect(
+			remapField(REPORT_ID, 'severity-table', DATA_SET_ID, 'count', 'counts', TEST_SCOPE)
+		).rejects.toMatchObject({ status: 409, type: '/problems/report-conflict' });
 	});
 });
