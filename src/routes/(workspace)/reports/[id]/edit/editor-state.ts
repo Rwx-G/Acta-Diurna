@@ -1,9 +1,12 @@
 /**
  * Editor helpers specific to the 1.5 report block editor: block/section
  * factories, paragraph text flattening and the no-JS narrative-field
- * application. The cross-editor primitives (list reordering, error grouping,
- * path humanizing, the issue types) live in `$lib/editor` and are re-exported
- * here so this module's existing consumers keep one import. No DOM, no Drizzle.
+ * application. Story 10.1 adds `optimisticDocumentIssues`, the client-side
+ * optimistic-validation helper the WYSIWYG editor runs against the live in-edit
+ * document so inline guidance appears before any round-trip. The cross-editor
+ * primitives (list reordering, error grouping, path humanizing, the issue
+ * types) live in `$lib/editor` and are re-exported here so this module's
+ * existing consumers keep one import. No DOM, no Drizzle.
  */
 import {
 	documentSchemaV1,
@@ -14,6 +17,12 @@ import {
 	type Paragraph,
 	type Section
 } from '$lib/schema';
+// The canonical issue-path formatter, shared with the server `errors.ts` so the
+// optimistic placement matches the server's exactly (finding follow-up: removes the
+// copy-discipline duplication). Imported from its OWN leaf module (NOT the
+// `$lib/schema` barrel, which the renderer pulls): a direct leaf import keeps it
+// out of the reader-shared render chunk.
+import { formatIssuePath } from '$lib/schema/issue-path';
 import type { EditorIssue } from '$lib/editor';
 
 export {
@@ -23,24 +32,6 @@ export {
 	type EditorIssue,
 	type ErrorsByKey
 } from '$lib/editor';
-
-/**
- * Formats a Zod issue path (a mix of object keys and array indices) into the
- * `sections[0].blocks[2].alt` form `groupErrorsByLocation` and `humanizePath`
- * consume. A numeric segment is an array index (`[n]`), a string segment is an
- * object key (`.key`); the leading dot is trimmed so the first key reads clean.
- */
-function formatIssuePath(path: ReadonlyArray<PropertyKey>): string {
-	let formatted = '';
-	for (const segment of path) {
-		if (typeof segment === 'number') {
-			formatted += `[${segment}]`;
-		} else {
-			formatted += formatted.length === 0 ? String(segment) : `.${String(segment)}`;
-		}
-	}
-	return formatted.length === 0 ? 'document' : formatted;
-}
 
 /**
  * Optimistic client-side validation for the WYSIWYG editor (Epic 10.1): parses
@@ -58,7 +49,15 @@ function formatIssuePath(path: ReadonlyArray<PropertyKey>): string {
  * `validateDocument` would drag the version registry, migration chain, and hint
  * table into a reader-shared chunk and breach the NFR3 budget. The version
  * registry and migrations are a server/load concern the live editor never needs:
- * the in-edit document is always current-version.
+ * the in-edit document is always current-version. `formatIssuePath` is the
+ * canonical one shared with the server `errors.ts` (from the dependency-free leaf
+ * `$lib/schema/issue-path`, so it adds no reader bytes), so the optimistic issue
+ * PATH matches the server's `validateDocument` output exactly and the inline
+ * placement agrees before and after the round-trip. The server's `documentErrorMap`
+ * message rewrite is intentionally NOT reused here (importing it would drag it into
+ * a reader-shared chunk); schema-authored messages match verbatim, and the rare
+ * generic missing-key case keeps Zod's default wording - still valid guidance, with
+ * the server validate-on-write the message authority on save.
  */
 export function optimisticDocumentIssues(snapshot: unknown): EditorIssue[] {
 	const result = documentSchemaV1.safeParse(snapshot);

@@ -218,9 +218,15 @@ export {
 } from './versions/migrations.ts';
 export type { DocumentMigration } from './versions/migrations.ts';
 
+// `formatIssuePath` is intentionally NOT re-exported from this barrel. It lives in
+// its own leaf module `./issue-path.ts`; consumers import it directly from
+// `$lib/schema/issue-path` (the server `errors.ts` and the WYSIWYG editor's
+// optimistic validation both do). Re-exporting it here would let the barrel pull
+// the formatter into the reader-shared render chunk (the renderer imports this
+// barrel), perturbing the reader-path budget. Keeping it off the barrel holds the
+// reader path byte-identical while still sharing ONE formatter (story 10.1).
 export {
 	documentErrorMap,
-	formatIssuePath,
 	toProblemDetails,
 	toValidationErrors,
 	validateDocument,

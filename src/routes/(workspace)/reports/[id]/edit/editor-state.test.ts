@@ -364,6 +364,29 @@ describe('optimisticDocumentIssues', () => {
 		}
 	});
 
+	it('matches the server message at each schema-message path (shared formatIssuePath)', () => {
+		// Message parity for schema-authored messages, not just path parity: sharing the
+		// canonical `formatIssuePath` keeps the inline wording identical to the server's
+		// where the schema supplies the message. The image starter's empty `alt`/`assetId`
+		// carry schema messages (`min`/format rules), so optimistic and server agree
+		// verbatim. (The generic missing-key REWRITE - "Missing required field" via the
+		// server's `documentErrorMap` - is deliberately NOT reused on the client: importing
+		// the error map would drag it into a reader-shared chunk, so those rare cases keep
+		// Zod's default optimistic wording, still correct guidance with the server as authority.)
+		const document = documentWith([newBlock('image')]);
+
+		const optimistic = optimisticDocumentIssues(document);
+		const server = validateDocument(document);
+
+		expect(server.ok).toBe(false);
+		if (!server.ok) {
+			const optimisticByPath = new Map(optimistic.map((issue) => [issue.path, issue.message]));
+			for (const serverError of server.errors) {
+				expect(optimisticByPath.get(serverError.path)).toBe(serverError.message);
+			}
+		}
+	});
+
 	it('groups its issues onto the failing block id like the server errors do', () => {
 		const document = documentWith([newBlock('image')]);
 		const issues = optimisticDocumentIssues(document);

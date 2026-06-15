@@ -11,6 +11,7 @@ import {
 	MigrationPathError,
 	type DocumentMigration
 } from './versions/migrations.ts';
+import { formatIssuePath } from './issue-path.ts';
 
 /**
  * One actionable validation error (FR2/FR15). The same shape feeds the
@@ -48,22 +49,6 @@ export const documentErrorMap: z.core.$ZodErrorMap = (issue) => {
 	}
 	return undefined;
 };
-
-/** Formats a zod issue path as a human-readable pointer, e.g. `sections[2].blocks[0].alt`. */
-export function formatIssuePath(path: ReadonlyArray<PropertyKey>): string {
-	if (path.length === 0) {
-		return 'document';
-	}
-	let formatted = '';
-	for (const segment of path) {
-		if (typeof segment === 'number') {
-			formatted += `[${segment}]`;
-		} else {
-			formatted += formatted === '' ? String(segment) : `.${String(segment)}`;
-		}
-	}
-	return formatted;
-}
 
 const FIELD_HINTS: Record<string, string> = {
 	alt: 'Describe the image for screen readers; alt text is required on every image block.',
