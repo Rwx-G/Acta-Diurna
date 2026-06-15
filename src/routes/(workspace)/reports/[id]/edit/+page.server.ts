@@ -132,7 +132,12 @@ export const actions: Actions = {
 					slotMapping,
 					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
-				return { boundAt: report.updatedAt.toISOString() };
+				// Return the bound document AND its new `updatedAt` (Epic 10.5): a bind
+				// mutates the report, so the editor reseeds its working copy from THIS
+				// result and advances the concurrency token, the same self-contained
+				// reconciliation publish/unpublish use - so the next document save asserts
+				// the post-bind state instead of spuriously 409-ing on the stale value.
+				return { boundAt: report.updatedAt.toISOString(), document: report.document };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);
@@ -155,6 +160,10 @@ export const actions: Actions = {
 				);
 				return {
 					reboundAt: result.report.updatedAt.toISOString(),
+						// The re-resolved document (Epic 10.5): the editor reseeds its working
+						// copy from this and advances the concurrency token off `reboundAt`, so a
+						// later document save asserts the post-rebind state, not a stale value.
+						document: result.report.document,
 					diagnostics: result.diagnostics,
 					summary: result.summary,
 					rebound: result.rebound
@@ -184,7 +193,10 @@ export const actions: Actions = {
 					availableField,
 					await resolveAuthorScope(locals.authorSession?.authorId)
 				);
-				return { remappedAt: report.updatedAt.toISOString() };
+				// Return the re-resolved document AND its new `updatedAt` (Epic 10.5): the
+				// editor reseeds its working copy and advances the concurrency token, so the
+				// next document save asserts the post-remap state rather than spuriously 409-ing.
+				return { remappedAt: report.updatedAt.toISOString(), document: report.document };
 			},
 			(problem) => ({ message: problem.message, errors: problem.errors })
 		);

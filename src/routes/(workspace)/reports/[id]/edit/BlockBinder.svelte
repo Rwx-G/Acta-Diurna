@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import type { BindingSlot } from '$lib/schema';
+	import type { BindingSlot, DocumentV1 } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import type { PageData } from './$types';
 
@@ -13,9 +12,16 @@
 		blocks: BindableBlock[];
 		dataSets: DataSet[];
 		disabled: boolean;
+		/**
+		 * Reports a successful bind UP to the editor (Epic 10.5): the re-resolved
+		 * document + its new `updatedAt`, so the editor reseeds its working copy and
+		 * advances the concurrency token instead of an invalidateAll that would clobber
+		 * in-flight edits and leave the token stale.
+		 */
+		onBound: (savedAt: string, document: DocumentV1) => void;
 	}
 
-	let { blocks, dataSets, disabled }: Props = $props();
+	let { blocks, dataSets, disabled, onBound }: Props = $props();
 
 	// Initial selection only; the selects below bind these and the lists are
 	// stable for the editor's lifetime (a remount via {#key} resets them).
@@ -70,7 +76,10 @@
 			if (result.type === 'success') {
 				message = 'Block bound to the data set.';
 				messageVariant = 'ok';
-				await invalidateAll();
+				const payload = result.data as { boundAt?: string; document?: DocumentV1 } | undefined;
+				if (payload?.boundAt && payload.document) {
+					onBound(payload.boundAt, payload.document);
+				}
 			} else if (result.type === 'failure') {
 				const payload = result.data as { message?: string } | undefined;
 				message = payload?.message ?? 'Bind failed.';

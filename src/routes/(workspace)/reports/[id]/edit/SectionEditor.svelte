@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { BlockType, Scales, Section } from '$lib/schema';
+	import type { BlockType, DocumentV1, Scales, Section } from '$lib/schema';
+	import type { BlockDiagnostic } from '$lib/server/ingestion';
 	import Button from '$lib/ui/Button.svelte';
 	import AudiencePicker from './AudiencePicker.svelte';
 	import BlockEditor from './BlockEditor.svelte';
@@ -17,6 +18,14 @@
 		scales?: Scales;
 		/** Comparison-matrix blocks in the document, for the set-membership editor. */
 		matrixBlocks?: MatrixBlockOption[];
+		/** Per-block binding diagnostics from the last rebind (Epic 10.5), keyed by block id. */
+		diagnosticsByBlock?: Map<string, BlockDiagnostic>;
+		/** Field names behind the current diagnostics (the rebind source), for the inline remap. */
+		diagnosticFields?: string[];
+		/** The data set id behind the current diagnostics (the rebind source). */
+		diagnosticDataSetId?: string | null;
+		/** Reports a successful inline remap UP so the editor reconciles the token (Epic 10.5). */
+		onRemapped?: (savedAt: string, document: DocumentV1, blockId: string) => void;
 		onEdit: () => void;
 		onRemove: () => void;
 		onMove: (direction: -1 | 1) => void;
@@ -29,6 +38,10 @@
 		errors,
 		scales,
 		matrixBlocks,
+		diagnosticsByBlock,
+		diagnosticFields,
+		diagnosticDataSetId,
+		onRemapped,
 		onEdit,
 		onRemove,
 		onMove
@@ -138,6 +151,10 @@
 				issues={errors[`block:${block.id}`] ?? []}
 				{scales}
 				{matrixBlocks}
+				diagnostic={diagnosticsByBlock?.get(block.id)}
+				{diagnosticFields}
+				{diagnosticDataSetId}
+				{onRemapped}
 				{onEdit}
 				onRemove={() => removeBlock(blockIndex)}
 				onMove={(direction) => moveBlock(blockIndex, direction)}

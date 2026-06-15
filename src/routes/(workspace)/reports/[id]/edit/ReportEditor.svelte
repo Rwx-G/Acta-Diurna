@@ -7,6 +7,7 @@
 	import { formatUtcTime } from '$lib/format';
 	import type { DocumentV1 } from '$lib/schema';
 	import { isBindable } from '$lib/schema';
+	import type { BlockDiagnostic } from '$lib/server/ingestion';
 	import { THEME_OPTIONS, themeFallbackWarning } from '$lib/render';
 	import Button from '$lib/ui/Button.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
@@ -79,6 +80,14 @@
 	// True once a save came back 409: the in-memory edits are ahead of a newer
 	// server state, so the author must reload to reconcile before saving again.
 	let conflict = $state(false);
+	// Per-block binding diagnostics from the last rebind (Epic 10.5): the editor
+	// surfaces them at the block being edited (the chip + the inline remap), keyed
+	// by block id, AND on the refill panel summary. A rebind replaces this set; a
+	// bind/remap leaves it (those touch one block, the panel re-reads on its own).
+	let bindingDiagnostics = $state<BlockDiagnostic[]>([]);
+	// The fresh data set id behind the current diagnostics (the rebind source): the
+	// per-block remap form needs it to point an expected field at an available one.
+	let diagnosticDataSetId = $state<string | null>(null);
 	// null = no JS save yet (fall back to the server-rendered `form` prop, the
 	// no-JS path); [] = last JS save succeeded; entries = last JS save failed.
 	let clientErrors = $state<EditorIssue[] | null>(null);
@@ -103,6 +112,11 @@
 	const PREVIEW_DEBOUNCE_MS = 200;
 	// Seeded synchronously from the loaded doc so the first paint already shows the
 	// preview and any load-time issues; the $effect below keeps it settled-fresh.
+	// svelte-ignore state_referenced_locally
+	// WHY: a one-time init capture of the live doc. A binding action's
+	// `reconcileBinding` reassigns `doc` (the reseed), so the analyzer now flags this
+	// read; the $effect below re-settles the snapshot on every doc change (including a
+	// reseed), so the init read is intentionally the loaded value, not a stale alias.
 	let settledSnapshot = $state<DocumentV1>($state.snapshot(doc) as DocumentV1);
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -424,6 +438,69 @@
 		};
 	};
 
+	// Binding-action concurrency reconciliation (Epic 10.5, the key correctness
+	// point). A bind / rebind / remap is a server action that MUTATES the report
+	// through the same validate-on-write path a save uses, so it advances the row's
+	// `updatedAt`. Unreconciled, the editor's `expectedUpdatedAt` would stay at the
+	// pre-bind value and the NEXT document save would assert a stale token and 409
+	// spuriously. So a binding action returns the re-resolved document + its new
+	// `updatedAt`, and the editor reseeds its working copy and advances the token
+	// from THIS result - exactly the self-contained reconciliation publish/unpublish
+	// use, plus the document reseed (a bind changes the document, not just the
+	// timestamp). The reseed deep-copies so the working copy never aliases the
+	// action payload. Any pending document save is dropped: the binding write already
+	// carried the latest document forward, and the reseeded copy is the new baseline.
+	function reconcileBinding(savedAtIso: string, document: DocumentV1): void {
+		doc = structuredClone(document);
+		expectedUpdatedAt = savedAtIso;
+		savedAt = savedAtIso;
+		dirty = false;
+		pendingSave = false;
+		conflict = false;
+		clearTimeout(autosaveTimer);
+		clientErrors = [];
+		saveMessage = null;
+	}
+
+	function onBound(savedAtIso: string, document: DocumentV1): void {
+		reconcileBinding(savedAtIso, document);
+	}
+
+	function onRebound(
+		savedAtIso: string,
+		document: DocumentV1,
+		diagnostics: BlockDiagnostic[],
+		dataSetId: string
+	): void {
+		reconcileBinding(savedAtIso, document);
+		bindingDiagnostics = diagnostics;
+		diagnosticDataSetId = dataSetId;
+	}
+
+	function onRemapped(savedAtIso: string, document: DocumentV1, blockId: string): void {
+		reconcileBinding(savedAtIso, document);
+		// A remap re-resolved this block: drop its drift from the surfaced diagnostics
+		// so the now-green block stops showing the chip + the inline remap. A block that
+		// resolved cleanly carries no per-block diagnostic to surface.
+		bindingDiagnostics = bindingDiagnostics.filter((d) => d.blockId !== blockId);
+	}
+
+	// Per-block diagnostic index (Epic 10.5): the bindable block editors look up
+	// their drift state by block id to render the chip + the inline remap at the
+	// block. Only drifted/unresolved blocks need surfacing; a bound block is clean.
+	const diagnosticsByBlock = $derived(
+		new Map(bindingDiagnostics.filter((d) => d.state !== 'bound').map((d) => [d.blockId, d]))
+	);
+
+	// The available field names behind the current diagnostics (the rebind source's
+	// columns), for the per-block remap pick. Derived off the loaded data sets so it
+	// needs no extra round-trip. Empty when no rebind has run this session.
+	const diagnosticFields = $derived(
+		diagnosticDataSetId === null
+			? []
+			: (dataSets.find((set) => set.id === diagnosticDataSetId)?.fields.map((f) => f.name) ?? [])
+	);
+
 	function savedAtLabel(iso: string): string {
 		return `Saved at ${formatUtcTime(iso)}`;
 	}
@@ -564,6 +641,10 @@
 						errors={errorsByKey}
 						scales={doc.scales}
 						{matrixBlocks}
+						{diagnosticsByBlock}
+						{diagnosticFields}
+						{diagnosticDataSetId}
+						{onRemapped}
 						{onEdit}
 						onRemove={() => removeSection(sectionIndex)}
 						onMove={(direction) => moveSection(sectionIndex, direction)}
@@ -586,9 +667,15 @@
 	</aside>
 </div>
 
-<BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} />
+<!-- Data binding from the editor (Epic 10.5): the bind / refill panels call the
+     SAME existing `?/bind` / `?/rebind` / `?/remap` actions and binding services,
+     reporting their re-resolved document + new `updatedAt` UP so the editor reseeds
+     its working copy and advances the concurrency token (reconcileBinding) instead
+     of an invalidateAll that would clobber in-flight edits and leave the token
+     stale. The per-block diagnostics surface at the block too (threaded above). -->
+<BlockBinder blocks={bindableBlocks} {dataSets} disabled={!editable} {onBound} />
 
-<RefillPanel {dataSets} disabled={!editable} />
+<RefillPanel {dataSets} disabled={!editable} {onRebound} {onRemapped} />
 
 <!-- UX Flow D (FR32): the Generate-with-AI entry point appears only when the
      connector is configured + opted-in; a disabled instance hides it entirely so

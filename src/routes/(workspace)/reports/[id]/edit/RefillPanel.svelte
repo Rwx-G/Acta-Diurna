@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { BindingSummary as Summary, BlockDiagnostic } from '$lib/server/ingestion';
+	import type { DocumentV1 } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
 	import BindingChip from '$lib/ui/BindingChip.svelte';
 	import BindingSummaryView from '$lib/ui/BindingSummary.svelte';
@@ -14,14 +14,26 @@
 	// and remap any drift in place (FR15). Diagnostics come back from the rebind
 	// action; the chips and panels drive off them. Workspace-only and outside the
 	// reader closure (lib/ui chips never enter the render tier).
+	//
+	// Epic 10.5: the rebind / remap results are reported UP to the editor (onRebound
+	// / onRemapped) so it reseeds its working copy and advances the concurrency token
+	// (reconcileBinding), instead of an invalidateAll that would clobber in-flight
+	// edits and leave the token stale - the same reconciliation BlockBinder uses.
 	type DataSet = PageData['dataSets'][number];
 
 	interface Props {
 		dataSets: DataSet[];
 		disabled: boolean;
+		onRebound: (
+			savedAt: string,
+			document: DocumentV1,
+			diagnostics: BlockDiagnostic[],
+			dataSetId: string
+		) => void;
+		onRemapped: (savedAt: string, document: DocumentV1, blockId: string) => void;
 	}
 
-	let { dataSets, disabled }: Props = $props();
+	let { dataSets, disabled, onRebound, onRemapped }: Props = $props();
 
 	// svelte-ignore state_referenced_locally
 	let dataSetId = $state(dataSets[0]?.id ?? '');
@@ -45,6 +57,8 @@
 			rebinding = false;
 			if (result.type === 'success') {
 				const payload = result.data as {
+					reboundAt?: string;
+					document?: DocumentV1;
 					diagnostics?: BlockDiagnostic[];
 					summary?: Summary;
 					rebound?: string[];
@@ -59,7 +73,9 @@
 							? `Rebound ${rebound.length} block(s) - all green.`
 							: `Rebound ${rebound.length} block(s); some bindings need a remap.`;
 				messageVariant = 'ok';
-				await invalidateAll();
+				if (payload.reboundAt && payload.document) {
+					onRebound(payload.reboundAt, payload.document, diagnostics, dataSetId);
+				}
 			} else if (result.type === 'failure') {
 				const payload = result.data as { message?: string } | undefined;
 				message = payload?.message ?? 'Rebind failed.';
@@ -71,13 +87,20 @@
 		};
 	};
 
-	const submitRemap: SubmitFunction = () => {
+	const submitRemap: SubmitFunction = ({ formData }) => {
+		const remappedBlockId = String(formData.get('blockId') ?? '');
 		return async ({ result }) => {
 			if (result.type === 'success') {
 				message = 'Field remapped and re-resolved.';
 				messageVariant = 'ok';
 				openBlockId = null;
-				await invalidateAll();
+				// Drop the now-green block from the panel's local diagnostics too, so its
+				// amber chip clears here (the editor clears the block-level one via onRemapped).
+				diagnostics = diagnostics.filter((d) => d.blockId !== remappedBlockId);
+				const payload = result.data as { remappedAt?: string; document?: DocumentV1 } | undefined;
+				if (payload?.remappedAt && payload.document) {
+					onRemapped(payload.remappedAt, payload.document, remappedBlockId);
+				}
 			} else if (result.type === 'failure') {
 				const payload = result.data as { message?: string } | undefined;
 				message = payload?.message ?? 'Remap failed.';
