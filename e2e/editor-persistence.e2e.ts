@@ -177,13 +177,13 @@ test('the persistence UX surface has no axe-core violations', async ({ page }, t
 	await page.goto(`/reports/${reportId}/edit`);
 
 	// Make an edit so the undo control is enabled and the status indicator has shown a
-	// transition, then scan the toolbar + editor header the persistence UX lives in.
+	// transition, then scan the editor chrome the persistence UX lives in (the identity
+	// row with the title / status / save / publish and the grouped tool strip).
 	await page.getByLabel('Report title').fill('Axe Persistence');
 	await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
 
 	const results = await new AxeBuilder({ page })
-		.include('.editor-toolbar')
-		.include('.editor-header')
+		.include('.editor-chrome')
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
 		.analyze();
 

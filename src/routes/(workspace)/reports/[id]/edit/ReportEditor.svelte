@@ -723,62 +723,127 @@
 	onkeydown={onKeydown}
 />
 
-<div class="editor-toolbar">
-	<nav class="toolbar-nav" aria-label="Report views">
-		<!-- Toggles the embedded split preview (off by default). Distinct from the
-		     "Live preview" full-page link below: this pane tracks the LIVE in-edit copy
-		     as the author types, the link renders the last-saved snapshot full-screen. -->
-		<Button
-			variant="secondary"
-			class="preview-toggle"
-			aria-expanded={previewOpen}
-			aria-controls="editor-preview"
-			onclick={() => (previewOpen = !previewOpen)}
-		>
-			Split preview
-		</Button>
-		<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
-		<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
-		{#if !editable}
-			<a class="toolbar-link" href={sharePath}>Share</a>
-			<a class="toolbar-link" href={changesPath}>What changed</a>
+<div class="editor-chrome">
+	<div class="identity-row">
+		<input
+			class="report-title"
+			name="title"
+			form="report-save"
+			value={doc.title}
+			placeholder="Untitled report"
+			disabled={!editable}
+			oninput={(event) => {
+				doc.title = event.currentTarget.value;
+				onEdit();
+			}}
+			aria-label="Report title"
+		/>
+		<StatusChip status={report.status} />
+		{#if editable}
+			<!-- Autosave status (Story 10.7): announced saving / saved-at / failed so the
+			     author always knows their work is safe. `role="status"` + `aria-live="polite"`
+			     announces each transition; the failed state offers an explicit retry, and the
+			     class drives a quiet colour cue (text carries the meaning, WCAG 1.4.1). -->
+			<span class="save-status {saveStatus.kind}" role="status" aria-live="polite">
+				{saveStatus.label}
+			</span>
 		{/if}
-	</nav>
-
-	<!-- In-tab undo/redo (Story 10.7): visible, labelled controls alongside the
-	     Ctrl/Cmd+Z keyboard path (an undo affordance must not be keyboard-only,
-	     NFR15). Shown only while editable - a published report is read-only, so there
-	     is no working-copy history to step. Disabled when the stack has nothing to
-	     step to, so a screen reader announces the unavailable state rather than a
-	     dead button. -->
-	{#if editable}
-		<div class="history-controls" role="group" aria-label="Undo and redo">
-			<Button variant="ghost" onclick={undo} disabled={!canUndo} aria-label="Undo">Undo</Button>
-			<Button variant="ghost" onclick={redo} disabled={!canRedo} aria-label="Redo">Redo</Button>
+		<div class="identity-actions">
+			{#if saveStatus.kind === 'error' && editable}
+				<Button variant="secondary" onclick={retrySave}>Retry</Button>
+			{/if}
+			{#if editable}
+				<!-- Save targets the editing form by id (`form=`), so the title and this
+				     action sit in the identity row while the form wraps the body below. -->
+				<Button type="submit" form="report-save" variant="secondary">Save</Button>
+			{/if}
+			<!-- Morphing primary action: publish a draft, or unpublish a published report.
+			     Each is its own self-contained form, kept out of the editor fieldset so the
+			     unpublish control stays enabled while the read-only body is disabled. -->
+			{#if editable}
+				<form method="POST" action="?/publish" use:enhance={submitPublish} class="lifecycle">
+					<Button type="submit" variant="primary" disabled={publishing || saving}>
+						{publishing ? 'Publishing...' : 'Publish'}
+					</Button>
+				</form>
+			{:else}
+				<form method="POST" action="?/unpublish" use:enhance={submitUnpublish} class="lifecycle">
+					<span class="lifecycle-note">Published - unpublish to edit</span>
+					<Button type="submit" variant="secondary" disabled={publishing}>
+						{publishing ? 'Unpublishing...' : 'Unpublish'}
+					</Button>
+				</form>
+			{/if}
 		</div>
+	</div>
+
+	<div class="tool-strip">
+		<div class="tool-group" role="group" aria-label="Preview the report">
+			<span class="tool-group-label">View</span>
+			<!-- Toggles the embedded split preview (off by default). Distinct from the
+			     "Live preview" full-page link: this pane tracks the LIVE in-edit copy as the
+			     author types, the link renders the last-saved snapshot full-screen. -->
+			<Button
+				variant="secondary"
+				class="preview-toggle"
+				aria-expanded={previewOpen}
+				aria-controls="editor-preview"
+				onclick={() => (previewOpen = !previewOpen)}
+			>
+				Split preview
+			</Button>
+			<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
+			<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
+			{#if !editable}
+				<a class="toolbar-link" href={sharePath}>Share</a>
+				<a class="toolbar-link" href={changesPath}>What changed</a>
+			{/if}
+		</div>
+
+		<!-- In-tab undo/redo (Story 10.7): visible, labelled controls alongside the
+		     Ctrl/Cmd+Z keyboard path (NFR15: an undo affordance is never keyboard-only).
+		     Editable-only - a published report has no working-copy history to step. -->
+		{#if editable}
+			<div class="tool-group" role="group" aria-label="Undo and redo">
+				<span class="tool-group-label">Edit</span>
+				<Button variant="ghost" onclick={undo} disabled={!canUndo} aria-label="Undo">Undo</Button>
+				<Button variant="ghost" onclick={redo} disabled={!canRedo} aria-label="Redo">Redo</Button>
+			</div>
+		{/if}
+
+		<label class="theme-field">
+			<span class="theme-label">Theme</span>
+			<select
+				class="theme-select"
+				value={doc.theme ?? ''}
+				disabled={!editable}
+				onchange={(event) => onThemeChange(event.currentTarget.value)}
+			>
+				<option value="">Default (Modern Gazette)</option>
+				{#each THEME_OPTIONS as option (option.name)}
+					{#if option.name !== 'default'}
+						<option value={option.name}>{option.label}</option>
+					{/if}
+				{/each}
+			</select>
+		</label>
+	</div>
+
+	{#if themeWarning}
+		<p class="theme-warning" role="status">{themeWarning.message}</p>
 	{/if}
 
-	<!-- Morphing primary action (UX): publish a draft, or unpublish to edit a
-	     published report. Kept outside the editor fieldset so the unpublish
-	     control stays enabled while the read-only fieldset is disabled. -->
-	{#if editable}
-		<form method="POST" action="?/publish" use:enhance={submitPublish} class="lifecycle">
-			<Button type="submit" variant="primary" disabled={publishing || saving}>
-				{publishing ? 'Publishing...' : 'Publish'}
-			</Button>
-		</form>
-	{:else}
-		<form method="POST" action="?/unpublish" use:enhance={submitUnpublish} class="lifecycle">
-			<span class="lifecycle-note">Published - unpublish to edit</span>
-			<Button type="submit" variant="secondary" disabled={publishing}>
-				{publishing ? 'Unpublishing...' : 'Unpublish'}
-			</Button>
-		</form>
+	{#if !editable}
+		<p class="published-note">
+			This report is published and read-only. Readers see the snapshot taken at publish. Unpublish
+			above to edit or delete it.
+		</p>
 	{/if}
 </div>
 
 <div class="editor-layout">
 	<form
+		id="report-save"
 		method="POST"
 		action="?/save"
 		use:enhance={submitSave}
@@ -786,65 +851,6 @@
 		class="editor-form"
 	>
 		<fieldset class="editor" disabled={!editable}>
-			<div class="editor-header">
-				<input
-					class="report-title"
-					name="title"
-					value={doc.title}
-					oninput={(event) => {
-						doc.title = event.currentTarget.value;
-						onEdit();
-					}}
-					aria-label="Report title"
-				/>
-				<StatusChip status={report.status} />
-				<div class="save-state">
-					{#if editable}
-						<Button type="submit" variant="secondary">Save</Button>
-					{/if}
-					<!-- Autosave status indicator (Story 10.7): an accessible, announced
-					     saving / saved-at / failed status so the author always knows whether
-					     their work is safe. `role="status"` + `aria-live="polite"` announces
-					     each transition without stealing focus; the failed state offers an
-					     explicit retry. The class drives a quiet colour cue (the text carries
-					     the meaning, not the colour alone, WCAG 1.4.1). -->
-					<span class="save-status {saveStatus.kind}" role="status" aria-live="polite">
-						{saveStatus.label}
-					</span>
-					{#if saveStatus.kind === 'error' && editable}
-						<Button variant="secondary" onclick={retrySave}>Retry</Button>
-					{/if}
-				</div>
-			</div>
-
-			<div class="report-settings">
-				<label class="theme-field">
-					<span class="theme-label">Theme</span>
-					<select
-						class="theme-select"
-						value={doc.theme ?? ''}
-						onchange={(event) => onThemeChange(event.currentTarget.value)}
-					>
-						<option value="">Default (Modern Gazette)</option>
-						{#each THEME_OPTIONS as option (option.name)}
-							{#if option.name !== 'default'}
-								<option value={option.name}>{option.label}</option>
-							{/if}
-						{/each}
-					</select>
-				</label>
-				{#if themeWarning}
-					<p class="theme-warning" role="status">{themeWarning.message}</p>
-				{/if}
-			</div>
-
-			{#if !editable}
-				<p class="published-note">
-					This report is published and read-only. Readers see the snapshot taken at publish.
-					Unpublish above to edit or delete it.
-				</p>
-			{/if}
-
 			{#if conflict}
 				<!-- Optimistic-concurrency conflict (Epic 10.1): a concurrent write landed
 			     between load and save. The edits stay in memory; reloading reconciles
@@ -917,21 +923,50 @@
 {/if}
 
 <style>
-	.editor-toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3) var(--space-5);
-		max-width: 880px;
+	/* Editor chrome: an identity row (title + status + the lone Publish CTA) over a
+	   grouped tool strip (View / Edit / Theme). The document identity and its one
+	   primary action read first; the situational tools cluster by family below,
+	   instead of one undifferentiated button run. */
+	.editor-chrome {
 		margin-bottom: var(--space-5);
 	}
 
-	.toolbar-nav {
+	.identity-row {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
+		gap: var(--space-3);
+	}
+
+	.identity-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		margin-left: auto;
+	}
+
+	.tool-strip {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-3) var(--space-5);
+		margin-top: var(--space-3);
+		padding-top: var(--space-3);
+		border-top: 1px solid var(--color-ink-12);
+	}
+
+	.tool-group {
+		display: flex;
+		align-items: center;
 		gap: var(--space-2);
+	}
+
+	.tool-group-label {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-ink-65);
 	}
 
 	.lifecycle {
@@ -939,7 +974,6 @@
 		align-items: center;
 		gap: var(--space-3);
 		margin: 0;
-		margin-left: auto;
 	}
 
 	.lifecycle-note {
@@ -1003,15 +1037,8 @@
 		border: 0;
 	}
 
-	.editor-header {
-		display: flex;
-		align-items: center;
-		gap: var(--space-4);
-		margin-bottom: var(--space-4);
-	}
-
 	.report-title {
-		flex: 1;
+		flex: 1 1 16rem;
 		min-width: 0;
 		padding: var(--space-2) var(--space-3);
 		font: inherit;
@@ -1019,8 +1046,16 @@
 		font-weight: 600;
 		color: inherit;
 		background: transparent;
+		/* A persistent faint underline marks the title as an editable field at rest,
+		   not static heading text; hover/focus promote it to a full input frame. */
 		border: 1px solid transparent;
+		border-bottom-color: var(--color-ink-25);
 		border-radius: var(--radius-sm);
+	}
+
+	.report-title::placeholder {
+		color: var(--color-ink-65);
+		font-weight: 500;
 	}
 
 	.report-title:hover,
@@ -1029,10 +1064,13 @@
 		border-color: var(--color-ink-25);
 	}
 
-	.save-state {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
+	/* A published report's title is read-only: drop the editable underline and keep
+	   it fully legible (WebView greys disabled inputs, so pin the text colour). */
+	.report-title:disabled {
+		border-bottom-color: transparent;
+		color: var(--color-ink);
+		-webkit-text-fill-color: var(--color-ink);
+		opacity: 1;
 	}
 
 	/* Autosave status indicator (Story 10.7). The text carries the meaning; the
@@ -1049,24 +1087,12 @@
 		font-weight: 600;
 	}
 
-	.history-controls {
-		display: flex;
-		align-items: center;
-		gap: var(--space-1);
-	}
-
-	.report-settings {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-3) var(--space-4);
-		margin-bottom: var(--space-4);
-	}
-
+	/* Theme sits at the trailing edge of the tool strip. */
 	.theme-field {
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
+		margin-left: auto;
 	}
 
 	.theme-label {
