@@ -314,6 +314,13 @@
 	// crashing).
 	const previewSnapshot = $derived(settledSnapshot);
 
+	// The embedded split preview is a VIEW concern, off by default so opening a
+	// report shows the editing form full-width rather than a preview the author did
+	// not ask for. The author reveals it on demand via the toolbar toggle; when open
+	// it sits BESIDE the form (a flex column), never over it. The full-page preview
+	// route and "View as reader" remain the other two ways to see the render.
+	let previewOpen = $state(false);
+
 	/*
 	 * Autosave concurrency contract (story 1.5, made explicit in 10.1 ahead of
 	 * 10.2-10.7 adding more save triggers). The save form is a real form action
@@ -718,6 +725,18 @@
 
 <div class="editor-toolbar">
 	<nav class="toolbar-nav" aria-label="Report views">
+		<!-- Toggles the embedded split preview (off by default). Distinct from the
+		     "Live preview" full-page link below: this pane tracks the LIVE in-edit copy
+		     as the author types, the link renders the last-saved snapshot full-screen. -->
+		<Button
+			variant="secondary"
+			class="preview-toggle"
+			aria-expanded={previewOpen}
+			aria-controls="editor-preview"
+			onclick={() => (previewOpen = !previewOpen)}
+		>
+			Split preview
+		</Button>
 		<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
 		<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
 		{#if !editable}
@@ -871,10 +890,13 @@
 	<!-- Authoritative live preview (Epic 10.1): the editor reuses the SAME embedded
 	     LivePreview the /preview route uses, fed the LIVE in-edit snapshot so it
 	     re-renders through the pure `$lib/render` tier on every edit. What the author
-	     edits is what the reader gets - the preview IS the reader render. -->
-	<aside class="editor-preview" aria-label="Live preview">
-		<LivePreview document={previewSnapshot} />
-	</aside>
+	     edits is what the reader gets - the preview IS the reader render. Off by
+	     default (previewOpen), revealed beside the form via the toolbar toggle. -->
+	{#if previewOpen}
+		<aside id="editor-preview" class="editor-preview" aria-label="Live preview">
+			<LivePreview document={previewSnapshot} />
+		</aside>
+	{/if}
 </div>
 
 <!-- Data binding from the editor (Epic 10.5): the bind / refill panels call the
@@ -939,6 +961,15 @@
 	.toolbar-link:hover {
 		border-color: var(--color-purple);
 		color: var(--color-purple);
+	}
+
+	/* Open state of the split-preview toggle: a filled pressed look so the active
+	   state reads on its own, not only by the pane's presence. The selector reaches
+	   into the Button child via :global (the class is forwarded onto its <button>). */
+	:global(.preview-toggle[aria-expanded='true']) {
+		color: var(--color-purple);
+		border-color: var(--color-purple);
+		background: var(--color-purple-08);
 	}
 
 	/* Two-pane editor shell (Epic 10.1): the form on the left, the authoritative

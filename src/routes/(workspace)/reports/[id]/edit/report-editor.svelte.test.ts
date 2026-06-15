@@ -68,20 +68,42 @@ describe('ReportEditor shell', () => {
 		expect(report.document.title).toBe('Shell Fixture');
 	});
 
+	it('keeps the split preview closed until the author opens it, then toggles it back', async () => {
+		const { getByLabelText, getByRole } = renderEditor(sampleReport());
+
+		// Opening a report shows the editing form alone - no preview pane the author
+		// did not ask for (the split preview is off by default).
+		expect(getByLabelText('Live preview').query()).toBeNull();
+
+		const toggle = getByRole('button', { name: 'Split preview' });
+		await toggle.click();
+		await expect.element(getByLabelText('Live preview')).toBeVisible();
+
+		// Toggling again hides it, returning the form to full width.
+		await toggle.click();
+		await vi.waitFor(() => {
+			expect(getByLabelText('Live preview').query()).toBeNull();
+		});
+	});
+
 	it('renders the authoritative live preview through the pure renderer', async () => {
-		const { getByText, getByLabelText } = renderEditor(sampleReport());
+		const { getByText, getByLabelText, getByRole } = renderEditor(sampleReport());
+
+		// The split preview is off by default; reveal it via the toolbar toggle.
+		await getByRole('button', { name: 'Split preview' }).click();
 
 		// The embedded LivePreview is the SAME `$lib/render` tier the reader uses, so
 		// the loaded paragraph appears in the preview pane, not a lookalike.
 		await expect.element(getByText('Loaded paragraph.')).toBeVisible();
 		// The preview pane carries the `Live preview` region label (distinct from the
-		// toolbar link of the same text).
+		// toolbar toggle and the full-page link of that name).
 		await expect.element(getByLabelText('Live preview')).toBeVisible();
 	});
 
 	it('updates the live preview from the in-edit document as the author edits', async () => {
 		const { getByLabelText, getByRole } = renderEditor(sampleReport());
 
+		await getByRole('button', { name: 'Split preview' }).click();
 		await getByLabelText('Report title').fill('Renamed Report');
 
 		// The preview re-renders from the in-edit document: the new title shows in the

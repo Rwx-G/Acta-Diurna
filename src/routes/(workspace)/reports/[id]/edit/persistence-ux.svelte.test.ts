@@ -124,6 +124,10 @@ describe('ReportEditor persistence UX (Story 10.7)', () => {
 		const undoButton = getByRole('button', { name: 'Undo', exact: true });
 
 		await expect.element(undoButton).toBeDisabled();
+		// Open the split preview (a view-only toggle, off by default) - itself not a
+		// document edit, so undo must stay disabled after it.
+		await getByRole('button', { name: 'Split preview' }).click();
+		await expect.element(undoButton).toBeDisabled();
 		// Toggle the preview to the mobile viewport (a view-only LivePreview control).
 		await getByRole('button', { name: 'Mobile', exact: true }).click();
 		// Still disabled: a view interaction did not record a history step.

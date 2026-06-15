@@ -187,6 +187,9 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		const report = sampleReport(staticTableDocument(), new Date('2026-06-12T09:30:00Z'));
 		const screen = await renderEditor(report);
 
+		// The bound result renders in the split preview, which is off by default.
+		await screen.getByRole('button', { name: 'Split preview' }).click();
+
 		const bound = boundTableDocument();
 		// Inject a resolved row into the bound document so the reseed is observable in the
 		// preview (a bound block carries the data set's rows).

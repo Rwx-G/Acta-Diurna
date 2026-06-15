@@ -91,10 +91,17 @@ describe('Story 10.6 audience-aware preview', () => {
 	});
 
 	it('switches the live preview between levels using the same filtering the reader uses', async () => {
-		const { container } = renderEditor(taggedDocument());
+		const { container, getByRole } = renderEditor(taggedDocument());
+
+		// The split preview is off by default; open it via the toolbar toggle.
+		await getByRole('button', { name: 'Split preview' }).click();
 
 		// The tagged draft shows the embedded reader LevelSwitcher in the preview pane.
-		const preview = container.querySelector('.editor-preview')!;
+		const preview = await vi.waitFor(() => {
+			const el = container.querySelector<HTMLElement>('.editor-preview');
+			if (!el) throw new Error('preview pane not open');
+			return el;
+		});
 		const reportRoot = preview.querySelector<HTMLElement>('.report.embedded')!;
 
 		// Default level is `full` (FR28): the report root carries data-level="full" and
@@ -146,8 +153,13 @@ describe('Story 10.6 audience-aware preview', () => {
 	});
 
 	it('reflects an audience tag set in the editor immediately in the level-switched preview', async () => {
-		const { container } = renderEditor(plainDocument());
-		const preview = container.querySelector('.editor-preview')!;
+		const { container, getByRole } = renderEditor(plainDocument());
+		await getByRole('button', { name: 'Split preview' }).click();
+		const preview = await vi.waitFor(() => {
+			const el = container.querySelector<HTMLElement>('.editor-preview');
+			if (!el) throw new Error('preview pane not open');
+			return el;
+		});
 
 		// No tags yet: no embedded reader switcher in the preview.
 		expect(preview.querySelector('input[name="audience-level"]')).toBeNull();
