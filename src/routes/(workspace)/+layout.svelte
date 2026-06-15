@@ -88,6 +88,11 @@
 		top: 0;
 		align-self: start;
 		height: 100vh;
+		/* border-box so the 100vh INCLUDES the padding: with the default content-box
+		   the padding stacks on top of 100vh, making the rail taller than the
+		   viewport - which scrolls even a short page and pushes the bottom-anchored
+		   sign-out below the fold (there is no global box-sizing reset). */
+		box-sizing: border-box;
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
