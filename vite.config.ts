@@ -74,6 +74,14 @@ export default defineConfig({
 						provider: playwright(),
 						instances: [{ browser: 'chromium', headless: true }]
 					},
+					// Browser test files run serially. Several editor tests assert off a
+					// ~200 ms debounced settled snapshot via polling matchers; running the
+					// files concurrently in one chromium instance starves that timer under
+					// CPU load and Svelte's async reactivity drops its tracking
+					// (track_reactivity_loss), flaking the debounce-dependent tests. Serial
+					// is also no slower here - the parallel spin-up cost outweighs the
+					// overlap for this browser suite.
+					fileParallelism: false,
 					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
 					exclude: ['src/lib/server/**']
 				}
