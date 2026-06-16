@@ -204,11 +204,12 @@
 		});
 	}
 
-	// One pointer handler on the reading surface: an internal-link click drills into
-	// a detail page, anything else falls through to edge-tap paging.
+	// One pointer handler on the reading surface: an internal-link click drills into a
+	// detail page. Click paging (the left/right edge taps) was removed deliberately - a
+	// document can carry links, and a stray click near one must never advance the slide;
+	// scroll and the keyboard arrows are the paging affordances.
 	function handleClick(event: MouseEvent) {
-		if (handleInternalLink(event)) return;
-		handleEdgeTap(event);
+		handleInternalLink(event);
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -259,8 +260,8 @@
 		}
 	}
 
-	// Touch: horizontal swipe pages sections; a tap on the left/right viewport
-	// edge pages too (reveal.js-style edge taps for mobile).
+	// Touch: a horizontal swipe pages sections - a deliberate gesture, unlike the
+	// removed edge taps; a stray tap never moves the slide.
 	let touchStartX = 0;
 	let touchStartY = 0;
 	const SWIPE_THRESHOLD = 48;
@@ -278,12 +279,23 @@
 		}
 	}
 
-	function handleEdgeTap(event: MouseEvent) {
-		if (effectiveMode !== 'slide') return;
-		const width = window.innerWidth;
-		const zone = width * 0.12;
-		if (event.clientX <= zone) go(nav.current - 1);
-		else if (event.clientX >= width - zone) go(nav.current + 1);
+	// "On the first page" for the upfront level switcher is the SCROLL position at the
+	// very top, not `nav.current === 0`: changing the reading level can hide the first
+	// section (and the cover inside it), which would move `nav.current` off 0 and make
+	// the switcher vanish mid-interaction. Scroll-top survives that - reflowing a hidden
+	// first section leaves the reader at the top - so the switcher stays put while the
+	// reader is at the start and disappears once they scroll or page on. The slide-mode
+	// scroll container is `.sections`; scroll mode scrolls the window.
+	let sectionsEl = $state<HTMLElement>();
+	let atStart = $state(true);
+
+	function updateAtStart(): void {
+		if (embedded) return;
+		const top =
+			effectiveMode === 'slide'
+				? (sectionsEl?.scrollTop ?? 0)
+				: (window.scrollY ?? document.documentElement.scrollTop);
+		atStart = top <= 4;
 	}
 
 	// Track which section is in view (scroll mode + native scroll in slide mode)
@@ -361,7 +373,10 @@
 	});
 </script>
 
-<svelte:window onkeydown={embedded ? undefined : handleKeydown} />
+<svelte:window
+	onkeydown={embedded ? undefined : handleKeydown}
+	onscroll={embedded ? undefined : updateAtStart}
+/>
 
 <!-- The reading surface. Touch swipe is a pointer enhancement; full keyboard
      navigation is wired at the window level (handleKeydown), so this is not the
@@ -397,9 +412,12 @@
 	{/if}
 
 	{#if !embedded}
-		<ProgressRail progress={nav.progress} idle={nav.idle && !nav.tocOpen} />
+		<!-- The reading-progress rail and the chrome (contents burger + level switcher)
+		     stay visible at all times, not dimmed on idle - a reader always has the
+		     progress indicator and the way into the table of contents in reach. -->
+		<ProgressRail progress={nav.progress} idle={false} />
 
-		<div class="chrome" class:idle={nav.idle && !nav.tocOpen}>
+		<div class="chrome">
 			<button
 				type="button"
 				class="chrome-btn"
@@ -409,7 +427,11 @@
 			>
 				<span aria-hidden="true">☰</span>
 			</button>
-			{#if view.hasAudiences}
+			<!-- The reading-level switcher is an upfront choice: surfaced only while the
+			     reader is at the very start (scroll-top) so they pick a level before reading,
+			     then it stays out of the way. A deep link into a deeper level still
+			     auto-promotes (handleInternalLink). -->
+			{#if view.hasAudiences && atStart}
 				<LevelSwitcher level={activeLevel} onchange={(next) => (activeLevel = next)} />
 			{/if}
 		</div>
@@ -435,15 +457,17 @@
 		<ChangeSummary entries={view.changeSummary} />
 	{/if}
 
-	<!-- Edge-tap paging is a pointer enhancement on top of full keyboard nav
-	     (handleKeydown at window level); the main landmark stays non-interactive
-	     semantically. -->
+	<!-- The click handler ONLY activates internal links (drill into a detail page); paging
+	     is keyboard (handleKeydown at window level) and scroll. The main landmark stays
+	     non-interactive semantically - a click anywhere else does nothing. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<main
+		bind:this={sectionsEl}
 		class="sections"
 		class:slide={effectiveMode === 'slide'}
 		onclick={embedded ? undefined : handleClick}
+		onscroll={embedded ? undefined : updateAtStart}
 	>
 		{#each view.sections as section, index (section.id)}
 			<div
@@ -631,11 +655,6 @@
 		display: none;
 	}
 
-	.chrome.idle {
-		opacity: 0;
-		pointer-events: none;
-	}
-
 	.chrome-btn {
 		display: grid;
 		place-items: center;
@@ -652,12 +671,5 @@
 
 	.chrome-btn:hover {
 		color: var(--report-accent);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.chrome.idle {
-			opacity: 1;
-			pointer-events: auto;
-		}
 	}
 </style>
