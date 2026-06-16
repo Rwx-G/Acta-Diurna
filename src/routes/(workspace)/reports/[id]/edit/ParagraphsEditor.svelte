@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Paragraph } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import { moveItem, newRun, RUN_MARKS, setRunLink, toggleRunMark } from './editor-state';
 
 	// Shared inline-run paragraph editor (Story 10.4). A run-bearing block edits its
@@ -84,6 +85,7 @@
 					<div class="run-controls">
 						<Button
 							class="row-control"
+							variant="icon"
 							onclick={() => {
 								moveItem(paragraph, runIndex, -1);
 								onEdit();
@@ -91,10 +93,11 @@
 							disabled={runIndex === 0}
 						>
 							<span class="sr-only">{`Move ${scope}run ${runIndex + 1} left`}</span>
-							<span aria-hidden="true">&larr;</span>
+							<UiIcon name="chevron-left" />
 						</Button>
 						<Button
 							class="row-control"
+							variant="icon"
 							onclick={() => {
 								moveItem(paragraph, runIndex, 1);
 								onEdit();
@@ -102,11 +105,11 @@
 							disabled={runIndex === paragraph.length - 1}
 						>
 							<span class="sr-only">{`Move ${scope}run ${runIndex + 1} right`}</span>
-							<span aria-hidden="true">&rarr;</span>
+							<UiIcon name="chevron-right" />
 						</Button>
 						<Button
 							class="row-control"
-							variant="ghost"
+							variant="icon-danger"
 							onclick={() => {
 								paragraph.splice(runIndex, 1);
 								onEdit();
@@ -114,7 +117,7 @@
 							disabled={paragraph.length === 1}
 						>
 							<span class="sr-only">{`Remove ${scope}run ${runIndex + 1}`}</span>
-							<span aria-hidden="true">&times;</span>
+							<UiIcon name="x" />
 						</Button>
 					</div>
 				</div>

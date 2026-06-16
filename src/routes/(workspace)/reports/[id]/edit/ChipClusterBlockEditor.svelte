@@ -2,6 +2,7 @@
 	import type { ChipClusterBlock, Scales } from '$lib/schema';
 	import { resolveScaleRef } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 
 	// The chip cluster renders one pill per listed entry of a single referenced
 	// scale; colour and label come from the scale, so this editor only chooses the
@@ -73,7 +74,7 @@
 			</select>
 			<Button
 				class="row-control"
-				variant="ghost"
+				variant="icon-danger"
 				onclick={() => {
 					block.entries.splice(entryIndex, 1);
 					onEdit();
@@ -81,7 +82,7 @@
 				disabled={block.entries.length === 1}
 				aria-label={`Remove chip ${entryIndex + 1}`}
 			>
-				<span aria-hidden="true">&times;</span>
+				<UiIcon name="x" />
 			</Button>
 		</div>
 	{/each}

@@ -10,6 +10,7 @@
 	import type { BlockDiagnostic } from '$lib/server/ingestion';
 	import { THEME_OPTIONS, themeFallbackWarning } from '$lib/render';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import StatusChip from '$lib/ui/StatusChip.svelte';
 	import BlockBinder from './BlockBinder.svelte';
 	import RefillPanel from './RefillPanel.svelte';
@@ -780,7 +781,10 @@
 			{#if editable}
 				<!-- Save targets the editing form by id (`form=`), so the title and this
 				     action sit in the identity row while the form wraps the body below. -->
-				<Button type="submit" form="report-save" variant="secondary">Save</Button>
+				<Button type="submit" form="report-save" variant="secondary">
+					<UiIcon name="save" />
+					Save
+				</Button>
 			{/if}
 			<!-- Morphing primary action: publish a draft, or unpublish a published report.
 			     Each is its own self-contained form, kept out of the editor fieldset so the
@@ -788,6 +792,7 @@
 			{#if editable}
 				<form method="POST" action="?/publish" use:enhance={submitPublish} class="lifecycle">
 					<Button type="submit" variant="primary" disabled={publishing || saving}>
+						<UiIcon name="upload" />
 						{publishing ? 'Publishing...' : 'Publish'}
 					</Button>
 				</form>
@@ -805,45 +810,86 @@
 	<div class="tool-strip">
 		<div class="tool-group" role="group" aria-label="Right pane">
 			<span class="tool-group-label">Panneau</span>
-			<!-- The right-pane segmented toggle (UX redesign): "Inspecteur" (default) shows
-			     the selected element's settings, "Apercu" shows the embedded live preview.
-			     The preview tracks the LIVE in-edit copy as the author types; the "Live
-			     preview" full-page link renders the last-saved snapshot full-screen. Each
-			     segment is a pressed-state button so the active pane reads on its own. -->
+			<!-- The right-pane toggle (UX redesign): "Inspecteur" (default) shows the
+			     selected element's settings, "Apercu" the embedded live preview. A true
+			     segmented control - one pill track, the active segment filled - so the two
+			     read as one mutually-exclusive choice, not two loose boxes. Plain buttons
+			     (not the bordered Button variant) so they can share the single track. -->
 			<div class="segmented" role="group" aria-label="Pane mode">
-				<Button
-					variant="secondary"
+				<button
+					type="button"
 					class="segment"
 					aria-pressed={rightPane === 'inspector'}
 					onclick={() => (rightPane = 'inspector')}
 				>
+					<UiIcon name="panel" />
 					Inspecteur
-				</Button>
-				<Button
-					variant="secondary"
+				</button>
+				<button
+					type="button"
 					class="segment"
 					aria-pressed={rightPane === 'preview'}
 					onclick={() => (rightPane = 'preview')}
 				>
+					<UiIcon name="eye" />
 					Apercu
-				</Button>
+				</button>
 			</div>
-			<a class="toolbar-link" href={previewPath} data-sveltekit-preload-data="off">Live preview</a>
-			<a class="toolbar-link" href={viewPath} data-sveltekit-preload-data="off">View as reader</a>
+		</div>
+
+		<!-- The navigations that LEAVE the editor for a full-page view: quieter than the
+		     segmented pane toggle (borderless ghost links), each marked with the external-
+		     link glyph so "this opens elsewhere" reads at a glance - distinct from switching
+		     the in-place right pane above. -->
+		<div class="tool-group" role="group" aria-label="Open in full page">
+			<span class="tool-group-label">Open</span>
+			<a class="nav-link" href={previewPath} data-sveltekit-preload-data="off">
+				<UiIcon name="external" />
+				Live preview
+			</a>
+			<a class="nav-link" href={viewPath} data-sveltekit-preload-data="off">
+				<UiIcon name="external" />
+				View as reader
+			</a>
 			{#if !editable}
-				<a class="toolbar-link" href={sharePath}>Share</a>
-				<a class="toolbar-link" href={changesPath}>What changed</a>
+				<a class="nav-link" href={sharePath}>
+					<UiIcon name="external" />
+					Share
+				</a>
+				<a class="nav-link" href={changesPath}>
+					<UiIcon name="external" />
+					What changed
+				</a>
 			{/if}
 		</div>
 
-		<!-- In-tab undo/redo (Story 10.7): visible, labelled controls alongside the
-		     Ctrl/Cmd+Z keyboard path (NFR15: an undo affordance is never keyboard-only).
-		     Editable-only - a published report has no working-copy history to step. -->
+		<!-- In-tab undo/redo (Story 10.7): icon controls alongside the Ctrl/Cmd+Z keyboard
+		     path (NFR15: an undo affordance is never keyboard-only). The aria-label is the
+		     accessible name; the title surfaces the shortcut on hover. Editable-only - a
+		     published report has no working-copy history to step. -->
 		{#if editable}
 			<div class="tool-group" role="group" aria-label="Undo and redo">
 				<span class="tool-group-label">Edit</span>
-				<Button variant="ghost" onclick={undo} disabled={!canUndo} aria-label="Undo">Undo</Button>
-				<Button variant="ghost" onclick={redo} disabled={!canRedo} aria-label="Redo">Redo</Button>
+				<Button
+					class="row-control"
+					variant="icon"
+					onclick={undo}
+					disabled={!canUndo}
+					aria-label="Undo"
+					title="Undo (Ctrl+Z)"
+				>
+					<UiIcon name="undo" />
+				</Button>
+				<Button
+					class="row-control"
+					variant="icon"
+					onclick={redo}
+					disabled={!canRedo}
+					aria-label="Redo"
+					title="Redo (Ctrl+Y)"
+				>
+					<UiIcon name="redo" />
+				</Button>
 			</div>
 		{/if}
 
@@ -1023,32 +1069,61 @@
 		white-space: nowrap;
 	}
 
-	.toolbar-link {
-		padding: var(--space-2) var(--space-4);
+	/* Segmented pane toggle: one pill track holding the two pane choices. The active
+	   segment lifts onto the card surface so the selected pane reads on its own; the
+	   track behind both groups them as a single mutually-exclusive control (a true
+	   segmented control, not two adjacent boxes). */
+	.segmented {
+		display: inline-flex;
+		gap: 2px;
+		padding: 3px;
+		background: var(--color-ink-08);
+		border-radius: var(--radius-pill);
+	}
+
+	.segment {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-height: 32px;
+		padding: var(--space-2) var(--space-3);
+		font: inherit;
+		font-size: var(--text-sm);
 		font-weight: 600;
-		font-size: var(--text-base);
+		color: var(--color-ink-65);
+		background: none;
+		border: none;
+		border-radius: var(--radius-pill);
+		cursor: pointer;
+	}
+
+	.segment:hover {
 		color: var(--color-ink);
+	}
+
+	.segment[aria-pressed='true'] {
+		color: var(--color-purple);
+		background: var(--color-surface);
+		box-shadow: 0 1px 2px rgb(28 27 46 / 10%);
+	}
+
+	/* The leave-the-editor navigations: borderless ghost links (the bordered boxes were
+	   the old toolbar's visual noise), each cued by the external-link glyph so "opens
+	   elsewhere" reads apart from the in-place pane toggle. */
+	.nav-link {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		padding: var(--space-2) var(--space-3);
+		font-weight: 600;
+		font-size: var(--text-sm);
+		color: var(--color-ink-65);
 		text-decoration: none;
-		border: 1px solid var(--color-ink-25);
 		border-radius: var(--radius-sm);
 	}
 
-	.toolbar-link:hover {
-		border-color: var(--color-purple);
+	.nav-link:hover {
 		color: var(--color-purple);
-	}
-
-	/* Pressed state of a pane-mode segment: a filled look so the active pane reads on
-	   its own, not only by the pane's contents. The selector reaches into the Button
-	   child via :global (the class is forwarded onto its <button>). The two segments
-	   butt together into one pill (no gap, shared border) for the segmented-control read. */
-	.segmented {
-		display: inline-flex;
-	}
-
-	:global(.segment[aria-pressed='true']) {
-		color: var(--color-purple);
-		border-color: var(--color-purple);
 		background: var(--color-purple-08);
 	}
 

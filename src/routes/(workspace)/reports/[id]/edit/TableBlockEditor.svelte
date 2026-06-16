@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Scales, TableBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import BindingEditor from './BindingEditor.svelte';
 	import { moveItem } from './editor-state';
 
@@ -101,6 +102,7 @@
 		</select>
 		<Button
 			class="row-control"
+			variant="icon"
 			onclick={() => {
 				moveItem(block.columns, columnIndex, -1);
 				onEdit();
@@ -108,10 +110,11 @@
 			disabled={columnIndex === 0}
 		>
 			<span class="sr-only">{`Move column ${columnIndex + 1} left`}</span>
-			<span aria-hidden="true">&larr;</span>
+			<UiIcon name="chevron-left" />
 		</Button>
 		<Button
 			class="row-control"
+			variant="icon"
 			onclick={() => {
 				moveItem(block.columns, columnIndex, 1);
 				onEdit();
@@ -119,11 +122,11 @@
 			disabled={columnIndex === block.columns.length - 1}
 		>
 			<span class="sr-only">{`Move column ${columnIndex + 1} right`}</span>
-			<span aria-hidden="true">&rarr;</span>
+			<UiIcon name="chevron-right" />
 		</Button>
 		<Button
 			class="row-control"
-			variant="ghost"
+			variant="icon-danger"
 			onclick={() => {
 				removeColumn(columnIndex);
 				onEdit();
@@ -131,7 +134,7 @@
 			disabled={block.columns.length === 1}
 		>
 			<span class="sr-only">{`Remove column ${columnIndex + 1}`}</span>
-			<span aria-hidden="true">&times;</span>
+			<UiIcon name="x" />
 		</Button>
 	</div>
 {/each}
@@ -173,6 +176,7 @@
 		{/each}
 		<Button
 			class="row-control"
+			variant="icon"
 			onclick={() => {
 				moveItem(block.rows!, rowIndex, -1);
 				onEdit();
@@ -180,10 +184,11 @@
 			disabled={rowIndex === 0}
 		>
 			<span class="sr-only">{`Move row ${rowIndex + 1} up`}</span>
-			<span aria-hidden="true">&uarr;</span>
+			<UiIcon name="chevron-up" />
 		</Button>
 		<Button
 			class="row-control"
+			variant="icon"
 			onclick={() => {
 				moveItem(block.rows!, rowIndex, 1);
 				onEdit();
@@ -191,11 +196,11 @@
 			disabled={rowIndex === (block.rows?.length ?? 0) - 1}
 		>
 			<span class="sr-only">{`Move row ${rowIndex + 1} down`}</span>
-			<span aria-hidden="true">&darr;</span>
+			<UiIcon name="chevron-down" />
 		</Button>
 		<Button
 			class="row-control"
-			variant="ghost"
+			variant="icon-danger"
 			onclick={() => {
 				block.rows!.splice(rowIndex, 1);
 				if (block.rows!.length === 0) delete block.rows;
@@ -203,7 +208,7 @@
 			}}
 		>
 			<span class="sr-only">{`Remove row ${rowIndex + 1}`}</span>
-			<span aria-hidden="true">&times;</span>
+			<UiIcon name="x" />
 		</Button>
 	</div>
 {/each}

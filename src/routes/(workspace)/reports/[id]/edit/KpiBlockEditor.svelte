@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { KpiBlock, KpiItem, KpiTrend } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import BindingEditor from './BindingEditor.svelte';
 	import { moveItem } from './editor-state';
 
@@ -67,6 +68,7 @@
 		</select>
 		<Button
 			class="row-control"
+			variant="icon"
 			onclick={() => {
 				moveItem(block.items!, itemIndex, -1);
 				onEdit();
@@ -74,10 +76,11 @@
 			disabled={itemIndex === 0}
 		>
 			<span class="sr-only">{`Move KPI ${itemIndex + 1} up`}</span>
-			<span aria-hidden="true">&uarr;</span>
+			<UiIcon name="chevron-up" />
 		</Button>
 		<Button
 			class="row-control"
+			variant="icon"
 			onclick={() => {
 				moveItem(block.items!, itemIndex, 1);
 				onEdit();
@@ -85,11 +88,11 @@
 			disabled={itemIndex === (block.items?.length ?? 0) - 1}
 		>
 			<span class="sr-only">{`Move KPI ${itemIndex + 1} down`}</span>
-			<span aria-hidden="true">&darr;</span>
+			<UiIcon name="chevron-down" />
 		</Button>
 		<Button
 			class="row-control"
-			variant="ghost"
+			variant="icon-danger"
 			onclick={() => {
 				block.items!.splice(itemIndex, 1);
 				if (block.items!.length === 0) delete block.items;
@@ -97,7 +100,7 @@
 			}}
 		>
 			<span class="sr-only">{`Remove KPI ${itemIndex + 1}`}</span>
-			<span aria-hidden="true">&times;</span>
+			<UiIcon name="x" />
 		</Button>
 	</div>
 {/each}

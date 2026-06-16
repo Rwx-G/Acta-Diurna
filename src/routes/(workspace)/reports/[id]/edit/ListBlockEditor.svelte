@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ListBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import ParagraphsEditor from './ParagraphsEditor.svelte';
 
 	// The list picks ordered (a numbered procedure / steps list) or unordered, then
@@ -56,7 +57,7 @@
 				/>
 				<Button
 					class="row-control"
-					variant="ghost"
+					variant="icon-danger"
 					onclick={() => {
 						block.items.splice(itemIndex, 1);
 						onEdit();
@@ -64,7 +65,7 @@
 					disabled={block.items.length === 1}
 					aria-label={`Remove item ${itemIndex + 1}`}
 				>
-					<span aria-hidden="true">&times;</span>
+					<UiIcon name="x" />
 				</Button>
 			</div>
 

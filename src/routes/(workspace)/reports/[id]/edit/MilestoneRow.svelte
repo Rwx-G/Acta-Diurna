@@ -2,6 +2,7 @@
 	import type { Milestone, Scale, Scales } from '$lib/schema';
 	import { resolveScaleRef } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import ParagraphsEditor from './ParagraphsEditor.svelte';
 
 	// One timeline milestone row, extracted from TimelineBlockEditor (Story 10.4 QA
@@ -53,22 +54,22 @@
 			}}
 			aria-label={`Milestone ${milestoneIndex + 1} label`}
 		/>
-		<Button class="row-control" onclick={onMoveUp} disabled={!canMoveUp}>
+		<Button class="row-control" variant="icon" onclick={onMoveUp} disabled={!canMoveUp}>
 			<span class="sr-only">{`Move milestone ${milestoneIndex + 1} up`}</span>
-			<span aria-hidden="true">&uarr;</span>
+			<UiIcon name="chevron-up" />
 		</Button>
-		<Button class="row-control" onclick={onMoveDown} disabled={!canMoveDown}>
+		<Button class="row-control" variant="icon" onclick={onMoveDown} disabled={!canMoveDown}>
 			<span class="sr-only">{`Move milestone ${milestoneIndex + 1} down`}</span>
-			<span aria-hidden="true">&darr;</span>
+			<UiIcon name="chevron-down" />
 		</Button>
 		<Button
 			class="row-control"
-			variant="ghost"
+			variant="icon-danger"
 			onclick={onRemove}
 			disabled={!canRemove}
 			aria-label={`Remove milestone ${milestoneIndex + 1}`}
 		>
-			<span aria-hidden="true">&times;</span>
+			<UiIcon name="x" />
 		</Button>
 	</div>
 

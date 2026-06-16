@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FieldGridBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 
 	// The field grid is author-written metadata (label/value pairs), not bound
 	// data: the block has no `binding` field. Add, edit and remove items. The
@@ -54,7 +55,7 @@
 			/>
 			<Button
 				class="row-control"
-				variant="ghost"
+				variant="icon-danger"
 				onclick={() => {
 					block.items.splice(itemIndex, 1);
 					onEdit();
@@ -62,7 +63,7 @@
 				disabled={block.items.length === 1}
 				aria-label={`Remove field ${itemIndex + 1}`}
 			>
-				<span aria-hidden="true">&times;</span>
+				<UiIcon name="x" />
 			</Button>
 		</div>
 	{/each}

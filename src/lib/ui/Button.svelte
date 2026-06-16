@@ -6,8 +6,14 @@
 	// CTA), secondary = outline ink, ghost = quiet neutral text button for
 	// routine structural actions (remove a block, reorder) so they do not shout,
 	// danger = destructive text button reserved for real deletion/revocation.
+	// icon / icon-danger = borderless square controls carrying an inline icon (the
+	// per-block reorder / remove gutter, toolbar undo/redo): quiet at rest, reveal
+	// intent on hover. icon hovers to the brand accent; icon-danger hovers to the
+	// destructive tone (the trash / remove controls). Their ink-80 rest colour
+	// keeps the small glyph above the WCAG 1.4.11 non-text-contrast floor on the
+	// light card surface once revealed.
 	interface Props extends HTMLButtonAttributes {
-		variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+		variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'icon' | 'icon-danger';
 		/** Bindable handle to the underlying button, for scripted focus management. */
 		ref?: HTMLButtonElement;
 		children: Snippet;
@@ -34,6 +40,10 @@
 
 <style>
 	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-2);
 		padding: var(--space-2) var(--space-4);
 		font: inherit;
 		font-weight: 600;
@@ -85,6 +95,23 @@
 	}
 
 	.danger:hover:not(:disabled) {
+		background: var(--color-danger-08);
+	}
+
+	.icon,
+	.icon-danger {
+		color: var(--color-ink-80);
+		background: none;
+		border: 1px solid transparent;
+	}
+
+	.icon:hover:not(:disabled) {
+		color: var(--color-purple);
+		background: var(--color-purple-08);
+	}
+
+	.icon-danger:hover:not(:disabled) {
+		color: var(--color-danger);
 		background: var(--color-danger-08);
 	}
 </style>

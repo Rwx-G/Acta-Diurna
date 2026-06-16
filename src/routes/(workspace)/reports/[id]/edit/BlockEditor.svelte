@@ -4,6 +4,7 @@
 	import { isBindable } from '$lib/schema';
 	import type { BlockDiagnostic } from '$lib/server/ingestion';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import type { EditorSelection } from './editor-types';
 	import CalloutBlockEditor from './CalloutBlockEditor.svelte';
 	import CardGridBlockEditor from './CardGridBlockEditor.svelte';
@@ -157,19 +158,29 @@
 			</div>
 		</div>
 		<div class="gutter">
-			<span class="gutter-hint" aria-hidden="true">&#8943;</span>
+			<span class="gutter-hint" aria-hidden="true"><UiIcon name="grip" /></span>
 			<div class="controls">
-				<Button class="row-control" onclick={() => onMove(-1)} disabled={blockIndex === 0}>
+				<Button
+					class="row-control"
+					variant="icon"
+					onclick={() => onMove(-1)}
+					disabled={blockIndex === 0}
+				>
 					<span class="sr-only">Move block up</span>
-					<span aria-hidden="true">&uarr;</span>
+					<UiIcon name="chevron-up" />
 				</Button>
-				<Button class="row-control" onclick={() => onMove(1)} disabled={blockIndex === count - 1}>
+				<Button
+					class="row-control"
+					variant="icon"
+					onclick={() => onMove(1)}
+					disabled={blockIndex === count - 1}
+				>
 					<span class="sr-only">Move block down</span>
-					<span aria-hidden="true">&darr;</span>
+					<UiIcon name="chevron-down" />
 				</Button>
-				<Button class="row-control" variant="ghost" onclick={onRemove}>
+				<Button class="row-control" variant="icon-danger" onclick={onRemove}>
 					<span class="sr-only">Remove block</span>
-					<span aria-hidden="true">&times;</span>
+					<UiIcon name="trash" />
 				</Button>
 			</div>
 		</div>
@@ -311,9 +322,15 @@
 		flex-shrink: 0;
 	}
 
+	/* The persistent affordance hint is a faint drag-grip glyph (replacing the bare
+	   ellipsis): it reads as "this row reorders" and sits at ink-25 at rest. It is
+	   DECORATIVE (aria-hidden) - the actual reorder is the revealed move buttons (kept
+	   in the tab order for the keyboard, NFR15); the grip is not itself a control. */
 	.gutter-hint {
+		display: inline-flex;
+		align-items: center;
 		color: var(--color-ink-25);
-		font-size: var(--text-sm);
+		font-size: 18px;
 	}
 
 	.controls {
@@ -327,14 +344,6 @@
 	.block-card:focus-within .controls,
 	.block-card.selected .controls {
 		opacity: 1;
-	}
-
-	/* The ghost Remove button's default text (`--color-ink-65`) drops below the WCAG AA
-	   4.5:1 floor on the light card surface; pin the gutter ghost text to a darker ink so
-	   the revealed control is AA-clean. Scoped to the gutter so the global ghost variant
-	   is untouched. */
-	.controls :global(.btn.ghost) {
-		color: var(--color-ink-80);
 	}
 
 	/* The exhaustiveness fallback (forward-version block type): a neutral notice so an

@@ -8,6 +8,7 @@
 	} from '$lib/schema';
 	import { resolveScaleRef } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import { moveItem } from './editor-state';
 
 	// The comparison-matrix is the most complex rich block (Story 10.4): the structured
@@ -128,6 +129,7 @@
 			<div class="finding-controls">
 				<Button
 					class="row-control"
+					variant="icon"
 					onclick={() => {
 						moveItem(block.findings, findingIndex, -1);
 						onEdit();
@@ -135,10 +137,11 @@
 					disabled={findingIndex === 0}
 				>
 					<span class="sr-only">{`Move finding ${findingIndex + 1} up`}</span>
-					<span aria-hidden="true">&uarr;</span>
+					<UiIcon name="chevron-up" />
 				</Button>
 				<Button
 					class="row-control"
+					variant="icon"
 					onclick={() => {
 						moveItem(block.findings, findingIndex, 1);
 						onEdit();
@@ -146,7 +149,7 @@
 					disabled={findingIndex === block.findings.length - 1}
 				>
 					<span class="sr-only">{`Move finding ${findingIndex + 1} down`}</span>
-					<span aria-hidden="true">&darr;</span>
+					<UiIcon name="chevron-down" />
 				</Button>
 			</div>
 			<div class="field-row">

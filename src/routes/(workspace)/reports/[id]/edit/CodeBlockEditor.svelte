@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CodeBlock } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 
 	// The code block edits the literal source in a monospace textarea, an optional
 	// short language caption, and an optional list of annotations (a note plus an
@@ -77,7 +78,7 @@
 			/>
 			<Button
 				class="row-control"
-				variant="ghost"
+				variant="icon-danger"
 				onclick={() => {
 					block.annotations?.splice(annotationIndex, 1);
 					if (block.annotations?.length === 0) delete block.annotations;
@@ -85,7 +86,7 @@
 				}}
 				aria-label={`Remove annotation ${annotationIndex + 1}`}
 			>
-				<span aria-hidden="true">&times;</span>
+				<UiIcon name="x" />
 			</Button>
 		</div>
 	{/each}

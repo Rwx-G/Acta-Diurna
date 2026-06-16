@@ -2,6 +2,7 @@
 	import type { CardGridBlock } from '$lib/schema';
 	import { ICON_NAMES, MAX_CARD_COLUMNS } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 
 	// The card grid is author-written prose (optional icon + title + description),
 	// not bound data: the block has no `binding` field. Pick the desktop column
@@ -71,7 +72,7 @@
 			/>
 			<Button
 				class="row-control"
-				variant="ghost"
+				variant="icon-danger"
 				onclick={() => {
 					block.items.splice(itemIndex, 1);
 					onEdit();
@@ -79,7 +80,7 @@
 				disabled={block.items.length === 1}
 				aria-label={`Remove card ${itemIndex + 1}`}
 			>
-				<span aria-hidden="true">&times;</span>
+				<UiIcon name="x" />
 			</Button>
 		</div>
 	{/each}

@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { AUDIENCES, type BlockType, type Scales, type Section } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import BlockEditor from './BlockEditor.svelte';
 	import BlockPalette from './BlockPalette.svelte';
 	import IssueList from './IssueList.svelte';
@@ -146,26 +147,33 @@
 			{#if hasNotes}<span class="notes-dot" title="Has speaker notes">Notes</span>{/if}
 		</div>
 		<div class="gutter">
-			<span class="gutter-hint" aria-hidden="true">&#8943;</span>
+			<span class="gutter-hint" aria-hidden="true"><UiIcon name="grip" /></span>
 			<div class="controls">
 				<Button
 					class="row-control"
+					variant="icon"
 					onclick={() => onMove(-1)}
 					disabled={sectionIndex === 0}
 					aria-label="Move section up"
 				>
-					<span aria-hidden="true">&uarr;</span>
+					<UiIcon name="chevron-up" />
 				</Button>
 				<Button
 					class="row-control"
+					variant="icon"
 					onclick={() => onMove(1)}
 					disabled={sectionIndex === count - 1}
 					aria-label="Move section down"
 				>
-					<span aria-hidden="true">&darr;</span>
+					<UiIcon name="chevron-down" />
 				</Button>
-				<Button class="row-control" variant="ghost" onclick={onRemove} aria-label="Remove section">
-					<span aria-hidden="true">&times;</span>
+				<Button
+					class="row-control"
+					variant="icon-danger"
+					onclick={onRemove}
+					aria-label="Remove section"
+				>
+					<UiIcon name="trash" />
 				</Button>
 			</div>
 		</div>
@@ -286,9 +294,14 @@
 		gap: var(--space-2);
 	}
 
+	/* Faint drag-grip glyph as the persistent reorder affordance (replacing the bare
+	   ellipsis). DECORATIVE (aria-hidden); the reorder itself is the revealed move
+	   buttons, kept in the tab order for the keyboard (NFR15). */
 	.gutter-hint {
+		display: inline-flex;
+		align-items: center;
 		color: var(--color-ink-25);
-		font-size: var(--text-sm);
+		font-size: 18px;
 	}
 
 	.controls {
@@ -302,13 +315,5 @@
 	.section-card:focus-within .controls,
 	.section-card.selected .controls {
 		opacity: 1;
-	}
-
-	/* The ghost Remove button's default text (`--color-ink-65`) drops below the WCAG AA
-	   4.5:1 floor on the light `--color-surface` card; pin the gutter ghost text to a
-	   darker ink so the revealed control is AA-clean (the same discipline as the draft
-	   status chip fix). Scoped to the gutter so the global ghost variant is untouched. */
-	.controls :global(.btn.ghost) {
-		color: var(--color-ink-80);
 	}
 </style>

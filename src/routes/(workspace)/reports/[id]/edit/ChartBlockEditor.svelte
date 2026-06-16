@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ChartBlock, ChartKind } from '$lib/schema';
 	import Button from '$lib/ui/Button.svelte';
+	import UiIcon from '$lib/ui/UiIcon.svelte';
 	import BindingEditor from './BindingEditor.svelte';
 	import { moveItem } from './editor-state';
 
@@ -83,6 +84,7 @@
 			/>
 			<Button
 				class="row-control"
+				variant="icon"
 				onclick={() => {
 					moveItem(block.series!, seriesIndex, -1);
 					onEdit();
@@ -90,10 +92,11 @@
 				disabled={seriesIndex === 0}
 			>
 				<span class="sr-only">{`Move series ${seriesIndex + 1} up`}</span>
-				<span aria-hidden="true">&uarr;</span>
+				<UiIcon name="chevron-up" />
 			</Button>
 			<Button
 				class="row-control"
+				variant="icon"
 				onclick={() => {
 					moveItem(block.series!, seriesIndex, 1);
 					onEdit();
@@ -101,11 +104,11 @@
 				disabled={seriesIndex === (block.series?.length ?? 0) - 1}
 			>
 				<span class="sr-only">{`Move series ${seriesIndex + 1} down`}</span>
-				<span aria-hidden="true">&darr;</span>
+				<UiIcon name="chevron-down" />
 			</Button>
 			<Button
 				class="row-control"
-				variant="ghost"
+				variant="icon-danger"
 				onclick={() => {
 					block.series!.splice(seriesIndex, 1);
 					if (block.series!.length === 0) delete block.series;
@@ -113,7 +116,7 @@
 				}}
 			>
 				<span class="sr-only">{`Remove series ${seriesIndex + 1}`}</span>
-				<span aria-hidden="true">&times;</span>
+				<UiIcon name="x" />
 			</Button>
 		</div>
 		{#each series.points as point, pointIndex (pointIndex)}
@@ -141,14 +144,14 @@
 				/>
 				<Button
 					class="row-control"
-					variant="ghost"
+					variant="icon-danger"
 					onclick={() => {
 						series.points.splice(pointIndex, 1);
 						onEdit();
 					}}
 				>
 					<span class="sr-only">{`Remove point ${pointIndex + 1}`}</span>
-					<span aria-hidden="true">&times;</span>
+					<UiIcon name="x" />
 				</Button>
 			</div>
 		{/each}
