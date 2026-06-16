@@ -176,6 +176,12 @@ describe('ScalesEditor', () => {
 
 		await vi.waitFor(() => expect(doc.scales?.length).toBe(4));
 		expect(onEdit).toHaveBeenCalled();
+		// The new scale and its entry carry non-empty labels: the schema requires a min-1
+		// label on both, so an empty default would make the document invalid and block the
+		// autosave the moment a scale is added.
+		const added = doc.scales?.[3];
+		expect(added?.label).not.toBe('');
+		expect(added?.entries[0].label).not.toBe('');
 	});
 
 	it('disables every control when the report is not editable', async () => {

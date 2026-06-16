@@ -81,7 +81,15 @@
 			'scale',
 			list.map((scale) => scale.key)
 		);
-		list.push({ key, label: '', kind: 'ordinal', entries: [{ key: 'entry-1', label: '' }] });
+		// Non-empty default labels: the schema requires a min-1 label on a scale and on
+		// each entry, so a freshly-added scale must be VALID immediately or the document
+		// fails validation and cannot autosave (the author renames the placeholders after).
+		list.push({
+			key,
+			label: 'New scale',
+			kind: 'ordinal',
+			entries: [{ key: 'entry-1', label: 'Entry 1' }]
+		});
 		notice = null;
 		onEdit();
 	}
@@ -143,7 +151,9 @@
 			'entry',
 			scale.entries.map((entry) => entry.key)
 		);
-		scale.entries.push({ key, label: '' });
+		// A non-empty default label keeps the document valid (the schema requires min-1),
+		// so adding an entry never blocks the autosave; the author renames it after.
+		scale.entries.push({ key, label: 'New entry' });
 		notice = null;
 		onEdit();
 	}
