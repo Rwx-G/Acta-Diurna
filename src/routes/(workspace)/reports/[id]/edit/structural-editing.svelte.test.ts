@@ -41,7 +41,7 @@ describe('SectionEditor structural block editing', () => {
 		const { getByRole, section, onEdit } = renderSection(fixtureSection());
 
 		// The palette is a disclosure now (UX redesign): open it, then pick the entry.
-		await getByRole('button', { name: '+ Ajouter un bloc' }).click();
+		await getByRole('button', { name: '+ Add block' }).click();
 		await getByRole('button', { name: 'Add a KPI block' }).click();
 
 		// The new block lands at the end of the working copy with the chosen type.
@@ -82,7 +82,7 @@ describe('SectionEditor structural block editing', () => {
 		// assert is untouched by an add against the reactive copy.
 		const { getByRole } = renderSection(structuredClone(source));
 
-		await getByRole('button', { name: '+ Ajouter un bloc' }).click();
+		await getByRole('button', { name: '+ Add block' }).click();
 		await getByRole('button', { name: 'Add a Code block' }).click();
 
 		expect(source.blocks).toHaveLength(2);

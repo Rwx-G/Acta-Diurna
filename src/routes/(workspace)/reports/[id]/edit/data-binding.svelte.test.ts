@@ -187,8 +187,8 @@ describe('Editor data binding - token reconciliation (Epic 10.5)', () => {
 		const report = sampleReport(staticTableDocument(), new Date('2026-06-12T09:30:00Z'));
 		const screen = await renderEditor(report);
 
-		// The bound result renders in the preview; switch the right pane to it ("Apercu").
-		await screen.getByRole('button', { name: 'Apercu' }).click();
+		// The bound result renders in the preview; switch the right pane to it ("Preview").
+		await screen.getByRole('button', { name: 'Preview' }).click();
 
 		const bound = boundTableDocument();
 		// Inject a resolved row into the bound document so the reseed is observable in the

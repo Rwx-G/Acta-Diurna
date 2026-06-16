@@ -20,8 +20,8 @@ test('edits each core block type in place, and the field edits persist across re
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
 
-	// The right pane shows the inspector by default; switch it to the preview ("Apercu").
-	await page.getByRole('button', { name: 'Apercu' }).click();
+	// The right pane shows the inspector by default; switch it to the preview ("Preview").
+	await page.getByRole('button', { name: 'Preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 
@@ -34,7 +34,7 @@ test('edits each core block type in place, and the field edits persist across re
 	await expect(preview.locator('strong', { hasText: runText })).toBeVisible();
 
 	// TABLE: add a table block from the palette and edit a cell value as a grid.
-	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
+	await page.getByRole('button', { name: '+ Add block' }).click();
 	await page.getByRole('button', { name: 'Add a Table block' }).click();
 	const tableBlock = page.getByRole('article', { name: 'table block' });
 	await expect(tableBlock).toBeVisible();
@@ -42,7 +42,7 @@ test('edits each core block type in place, and the field edits persist across re
 
 	// CHART: add a chart block, give its first series two points (a single point is a
 	// degenerate zero-range axis), and edit a value.
-	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
+	await page.getByRole('button', { name: '+ Add block' }).click();
 	await page.getByRole('button', { name: 'Add a Chart block' }).click();
 	const chartBlock = page.getByRole('article', { name: 'chart block' });
 	await expect(chartBlock).toBeVisible();
@@ -54,7 +54,7 @@ test('edits each core block type in place, and the field edits persist across re
 	await chartBlock.getByLabel('Series 1 point 2 y').fill('58');
 
 	// KPI: add a kpi block and edit its first item's label and value.
-	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
+	await page.getByRole('button', { name: '+ Add block' }).click();
 	await page.getByRole('button', { name: 'Add a KPI block' }).click();
 	const kpiBlock = page.getByRole('article', { name: 'kpi block' });
 	await expect(kpiBlock).toBeVisible();
@@ -63,7 +63,7 @@ test('edits each core block type in place, and the field edits persist across re
 
 	// IMAGE: add an image block, give it a valid asset reference, and edit its
 	// REQUIRED alt text (the accessibility-relevant field).
-	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
+	await page.getByRole('button', { name: '+ Add block' }).click();
 	await page.getByRole('button', { name: 'Add a Image block' }).click();
 	const imageBlock = page.getByRole('article', { name: 'image block' });
 	await expect(imageBlock).toBeVisible();
@@ -115,7 +115,7 @@ test('a missing image alt is the actionable validation issue at the block', asyn
 	// Add an image block: its starter alt is empty, so the optimistic inline guidance
 	// names the missing alt at the block (the accessibility-relevant field) before any
 	// save round-trip.
-	await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
+	await page.getByRole('button', { name: '+ Add block' }).click();
 	await page.getByRole('button', { name: 'Add a Image block' }).click();
 	const imageBlock = page.getByRole('article', { name: 'image block' });
 	await expect(imageBlock).toBeVisible();
@@ -137,7 +137,7 @@ test('the core-block editors have no axe-core violations', async ({ page }, test
 		'Add a KPI block',
 		'Add a Image block'
 	]) {
-		await page.getByRole('button', { name: '+ Ajouter un bloc' }).click();
+		await page.getByRole('button', { name: '+ Add block' }).click();
 		await page.getByRole('button', { name: label }).click();
 	}
 	await expect(page.getByRole('article', { name: 'image block' })).toBeVisible();

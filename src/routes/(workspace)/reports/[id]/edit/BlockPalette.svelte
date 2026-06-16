@@ -64,7 +64,7 @@
 		aria-haspopup="true"
 		onclick={() => (open = !open)}
 	>
-		+ Ajouter un bloc
+		+ Add block
 	</Button>
 	{#if open}
 		<div class="palette" role="group" aria-label={label}>

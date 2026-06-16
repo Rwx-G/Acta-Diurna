@@ -328,7 +328,7 @@
 	// Inspector (default) or the embedded live preview. The Inspector carries the
 	// SELECTED element's secondary settings (audience, notes, binding state + remap),
 	// which used to crowd every block and section card inline. The preview is the same
-	// authoritative reader render as before, now reached by the "Apercu" segment of the
+	// authoritative reader render as before, now reached by the "Preview" segment of the
 	// pane toggle rather than a separate "Split preview" button. The full-page preview
 	// route and "View as reader" remain the other two ways to see the render.
 	let rightPane = $state<'inspector' | 'preview'>('inspector');
@@ -809,9 +809,9 @@
 
 	<div class="tool-strip">
 		<div class="tool-group" role="group" aria-label="Right pane">
-			<span class="tool-group-label">Panneau</span>
-			<!-- The right-pane toggle (UX redesign): "Inspecteur" (default) shows the
-			     selected element's settings, "Apercu" the embedded live preview. A true
+			<span class="tool-group-label">Panel</span>
+			<!-- The right-pane toggle (UX redesign): "Inspector" (default) shows the
+			     selected element's settings, "Preview" the embedded live preview. A true
 			     segmented control - one pill track, the active segment filled - so the two
 			     read as one mutually-exclusive choice, not two loose boxes. Plain buttons
 			     (not the bordered Button variant) so they can share the single track. -->
@@ -823,7 +823,7 @@
 					onclick={() => (rightPane = 'inspector')}
 				>
 					<UiIcon name="panel" />
-					Inspecteur
+					Inspector
 				</button>
 				<button
 					type="button"
@@ -832,7 +832,7 @@
 					onclick={() => (rightPane = 'preview')}
 				>
 					<UiIcon name="eye" />
-					Apercu
+					Preview
 				</button>
 			</div>
 		</div>
@@ -976,7 +976,7 @@
 	</form>
 
 	<!-- The right pane (UX redesign): the Inspector (default) carries the selected
-	     element's settings, or the Apercu segment swaps in the authoritative live
+	     element's settings, or the Preview segment swaps in the authoritative live
 	     preview. The preview reuses the SAME embedded LivePreview the /preview route
 	     uses, fed the LIVE in-edit snapshot so it re-renders through the pure
 	     `$lib/render` tier on every edit - what the author edits is what the reader gets.
@@ -1174,6 +1174,11 @@
 		min-width: 0;
 	}
 
+	/* The title reads as the document's heading at rest - no frame, no underline - so it
+	   does not masquerade as a form field. Interaction reveals its editability in two calm
+	   steps with no layout shift (the 1px transparent border reserves the frame's space up
+	   front): hover paints a faint wash, focus promotes it to a full input frame (surface +
+	   border) on top of the global purple focus ring. */
 	.report-title {
 		flex: 1 1 16rem;
 		min-width: 0;
@@ -1183,11 +1188,11 @@
 		font-weight: 600;
 		color: inherit;
 		background: transparent;
-		/* A persistent faint underline marks the title as an editable field at rest,
-		   not static heading text; hover/focus promote it to a full input frame. */
 		border: 1px solid transparent;
-		border-bottom-color: var(--color-ink-25);
 		border-radius: var(--radius-sm);
+		transition:
+			background 0.12s ease,
+			border-color 0.12s ease;
 	}
 
 	.report-title::placeholder {
@@ -1195,16 +1200,18 @@
 		font-weight: 500;
 	}
 
-	.report-title:hover,
+	.report-title:hover:not(:focus) {
+		background: var(--color-ink-08);
+	}
+
 	.report-title:focus {
 		background: var(--color-surface);
 		border-color: var(--color-ink-25);
 	}
 
-	/* A published report's title is read-only: drop the editable underline and keep
-	   it fully legible (WebView greys disabled inputs, so pin the text colour). */
+	/* A published report's title is read-only: it already renders frameless at rest, so
+	   only pin the text colour fully legible (WebView greys disabled inputs). */
 	.report-title:disabled {
-		border-bottom-color: transparent;
 		color: var(--color-ink);
 		-webkit-text-fill-color: var(--color-ink);
 		opacity: 1;

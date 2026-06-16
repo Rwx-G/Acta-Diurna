@@ -61,8 +61,8 @@ test('tags a block technical and the preview level switch hides and shows it', a
 	const blockAudiences = inspector.getByRole('group', { name: 'Block audiences' });
 	await blockAudiences.getByRole('checkbox', { name: 'technical' }).check();
 
-	// Switch the right pane to the preview ("Apercu") to assert the level filtering.
-	await page.getByRole('button', { name: 'Apercu' }).click();
+	// Switch the right pane to the preview ("Preview") to assert the level filtering.
+	await page.getByRole('button', { name: 'Preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 

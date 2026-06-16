@@ -43,8 +43,8 @@ test('opens a draft, edits in place, saves, and the edit persists across a reloa
 	// The editor loads into an editable working copy with the authoritative live
 	// preview (the same pure renderer the reader uses): the seeded paragraph shows
 	// in the preview pane.
-	// The right pane shows the inspector by default; switch it to the preview ("Apercu").
-	await page.getByRole('button', { name: 'Apercu' }).click();
+	// The right pane shows the inspector by default; switch it to the preview ("Preview").
+	await page.getByRole('button', { name: 'Preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 

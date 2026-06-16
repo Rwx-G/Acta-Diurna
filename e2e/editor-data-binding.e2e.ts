@@ -62,10 +62,10 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 
 	const editPath = `/reports/${reportId}/edit`;
 	await page.goto(editPath);
-	// The right pane shows the inspector by default; switch it to the preview ("Apercu")
+	// The right pane shows the inspector by default; switch it to the preview ("Preview")
 	// to assert the live render. The binding state + remap then surface in the inspector
-	// for the SELECTED block, so we switch back to "Inspecteur" once a block is selected.
-	await page.getByRole('button', { name: 'Apercu' }).click();
+	// for the SELECTED block, so we switch back to "Inspector" once a block is selected.
+	await page.getByRole('button', { name: 'Preview' }).click();
 	const preview = page.getByRole('complementary', { name: 'Live preview' });
 	await expect(preview).toBeVisible();
 
@@ -94,7 +94,7 @@ test('binds a table from the editor, renders bound in the preview, then remaps a
 	// block, switch the pane back to the inspector, and assert the bound state there.
 	const block = page.getByRole('article', { name: 'table block' });
 	await block.click();
-	await page.getByRole('button', { name: 'Inspecteur' }).click();
+	await page.getByRole('button', { name: 'Inspector' }).click();
 	const inspector = page.getByRole('complementary', { name: 'Inspector' });
 	await expect(inspector.getByText('Bound to data set')).toBeVisible();
 

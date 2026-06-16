@@ -122,7 +122,7 @@
 </script>
 
 <aside class="inspector" aria-label="Inspector">
-	<h2 class="inspector-title">Inspecteur</h2>
+	<h2 class="inspector-title">Inspector</h2>
 	{#if targetLabel}
 		<p class="inspector-for">{targetLabel}</p>
 	{/if}
@@ -180,7 +180,7 @@
 			</div>
 		{/if}
 	{:else}
-		<p class="inspector-empty">Selectionnez un bloc ou une section pour editer ses reglages.</p>
+		<p class="inspector-empty">Select a block or section to edit its settings.</p>
 	{/if}
 </aside>
 

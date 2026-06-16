@@ -13,6 +13,22 @@
 	let { document }: Props = $props();
 
 	let viewport = $state<'desktop' | 'mobile'>('desktop');
+
+	// Device-accurate preview (UX): each viewport renders the report at a FIXED device
+	// width (a real desktop column, a phone width), then scales the whole stage down with
+	// CSS `zoom` to fit the available pane - never up (capped at 1). So "Desktop" shows
+	// the true wide desktop layout zoomed out to fit the narrow inspector pane (a faithful
+	// thumbnail), while "Mobile" renders at its real 390px width, near 1:1 in the pane. On
+	// the full-page /preview route the pane is wide, so desktop lands near 1:1 and mobile
+	// stays at its natural 390px, centred. `zoom` (not `transform: scale`) so the scaled
+	// stage still takes its real box in layout - the frame's height tracks the content and
+	// there is no transform-induced empty gutter.
+	const DEVICE_WIDTH = { desktop: 1280, mobile: 390 } as const;
+	const deviceWidth = $derived(DEVICE_WIDTH[viewport]);
+	// The width the stage scales into, measured off the scroll frame. The inner stage's
+	// own zoom never feeds back into the frame's layout width, so there is no resize loop.
+	let frameWidth = $state(0);
+	const scale = $derived(frameWidth > 0 ? Math.min(1, frameWidth / deviceWidth) : 1);
 	// Per-level preview (Story 10.6): the SAME level filtering the reader uses,
 	// rendered by the embedded Report's reader LevelSwitcher. The editor remounts
 	// the Report on every settled edit (`{#key document}`), which would reset the
@@ -61,16 +77,18 @@
 		</div>
 	{/if}
 
-	<div class="frame" class:mobile={viewport === 'mobile'}>
-		{#key document}
-			<Report
-				{view}
-				mode="scroll"
-				embedded
-				level={previewLevel}
-				onlevelchange={(next) => (previewLevel = next)}
-			/>
-		{/key}
+	<div class="frame" bind:clientWidth={frameWidth}>
+		<div class="stage" style="width: {deviceWidth}px; zoom: {scale};">
+			{#key document}
+				<Report
+					{view}
+					mode="scroll"
+					embedded
+					level={previewLevel}
+					onlevelchange={(next) => (previewLevel = next)}
+				/>
+			{/key}
+		</div>
 	</div>
 </div>
 
@@ -139,14 +157,17 @@
 		width: 100%;
 		max-width: var(--tool-width);
 		max-height: 78vh;
-		overflow-y: auto;
+		overflow: auto;
 		background: var(--report-bg, var(--color-stone));
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
 	}
 
-	.frame.mobile {
-		max-width: 390px;
+	/* The fixed-device-width render that `zoom` scales to fit the frame (see the script).
+	   Centred so a stage narrower than the frame (mobile, or desktop at its natural width
+	   on a wide page) sits in the middle rather than hugging the left edge. */
+	.stage {
+		margin: 0 auto;
 	}
 </style>

@@ -275,9 +275,9 @@ export interface PaletteGroup {
 }
 
 const CATEGORY_ORDER: { category: PaletteCategory; label: string }[] = [
-	{ category: 'text', label: 'Texte' },
-	{ category: 'data', label: 'Donnees' },
-	{ category: 'layout', label: 'Mise en page' },
+	{ category: 'text', label: 'Text' },
+	{ category: 'data', label: 'Data' },
+	{ category: 'layout', label: 'Layout' },
 	{ category: 'media', label: 'Media' }
 ];
 

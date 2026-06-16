@@ -72,16 +72,16 @@ describe('ReportEditor shell', () => {
 		const { getByLabelText, getByRole } = renderEditor(sampleReport());
 
 		// The right pane shows the Inspector by default - no preview pane the author did
-		// not ask for (the "Apercu" segment is unpressed at rest).
+		// not ask for (the "Preview" segment is unpressed at rest).
 		expect(getByLabelText('Live preview').query()).toBeNull();
 		await expect.element(getByLabelText('Inspector')).toBeVisible();
 
-		// Switching the pane to "Apercu" swaps in the live preview.
-		await getByRole('button', { name: 'Apercu' }).click();
+		// Switching the pane to "Preview" swaps in the live preview.
+		await getByRole('button', { name: 'Preview' }).click();
 		await expect.element(getByLabelText('Live preview')).toBeVisible();
 
-		// Switching back to "Inspecteur" returns the pane to the inspector.
-		await getByRole('button', { name: 'Inspecteur' }).click();
+		// Switching back to "Inspector" returns the pane to the inspector.
+		await getByRole('button', { name: 'Inspector' }).click();
 		await vi.waitFor(() => {
 			expect(getByLabelText('Live preview').query()).toBeNull();
 		});
@@ -92,7 +92,7 @@ describe('ReportEditor shell', () => {
 		const { getByText, getByLabelText, getByRole } = renderEditor(sampleReport());
 
 		// The split preview is off by default; reveal it via the toolbar toggle.
-		await getByRole('button', { name: 'Apercu' }).click();
+		await getByRole('button', { name: 'Preview' }).click();
 
 		// The embedded LivePreview is the SAME `$lib/render` tier the reader uses, so
 		// the loaded paragraph appears in the preview pane, not a lookalike.
@@ -105,7 +105,7 @@ describe('ReportEditor shell', () => {
 	it('updates the live preview from the in-edit document as the author edits', async () => {
 		const { getByLabelText, getByRole } = renderEditor(sampleReport());
 
-		await getByRole('button', { name: 'Apercu' }).click();
+		await getByRole('button', { name: 'Preview' }).click();
 		await getByLabelText('Report title').fill('Renamed Report');
 
 		// The preview re-renders from the in-edit document: the new title shows in the

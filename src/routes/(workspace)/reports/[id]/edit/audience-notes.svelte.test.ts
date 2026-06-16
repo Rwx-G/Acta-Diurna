@@ -94,7 +94,7 @@ describe('Story 10.6 audience-aware preview', () => {
 		const { container, getByRole } = renderEditor(taggedDocument());
 
 		// The right pane shows the inspector by default; switch it to the preview.
-		await getByRole('button', { name: 'Apercu' }).click();
+		await getByRole('button', { name: 'Preview' }).click();
 
 		// The tagged draft shows the embedded reader LevelSwitcher in the preview pane.
 		const preview = await vi.waitFor(() => {
@@ -179,7 +179,7 @@ describe('Story 10.6 audience-aware preview', () => {
 		// on the working copy; once the settled snapshot renders, the level-switched preview
 		// surfaces the reader switcher (hasAudiences flipped true) and the section host
 		// carries the `data-audiences` attribute the reader CSS reads.
-		await getByRole('button', { name: 'Apercu' }).click();
+		await getByRole('button', { name: 'Preview' }).click();
 		const preview = await vi.waitFor(() => {
 			const el = container.querySelector<HTMLElement>('.editor-preview');
 			if (!el) throw new Error('preview pane not open');

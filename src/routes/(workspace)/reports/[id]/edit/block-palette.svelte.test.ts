@@ -12,8 +12,8 @@ describe('BlockPalette', () => {
 		});
 
 		// The palette is a disclosure now (UX redesign): the entries appear once the
-		// "+ Ajouter un bloc" menu is opened, not always-expanded.
-		await getByRole('button', { name: '+ Ajouter un bloc' }).click();
+		// "+ Add block" menu is opened, not always-expanded.
+		await getByRole('button', { name: '+ Add block' }).click();
 
 		// The opened popover is a labelled group (NFR15) so a screen reader announces the
 		// purpose before the choices.
@@ -34,7 +34,7 @@ describe('BlockPalette', () => {
 		const onInsert = vi.fn<(type: BlockType) => void>();
 		const { getByRole } = render(BlockPalette, { label: 'Add a block', onInsert });
 
-		await getByRole('button', { name: '+ Ajouter un bloc' }).click();
+		await getByRole('button', { name: '+ Add block' }).click();
 		await getByRole('button', { name: 'Add a Table block' }).click();
 
 		expect(onInsert).toHaveBeenCalledExactlyOnceWith('table');

@@ -71,27 +71,27 @@
 	// raw schema key. Falls back to the key for a forward-version type the validator let
 	// through.
 	const TYPE_LABEL = {
-		text: 'Texte',
+		text: 'Text',
 		table: 'Table',
-		chart: 'Graphique',
+		chart: 'Chart',
 		kpi: 'KPI',
 		image: 'Image',
-		'comparison-matrix': 'Matrice',
+		'comparison-matrix': 'Matrix',
 		'field-grid': 'Field grid',
-		legend: 'Legende',
+		legend: 'Legend',
 		'set-membership': 'Set membership',
 		'chip-cluster': 'Chips',
 		callout: 'Callout',
 		code: 'Code',
 		'card-grid': 'Card grid',
-		list: 'Liste',
+		list: 'List',
 		timeline: 'Timeline'
 	} satisfies Record<BlockType, string>;
 	const typeLabel = $derived((TYPE_LABEL as Record<string, string>)[block.type] ?? block.type);
 
 	// Compact at-a-glance state, non-interactive (the controls live in the inspector):
 	// the audience tag only when the block is restricted to a subset of levels, a
-	// "Lie"/"Statique" tag for bindable blocks, and a "Derive" tag when a drift
+	// "Bound"/"Static" tag for bindable blocks, and a "Drift" tag when a drift
 	// diagnostic exists - so the author reads status without selecting.
 	const blockIsBindable = $derived(isBindable(block));
 	const isBound = $derived(isBindable(block) && block.binding ? !!block.binding.dataSetId : false);
@@ -151,9 +151,9 @@
 			<span class="type-chip">{typeLabel}</span>
 			<div class="state-tags" aria-hidden="true">
 				{#if blockIsBindable}
-					<span class="mini-tag" class:bound={isBound}>{isBound ? 'Lie' : 'Statique'}</span>
+					<span class="mini-tag" class:bound={isBound}>{isBound ? 'Bound' : 'Static'}</span>
 				{/if}
-				{#if diagnostic}<span class="mini-tag drift">Derive</span>{/if}
+				{#if diagnostic}<span class="mini-tag drift">Drift</span>{/if}
 				{#if audienceLabel}<span class="mini-tag">{audienceLabel}</span>{/if}
 			</div>
 		</div>
