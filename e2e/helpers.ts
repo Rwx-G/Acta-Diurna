@@ -34,8 +34,9 @@ export async function createDraft(page: Page): Promise<string> {
  * Seeds a draft's document through the editor's OWN validated save action (`?/save`),
  * the single write path every producer uses, so a spec can start from a richer
  * document (declared scales, scale-driven blocks) than the empty starter without a
- * second write seam. The editor has no scales-declaration UI in scope, so a
- * scale-driven block test seeds the scales here and then edits the blocks in the UI.
+ * second write seam. Scales are now editable in the UI (see `editor-scales.e2e.ts`),
+ * but seeding them here stays the faster setup for a scale-DRIVEN block test that only
+ * needs the blocks exercised in the UI, not the scale declaration itself.
  * Posts the document JSON; asserts the action returned 200.
  */
 export async function seedDocument(page: Page, reportId: string, document: unknown): Promise<void> {

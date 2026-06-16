@@ -173,6 +173,13 @@ export type {
 	ScaleReferenceIssue,
 	Scales
 } from './scales.ts';
+export {
+	findEntryReferences,
+	findScaleReferences,
+	renameEntryKey,
+	renameScaleKey
+} from './scale-cascade.ts';
+export type { ScaleReference } from './scale-cascade.ts';
 
 export { validateInternalLinks } from './internal-links.ts';
 export type { InternalLinkIssue } from './internal-links.ts';

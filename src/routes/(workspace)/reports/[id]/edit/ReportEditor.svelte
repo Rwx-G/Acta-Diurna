@@ -18,6 +18,7 @@
 	import IssueList from './IssueList.svelte';
 	import SectionEditor from './SectionEditor.svelte';
 	import EditorInspector from './EditorInspector.svelte';
+	import ScalesEditor from './ScalesEditor.svelte';
 	import LivePreview from '../preview/LivePreview.svelte';
 	import {
 		groupErrorsByLocation,
@@ -922,6 +923,12 @@
 		</p>
 	{/if}
 </div>
+
+<!-- Document-level scales CRUD (the gap: scales were only writable via a whole-document
+     PATCH). A full-width panel above the two-column layout, since scales are a document
+     property, not a per-block or per-selection one (like the theme picker in the chrome,
+     not the inspector). Read-only when the report is published. -->
+<ScalesEditor bind:doc {editable} {onEdit} />
 
 <div class="editor-layout">
 	<form
