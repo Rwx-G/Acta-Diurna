@@ -72,16 +72,15 @@
 	--leading-normal: 1.45; /* workspace body */
 	--leading-relaxed: 1.6; /* report prose */
 
-	--measure-prose: 80ch; /* max line length for report prose; WCAG 1.4.8 upper bound */
 	/* The global content column scales with its container up to a ceiling: each surface
 	   fills 100% of where it actually lives (the workspace main cell, or the reader
 	   viewport) and only caps at 2400px on very wide displays - so a Full-HD-at-125%
 	   screen (1536 CSS px) reads near full width and larger displays keep growing.
 	   100% (NOT 100vw) keeps it rail-aware: a workspace surface caps at its cell width,
 	   never counting the 216px nav rail, so nothing overflows. Per-surface padding
-	   supplies the gutter, and prose stays capped at --measure-prose, so the extra room
-	   only benefits wide blocks (tables, charts, matrices) - it never lengthens a prose
-	   line. */
+	   supplies the gutter. Report content (prose included) fills the column, so a wider
+	   column lengthens prose lines too; the per-report reader-width control is the lever
+	   an author uses to keep the line length comfortable. */
 	--tool-width: min(2400px, 100%);
 	/* List / form pages share the editor's width: one workspace column, so a
 	   report detail and the lists framing it line up. Kept as its own token (still
@@ -90,10 +89,10 @@
 	--content-width: var(--tool-width);
 	/* Reader content column (the SSR report: section body, detail back-link, reader
 	   change summary). Aligned to the workspace column so a report reads at the same
-	   width whether it is being edited or viewed. Prose stays capped at
-	   --measure-prose regardless, so widening this only gives wide blocks (tables,
-	   charts, matrices) more room - it never lengthens a prose line. Its own token so
-	   the reader measure can later diverge from the tool width in one place. */
+	   width whether it is being edited or viewed. Every block (prose included) fills
+	   this column, so the per-report `width` override (which sets this token on the
+	   report root) governs the line length. Its own token so the reader measure can
+	   later diverge from the tool width in one place. */
 	--reader-width: var(--tool-width);
 
 	/* --- Spacing - base unit 4px ------------------------------------------- */

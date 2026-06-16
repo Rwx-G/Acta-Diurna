@@ -16,15 +16,10 @@
 </div>
 
 <style>
-	/* Prose caps at the readable measure and CENTRES within the content column, so a
-	   wide (or full-bleed) report frames the text with balanced margins instead of a
-	   short line hugging the left with a large empty gutter on the right. Wide blocks
-	   (tables, charts) still fill the column; the centred prose is the editorial pairing. */
-	.text-block {
-		max-width: var(--measure-prose);
-		margin-inline: auto;
-	}
-
+	/* Prose fills the content column, left-aligned, like every other block (callouts,
+	   lists, tables): one consistent measure per report. The line length is governed by
+	   the per-report reader-width control, not a hard-coded prose cap, so an author who
+	   wants shorter lines sets a fixed reader width. */
 	p {
 		margin: 0 0 var(--space-4);
 		font-family: var(--font-serif);
