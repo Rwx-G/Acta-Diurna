@@ -74,18 +74,15 @@ test('tags a block technical and the preview level switch hides and shows it', a
 	await expect(preview.locator('#overview--intro')).toBeVisible();
 
 	// Switch the preview to Technical: the tagged block is revealed - exactly what a
-	// reader at the technical level sees, driven by the same mechanism.
-	await preview
-		.getByRole('group', { name: 'Reading level' })
-		.getByRole('radio', { name: 'Technical' })
-		.check({ force: true });
+	// reader at the technical level sees, driven by the same mechanism. The radio is the
+	// sr-only input the styled label drives; click the visible label (the real user
+	// gesture), which stays reliable when the preview is scaled to fit the pane.
+	const levelSwitcher = preview.getByRole('group', { name: 'Reading level' });
+	await levelSwitcher.getByText('Technical', { exact: true }).click();
 	await expect(technicalBlock).toBeVisible();
 
 	// Switch to Summary: the technical-only block hides again.
-	await preview
-		.getByRole('group', { name: 'Reading level' })
-		.getByRole('radio', { name: 'Summary' })
-		.check({ force: true });
+	await levelSwitcher.getByText('Summary', { exact: true }).click();
 	await expect(technicalBlock).toBeHidden();
 });
 
