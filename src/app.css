@@ -72,7 +72,7 @@
 	--leading-normal: 1.45; /* workspace body */
 	--leading-relaxed: 1.6; /* report prose */
 
-	--measure-prose: 70ch; /* max line length for report prose (UX) */
+	--measure-prose: 80ch; /* max line length for report prose; WCAG 1.4.8 upper bound */
 	/* The global content column scales with its container up to a ceiling: each surface
 	   fills 100% of where it actually lives (the workspace main cell, or the reader
 	   viewport) and only caps at 2400px on very wide displays - so a Full-HD-at-125%

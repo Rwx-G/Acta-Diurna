@@ -567,22 +567,34 @@
 		display: none;
 	}
 
+	/* The "back to the report" affordance stays PINNED at the top-left of the detail
+	   overlay as the reader scrolls its content, instead of scrolling out of reach (the
+	   detail page can be long). `.detail-host` is the fixed, scrolling container, so a
+	   sticky child pins relative to it; a surface-filled pill keeps the link legible as
+	   content scrolls underneath. Themed via --report-* so it holds across every theme. */
 	.detail-back {
+		position: sticky;
+		top: var(--space-4);
+		z-index: 2;
+		width: fit-content;
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-2);
-		margin: var(--space-5) auto 0;
-		max-width: var(--reader-width, 1280px);
-		padding: 0 var(--space-5);
+		margin: var(--space-4) 0 0 var(--space-4);
+		padding: var(--space-2) var(--space-4);
 		font-family: var(--font-sans);
 		font-size: var(--text-sm);
 		font-weight: 600;
 		color: var(--report-accent);
 		text-decoration: none;
+		background: var(--report-surface);
+		border: 1px solid var(--report-rule-strong);
+		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-card);
 	}
 
 	.detail-back:hover {
-		text-decoration: underline;
+		border-color: var(--report-accent);
 	}
 
 	.detail-host:focus {

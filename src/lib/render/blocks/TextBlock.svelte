@@ -16,8 +16,13 @@
 </div>
 
 <style>
+	/* Prose caps at the readable measure and CENTRES within the content column, so a
+	   wide (or full-bleed) report frames the text with balanced margins instead of a
+	   short line hugging the left with a large empty gutter on the right. Wide blocks
+	   (tables, charts) still fill the column; the centred prose is the editorial pairing. */
 	.text-block {
 		max-width: var(--measure-prose);
+		margin-inline: auto;
 	}
 
 	p {
