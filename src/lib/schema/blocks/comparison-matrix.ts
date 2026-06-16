@@ -38,14 +38,30 @@ export const sourceCellSchema = z.object({
 export type SourceCell = z.infer<typeof sourceCellSchema>;
 
 /**
- * Treatment disposition for a finding. A closed two-value enum (unlike the
- * author-defined severity/source scales): `action` = remediation is due,
- * `deferred` = accepted/parked. Render tints the treatment cells from fixed
- * theme tokens, never from a scale.
+ * Treatment disposition for a finding. A closed enum (unlike the author-defined
+ * severity/source scales): `action` = remediation is due, `deferred` =
+ * accepted/parked, `done` = resolved/closed. Render tints the treatment cells from
+ * fixed theme tokens, never from a scale: action = the criticality tint, deferred =
+ * neutral grey, done = a resolved green - so a remediation report doubles as an
+ * execution tracker. `done` is additive: a document using only action/deferred
+ * validates and renders unchanged.
  */
-export const treatmentStatusSchema = z.enum(['action', 'deferred']);
+export const treatmentStatusSchema = z.enum(['action', 'deferred', 'done']);
 
 export type TreatmentStatus = z.infer<typeof treatmentStatusSchema>;
+
+/**
+ * Optional per-block override for the two treatment column headers. Absent, the
+ * renderer keeps its built-in "Before" / "After" labels (so existing documents are
+ * byte-unchanged); present, both labels are author-supplied (e.g. "Current status" /
+ * "Target") so the matrix can read as a status board rather than a before/after plan.
+ */
+export const treatmentLabelsSchema = z.object({
+	before: z.string().min(1).max(100, 'Treatment label too long: 100 characters maximum.'),
+	after: z.string().min(1).max(100, 'Treatment label too long: 100 characters maximum.')
+});
+
+export type TreatmentLabels = z.infer<typeof treatmentLabelsSchema>;
 
 export const treatmentSchema = z.object({
 	before: z.string().max(2000, 'Treatment-before too long: 2000 characters maximum.'),
@@ -97,6 +113,9 @@ export const comparisonMatrixBlockSchema = z.object({
 	// Document `scales` keys (resolved in the document-level pass).
 	severityScale: idSchema,
 	sourceScale: idSchema,
+	// Optional override for the two treatment column headers (additive; absent keeps
+	// the built-in "Before" / "After").
+	treatmentLabels: treatmentLabelsSchema.optional(),
 	findings: z
 		.array(findingSchema)
 		.min(1, 'A comparison matrix needs at least one finding.')

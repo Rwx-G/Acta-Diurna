@@ -144,6 +144,39 @@ describe('comparisonMatrixBlockSchema - malformed shapes', () => {
 	});
 });
 
+describe('comparison-matrix block - execution-tracking additions', () => {
+	it('accepts the additive "done" treatment status', () => {
+		const result = comparisonMatrixBlockSchema.safeParse(
+			validBlock({
+				findings: [validFinding({ treatment: { before: 'a', after: 'b', status: 'done' } })]
+			})
+		);
+		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.findings[0].treatment.status).toBe('done');
+	});
+
+	it('accepts an optional treatmentLabels override', () => {
+		const result = comparisonMatrixBlockSchema.safeParse(
+			validBlock({ treatmentLabels: { before: 'Current status', after: 'Target' } })
+		);
+		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.treatmentLabels?.after).toBe('Target');
+	});
+
+	it('rejects a treatmentLabels with an empty side', () => {
+		const result = comparisonMatrixBlockSchema.safeParse(
+			validBlock({ treatmentLabels: { before: 'Current', after: '' } as never })
+		);
+		expect(result.success).toBe(false);
+	});
+
+	it('is backward compatible: an action/deferred block with no treatmentLabels validates', () => {
+		const result = comparisonMatrixBlockSchema.safeParse(validBlock());
+		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.treatmentLabels).toBeUndefined();
+	});
+});
+
 describe('comparison-matrix block - additivity', () => {
 	it('does not affect a scales-less v1 document with no matrix block', () => {
 		const result = validateDocument({

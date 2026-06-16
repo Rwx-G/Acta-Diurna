@@ -263,4 +263,36 @@ describe('SetMembershipBlock render', () => {
 		// The words summary remains exposed (not aria-hidden).
 		expect(row?.querySelector('.visually-hidden')?.getAttribute('aria-hidden')).toBeNull();
 	});
+
+	it('colours a pill by treatment status: done resolved-green, deferred neutral grey', () => {
+		const done = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([
+				finding({
+					tag: 'd',
+					treatment: { before: 'a', after: 'b', status: 'done' },
+					sources: { siem: { state: 'found' } }
+				})
+			]),
+			scales
+		});
+		expect(done.container.querySelector('.pill')?.getAttribute('style')).toContain(
+			'--report-trend-up'
+		);
+
+		const deferred = render(SetMembershipBlock, {
+			block,
+			matrix: matrix([
+				finding({
+					tag: 'p',
+					treatment: { before: 'a', after: 'b', status: 'deferred' },
+					sources: { siem: { state: 'found' } }
+				})
+			]),
+			scales
+		});
+		expect(deferred.container.querySelector('.pill')?.getAttribute('style')).toContain(
+			'--report-text-muted'
+		);
+	});
 });

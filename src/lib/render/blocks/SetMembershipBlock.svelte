@@ -3,7 +3,7 @@
 	import { resolveScaleRef } from '$lib/schema';
 	import { scaleEntryColor } from '../theme/scales.ts';
 	import BlockPlaceholder from './BlockPlaceholder.svelte';
-	import { computeUpSetGeometry } from './upset-geometry.ts';
+	import { computeUpSetGeometry, type FindingPill } from './upset-geometry.ts';
 
 	// SSR-only SVG (zero hydration), the ChartBlock pattern: an UpSet matrix
 	// derived from the referenced comparison-matrix block's findings. The geometry
@@ -60,6 +60,16 @@
 		// An unknown key (cannot happen post-validation on the reader path) falls
 		// back to slot 0 so the pill still renders a stable colour.
 		return scaleEntryColor(scale, index === -1 ? 0 : index, theme);
+	}
+
+	// The pill colour follows the treatment status, in lockstep with the matrix cell
+	// tints: deferred reads neutral grey (parked), done reads resolved green, and an
+	// open `action` item keeps its criticality colour. So the UpSet doubles as an
+	// at-a-glance execution view, not just a coverage chart.
+	function pillColor(pill: FindingPill): string {
+		if (pill.treatmentStatus === 'deferred') return 'var(--report-text-muted)';
+		if (pill.treatmentStatus === 'done') return 'var(--report-trend-up)';
+		return severityColor(severityScale, pill.severity);
 	}
 </script>
 
@@ -123,9 +133,7 @@
 					     because the visually-hidden summary already carries the words. -->
 					<span class="pills" aria-hidden="true">
 						{#each row.findingPills as pill, pillIndex (pillIndex)}
-							<span class="pill" style="--pill-color: {severityColor(severityScale, pill.severity)}"
-								>{pill.text}</span
-							>
+							<span class="pill" style="--pill-color: {pillColor(pill)}">{pill.text}</span>
 						{/each}
 					</span>
 				</li>

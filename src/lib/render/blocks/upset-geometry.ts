@@ -19,7 +19,7 @@
  * SVG needs".
  */
 import { line } from 'd3-shape';
-import type { Finding, ScaleEntry, SourceState } from '$lib/schema';
+import type { Finding, ScaleEntry, SourceState, TreatmentStatus } from '$lib/schema';
 
 /**
  * THE isolated membership predicate (Story 7.4 DECIDED SEMANTICS). A source is in
@@ -41,6 +41,9 @@ export interface FindingPill {
 	text: string;
 	/** The severity-scale entry key, for the pill colour (resolved at render). */
 	severity: string;
+	/** The treatment disposition, so the pill reads action (criticality) / deferred
+	 * (grey) / done (green) - the UpSet stays in step with the matrix status tints. */
+	treatmentStatus: TreatmentStatus;
 }
 
 /** One dot in a row's mini-strip: x in the strip's own coordinate space. */
@@ -190,7 +193,8 @@ export function computeUpSetGeometry(
 		const membership = sourceOrder.map((sourceKey) => memberSet.has(sourceKey));
 		const findingPills = groupFindings.map((finding) => ({
 			text: pillText(finding),
-			severity: finding.severity
+			severity: finding.severity,
+			treatmentStatus: finding.treatment.status
 		}));
 		const memberLabels = sourceEntries
 			.filter((entry) => memberSet.has(entry.key))

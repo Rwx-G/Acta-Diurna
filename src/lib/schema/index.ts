@@ -72,6 +72,7 @@ export {
 	MAX_FINDINGS,
 	sourceCellSchema,
 	sourceStateSchema,
+	treatmentLabelsSchema,
 	treatmentSchema,
 	treatmentStatusSchema
 } from './blocks/comparison-matrix.ts';
@@ -81,6 +82,7 @@ export type {
 	SourceCell,
 	SourceState,
 	Treatment,
+	TreatmentLabels,
 	TreatmentStatus
 } from './blocks/comparison-matrix.ts';
 

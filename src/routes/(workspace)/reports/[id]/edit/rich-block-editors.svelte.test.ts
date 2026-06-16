@@ -290,6 +290,43 @@ describe('ComparisonMatrixBlockEditor', () => {
 		expect(block.findings[0].severity).toBe('low');
 	});
 
+	it('marks a finding done via the treatment status', async () => {
+		const block: ComparisonMatrixBlock = $state(matrixBlock());
+		const { getByLabelText } = render(ComparisonMatrixBlockEditor, {
+			block,
+			scales: SCALES,
+			onEdit: vi.fn()
+		});
+
+		await getByLabelText('Finding 1 treatment status').selectOptions('done');
+
+		expect(block.findings[0].treatment.status).toBe('done');
+	});
+
+	it('overrides the treatment column labels via the toggle', async () => {
+		const block: ComparisonMatrixBlock = $state(matrixBlock());
+		const { getByLabelText } = render(ComparisonMatrixBlockEditor, {
+			block,
+			scales: SCALES,
+			onEdit: vi.fn()
+		});
+
+		// Off by default: no override on the block.
+		expect(block.treatmentLabels).toBeUndefined();
+
+		await getByLabelText('Custom treatment column labels').click();
+		// The toggle seeds both labels so the field is never half-filled.
+		expect(block.treatmentLabels).toEqual({ before: 'Before', after: 'After' });
+
+		await getByLabelText('Treatment before column label').fill('Current status');
+		await getByLabelText('Treatment after column label').fill('Target');
+		expect(block.treatmentLabels).toEqual({ before: 'Current status', after: 'Target' });
+
+		// Clearing the toggle drops the override back to the built-in defaults.
+		await getByLabelText('Custom treatment column labels').click();
+		expect(block.treatmentLabels).toBeUndefined();
+	});
+
 	it('reorders findings with the move-down control, preserving the Epic 11 linkTo', async () => {
 		const block: ComparisonMatrixBlock = $state(matrixBlock());
 		const { getByRole } = render(ComparisonMatrixBlockEditor, {
@@ -407,7 +444,7 @@ describe('ComparisonMatrixBlockEditor', () => {
 		const select = getByLabelText('Finding 1 treatment status').element() as HTMLSelectElement;
 		const optionLabels = Array.from(select.options).map((option) => option.textContent);
 
-		expect(optionLabels).toEqual(['Action', 'Deferred']);
+		expect(optionLabels).toEqual(['Action', 'Deferred', 'Done']);
 	});
 });
 

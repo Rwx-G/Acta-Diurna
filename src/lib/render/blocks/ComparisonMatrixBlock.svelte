@@ -87,8 +87,14 @@
 	// raw enum token. The visible cell tint/text is unchanged.
 	const TREATMENT_LABEL: Record<TreatmentStatus, string> = {
 		action: 'Action due',
-		deferred: 'Deferred'
+		deferred: 'Deferred',
+		done: 'Resolved'
 	};
+
+	// The two treatment column headers: author-overridden per block, else the built-in
+	// defaults (so a document without `treatmentLabels` renders byte-unchanged).
+	const beforeLabel = $derived(block.treatmentLabels?.before ?? 'Before');
+	const afterLabel = $derived(block.treatmentLabels?.after ?? 'After');
 </script>
 
 {#if !severityScale || !sourceScale}
@@ -127,8 +133,8 @@
 					{#each sourceColumns as column (column.key)}
 						<th scope="col" class="col-source">{column.label}</th>
 					{/each}
-					<th scope="col" class="col-treatment">Before</th>
-					<th scope="col" class="col-treatment">After</th>
+					<th scope="col" class="col-treatment">{beforeLabel}</th>
+					<th scope="col" class="col-treatment">{afterLabel}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -324,6 +330,12 @@
 
 	.treatment-cell.deferred {
 		background: color-mix(in srgb, var(--report-text-muted) 10%, transparent);
+	}
+
+	/* done: a resolved-green tint, distinct from the action criticality tint and the
+	   neutral deferred grey - so a closed item reads as closed, not parked. */
+	.treatment-cell.done {
+		background: color-mix(in srgb, var(--report-trend-up) 14%, transparent);
 	}
 
 	tbody tr:last-child td {

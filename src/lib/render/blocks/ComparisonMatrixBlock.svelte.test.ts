@@ -287,4 +287,38 @@ describe('ComparisonMatrixBlock render', () => {
 		expect(href).toBe('#detail-1');
 		expect(href).not.toMatch(/^[a-z]+:/i);
 	});
+
+	it('renders the built-in Before / After treatment headers by default', () => {
+		const { container } = render(ComparisonMatrixBlock, { block: block(), scales });
+		const headers = [...container.querySelectorAll('th.col-treatment')].map((th) => th.textContent);
+		expect(headers).toEqual(['Before', 'After']);
+	});
+
+	it('renders author-overridden treatment column headers', () => {
+		const { container } = render(ComparisonMatrixBlock, {
+			block: block({ treatmentLabels: { before: 'Current status', after: 'Target' } }),
+			scales
+		});
+		const headers = [...container.querySelectorAll('th.col-treatment')].map((th) => th.textContent);
+		expect(headers).toEqual(['Current status', 'Target']);
+	});
+
+	it('tags a resolved finding with the done treatment class', () => {
+		const { container } = render(ComparisonMatrixBlock, {
+			block: block({
+				findings: [
+					{
+						category: 'Access',
+						label: 'Weak policy',
+						severity: 'high',
+						sources: { siem: { state: 'found' } },
+						treatment: { before: 'No policy', after: 'Enforced', status: 'done' }
+					}
+				]
+			}),
+			scales
+		});
+		expect(container.querySelectorAll('.treatment-cell.done').length).toBe(2);
+		expect(container.querySelector('.treatment-cell.action')).toBeNull();
+	});
 });

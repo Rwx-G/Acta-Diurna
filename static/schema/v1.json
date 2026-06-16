@@ -1042,6 +1042,25 @@
 											"maxLength": 300,
 											"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 										},
+										"treatmentLabels": {
+											"type": "object",
+											"properties": {
+												"before": {
+													"type": "string",
+													"minLength": 1,
+													"maxLength": 100
+												},
+												"after": {
+													"type": "string",
+													"minLength": 1,
+													"maxLength": 100
+												}
+											},
+											"required": [
+												"before",
+												"after"
+											]
+										},
 										"findings": {
 											"minItems": 1,
 											"maxItems": 500,
@@ -1107,7 +1126,8 @@
 																"type": "string",
 																"enum": [
 																	"action",
-																	"deferred"
+																	"deferred",
+																	"done"
 																]
 															}
 														},

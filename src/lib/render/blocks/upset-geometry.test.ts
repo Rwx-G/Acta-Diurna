@@ -91,6 +91,19 @@ describe('computeUpSetGeometry - grouping', () => {
 		);
 		expect(geo.rows[0].findingPills[0].severity).toBe('critical');
 	});
+
+	it('carries the treatment status on each pill, so the UpSet matches the matrix tints', () => {
+		const geo = computeUpSetGeometry(
+			[
+				finding({
+					treatment: { before: 'a', after: 'b', status: 'done' },
+					sources: { siem: { state: 'found' } }
+				})
+			],
+			SOURCES
+		);
+		expect(geo.rows[0].findingPills[0].treatmentStatus).toBe('done');
+	});
 });
 
 describe('computeUpSetGeometry - ordering and tiebreak', () => {

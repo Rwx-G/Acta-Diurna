@@ -43,8 +43,25 @@
 
 	const TREATMENT_STATUSES: { value: TreatmentStatus; label: string }[] = [
 		{ value: 'action', label: 'Action' },
-		{ value: 'deferred', label: 'Deferred' }
+		{ value: 'deferred', label: 'Deferred' },
+		{ value: 'done', label: 'Done' }
 	];
+
+	// Optional per-block override of the two treatment column headers. The toggle seeds
+	// BOTH labels with the current defaults so the field is never half-filled (the schema
+	// requires both), then the two inputs edit them; clearing the toggle drops the field
+	// back to the built-in "Before" / "After".
+	function toggleTreatmentLabels(on: boolean): void {
+		if (on) block.treatmentLabels = { before: 'Before', after: 'After' };
+		else delete block.treatmentLabels;
+		onEdit();
+	}
+
+	function setTreatmentLabel(which: 'before' | 'after', value: string): void {
+		if (!block.treatmentLabels) return;
+		block.treatmentLabels[which] = value;
+		onEdit();
+	}
 
 	// Changing a scale ref invalidates every finding's keys scored against the OLD
 	// scale: the severity entry is no longer a valid entry of the new scale, and the
@@ -111,6 +128,37 @@
 			</select>
 		</label>
 	</div>
+
+	<label class="treatment-labels-toggle">
+		<input
+			type="checkbox"
+			checked={block.treatmentLabels !== undefined}
+			onchange={(event) => toggleTreatmentLabels(event.currentTarget.checked)}
+		/>
+		Custom treatment column labels
+	</label>
+	{#if block.treatmentLabels}
+		<div class="scale-pickers">
+			<label>
+				Before column
+				<input
+					value={block.treatmentLabels.before}
+					placeholder="Before"
+					oninput={(event) => setTreatmentLabel('before', event.currentTarget.value)}
+					aria-label="Treatment before column label"
+				/>
+			</label>
+			<label>
+				After column
+				<input
+					value={block.treatmentLabels.after}
+					placeholder="After"
+					oninput={(event) => setTreatmentLabel('after', event.currentTarget.value)}
+					aria-label="Treatment after column label"
+				/>
+			</label>
+		</div>
+	{/if}
 
 	{#if scaleOptions.length === 0}
 		<p class="hint">
@@ -310,6 +358,15 @@
 		margin: 0 0 var(--space-3);
 		font-size: var(--text-sm);
 		color: var(--color-ink-65);
+	}
+
+	/* The toggle is a horizontal checkbox + label, overriding the column `label` rule. */
+	.treatment-labels-toggle {
+		flex-direction: row;
+		align-items: center;
+		gap: var(--space-2);
+		margin-bottom: var(--space-3);
+		font-weight: 400;
 	}
 
 	.finding {
