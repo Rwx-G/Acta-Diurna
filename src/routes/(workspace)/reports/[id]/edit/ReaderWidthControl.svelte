@@ -32,6 +32,7 @@
 
 	let open = $state(false);
 	let toggleButton = $state<HTMLButtonElement>();
+	let root = $state<HTMLElement>();
 
 	function clamp(n: number): number {
 		return Math.min(READER_WIDTH_MAX, Math.max(READER_WIDTH_MIN, Math.round(n)));
@@ -74,11 +75,22 @@
 			toggleButton?.focus();
 		}
 	}
+
+	// A pointer press outside the control closes the popover. `pointerdown` (capture)
+	// covers mouse, touch and pen and fires before the click would re-toggle, so a press
+	// on the trigger still toggles via its own handler while a press anywhere else
+	// dismisses. Focus is left where the reader put it (not pulled back to the trigger,
+	// unlike the Escape path).
+	function onWindowPointerDown(event: PointerEvent): void {
+		if (!open) return;
+		const target = event.target as Node | null;
+		if (root && target && !root.contains(target)) open = false;
+	}
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown} onpointerdowncapture={onWindowPointerDown} />
 
-<div class="reader-width">
+<div class="reader-width" bind:this={root}>
 	<Button
 		bind:ref={toggleButton}
 		class="width-trigger"

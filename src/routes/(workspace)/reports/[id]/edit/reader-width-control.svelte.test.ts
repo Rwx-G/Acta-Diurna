@@ -94,6 +94,37 @@ describe('ReaderWidthControl', () => {
 		expect(input.value).toBe('640');
 	});
 
+	it('closes on a pointer press outside the control', async () => {
+		const { container } = render(ReaderWidthControl, {
+			value: 1080,
+			editable: true,
+			onChange: vi.fn()
+		});
+		await open(container);
+		expect(container.querySelector('.width-popover')).not.toBeNull();
+
+		document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		await tick();
+
+		expect(container.querySelector('.width-popover')).toBeNull();
+	});
+
+	it('stays open on a pointer press inside the popover', async () => {
+		const { container } = render(ReaderWidthControl, {
+			value: 1080,
+			editable: true,
+			onChange: vi.fn()
+		});
+		await open(container);
+
+		(container.querySelector('.width-popover') as HTMLElement).dispatchEvent(
+			new PointerEvent('pointerdown', { bubbles: true })
+		);
+		await tick();
+
+		expect(container.querySelector('.width-popover')).not.toBeNull();
+	});
+
 	it('cannot be opened when the report is not editable', async () => {
 		const { getByRole } = render(ReaderWidthControl, {
 			value: undefined,
