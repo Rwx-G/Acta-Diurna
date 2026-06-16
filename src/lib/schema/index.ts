@@ -180,6 +180,7 @@ export {
 	renameScaleKey
 } from './scale-cascade.ts';
 export type { ScaleReference } from './scale-cascade.ts';
+export { READER_WIDTH_MAX, READER_WIDTH_MIN, readerWidthSchema } from './layout.ts';
 
 export { validateInternalLinks } from './internal-links.ts';
 export type { InternalLinkIssue } from './internal-links.ts';

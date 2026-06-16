@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { changeSummarySchema, idSchema } from '../blocks/shared.ts';
 import { sectionSchema } from '../blocks/section.ts';
 import { scalesSchema, validateScaleReferences } from '../scales.ts';
+import { readerWidthSchema } from '../layout.ts';
 import { validateInternalLinks } from '../internal-links.ts';
 import { validateSectionIds } from '../section-ids.ts';
 import { validateBlockIds } from '../block-ids.ts';
@@ -15,6 +16,10 @@ export const documentSchemaV1 = z
 			.min(1, 'A document needs a title.')
 			.max(300, 'Document title too long: 300 characters maximum.'),
 		theme: idSchema.optional(),
+		// Additive, optional reader max content width in CSS pixels. Absent = full-bleed
+		// (the prior default); a number caps the reader column on /view and the published
+		// reader. A document without it validates and renders unchanged; no version bump.
+		width: readerWidthSchema.optional(),
 		// Additive, optional (Epic 7). A document with no `scales` validates and
 		// renders unchanged; no schema-version bump.
 		scales: scalesSchema.optional(),

@@ -19,6 +19,7 @@
 	import SectionEditor from './SectionEditor.svelte';
 	import EditorInspector from './EditorInspector.svelte';
 	import ScalesEditor from './ScalesEditor.svelte';
+	import ReaderWidthControl from './ReaderWidthControl.svelte';
 	import LivePreview from '../preview/LivePreview.svelte';
 	import {
 		groupErrorsByLocation,
@@ -64,6 +65,15 @@
 
 	function onThemeChange(value: string): void {
 		doc.theme = value === '' ? undefined : value;
+		onEdit();
+	}
+
+	// Reader max content width (document-level): a number caps the reader column on
+	// /view and the published reader; undefined restores full-bleed. Absent rather than
+	// a stored null is the canonical "full" state, so the toggle deletes the field.
+	function onReaderWidthChange(next: number | undefined): void {
+		if (next === undefined) delete doc.width;
+		else doc.width = next;
 		onEdit();
 	}
 
@@ -894,22 +904,27 @@
 			</div>
 		{/if}
 
-		<label class="theme-field">
-			<span class="theme-label">Theme</span>
-			<select
-				class="theme-select"
-				value={doc.theme ?? ''}
-				disabled={!editable}
-				onchange={(event) => onThemeChange(event.currentTarget.value)}
-			>
-				<option value="">Default (Modern Gazette)</option>
-				{#each THEME_OPTIONS as option (option.name)}
-					{#if option.name !== 'default'}
-						<option value={option.name}>{option.label}</option>
-					{/if}
-				{/each}
-			</select>
-		</label>
+		<!-- Document-level presentation controls at the trailing edge of the strip:
+		     the reader-width control (full-bleed vs a fixed max width) and the theme. -->
+		<div class="trailing-tools">
+			<ReaderWidthControl value={doc.width} {editable} onChange={onReaderWidthChange} />
+			<label class="theme-field">
+				<span class="theme-label">Theme</span>
+				<select
+					class="theme-select"
+					value={doc.theme ?? ''}
+					disabled={!editable}
+					onchange={(event) => onThemeChange(event.currentTarget.value)}
+				>
+					<option value="">Default (Modern Gazette)</option>
+					{#each THEME_OPTIONS as option (option.name)}
+						{#if option.name !== 'default'}
+							<option value={option.name}>{option.label}</option>
+						{/if}
+					{/each}
+				</select>
+			</label>
+		</div>
 	</div>
 
 	{#if themeWarning}
@@ -1238,12 +1253,20 @@
 		font-weight: 600;
 	}
 
-	/* Theme sits at the trailing edge of the tool strip. */
+	/* The presentation controls (reader width + theme) cluster at the trailing edge of
+	   the tool strip; they wrap together onto a new line on a narrow viewport. */
+	.trailing-tools {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-3);
+		margin-left: auto;
+	}
+
 	.theme-field {
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
-		margin-left: auto;
 	}
 
 	.theme-label {

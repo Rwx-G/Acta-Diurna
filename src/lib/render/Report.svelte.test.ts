@@ -53,6 +53,22 @@ describe('Report (render integration)', () => {
 		expect(container.querySelector('[data-theme]')).toBeNull();
 	});
 
+	it('caps the reader column at the document width via --reader-width', async () => {
+		const view = toReportView(validFull());
+		view.width = 1080;
+		const { container } = render(Report, { view });
+		const report = container.querySelector('.report') as HTMLElement;
+		expect(report.style.getPropertyValue('--reader-width')).toBe('1080px');
+	});
+
+	it('sets no --reader-width override for a full-bleed document', async () => {
+		const view = toReportView(validFull());
+		view.width = undefined;
+		const { container } = render(Report, { view });
+		const report = container.querySelector('.report') as HTMLElement;
+		expect(report.style.getPropertyValue('--reader-width')).toBe('');
+	});
+
 	it('falls back to the default (no data-theme) for an unknown theme (AC3)', async () => {
 		const view = toReportView(validFull());
 		view.theme = 'removed-theme';

@@ -375,6 +375,7 @@
 	data-theme={theme === 'default' ? undefined : theme}
 	data-mode={effectiveMode}
 	data-level={view.hasAudiences ? activeLevel : undefined}
+	style={view.width ? `--reader-width: ${view.width}px` : undefined}
 	bind:this={container}
 	ontouchstart={embedded ? undefined : handleTouchStart}
 	ontouchend={embedded ? undefined : handleTouchEnd}

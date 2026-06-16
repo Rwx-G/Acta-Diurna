@@ -98,6 +98,12 @@ export interface ReportView {
 	title: string;
 	theme: string | undefined;
 	/**
+	 * The reader max content width in CSS pixels, or undefined for full-bleed (the
+	 * default). The Report root sets `--reader-width` from it, so the content column,
+	 * the change summary and each section cap at the author's chosen width.
+	 */
+	width: number | undefined;
+	/**
 	 * Document-level categorical scales (Epic 7). Threaded to the block renderer
 	 * so the comparison-matrix block resolves its severity/source colours and
 	 * labels from the same source the document declares, instead of authoring
@@ -207,6 +213,7 @@ export function toReportView(document: DocumentV1): ReportView {
 	return {
 		title: document.title,
 		theme: document.theme,
+		width: document.width,
 		scales: document.scales,
 		matrixBlocks: collectMatrixBlocks(document.sections),
 		sections,
@@ -260,12 +267,19 @@ export function toPreviewView(snapshot: unknown): ReportView {
 	const record = (snapshot ?? {}) as {
 		title?: unknown;
 		theme?: unknown;
+		width?: unknown;
 		scales?: unknown;
 		sections?: unknown;
 	};
 	const title =
 		typeof record.title === 'string' && record.title.length > 0 ? record.title : 'Untitled report';
 	const theme = typeof record.theme === 'string' ? record.theme : undefined;
+	// Best-effort width: an in-edit snapshot may carry a malformed value; only a finite
+	// positive number caps the preview column, otherwise fall back to full-bleed.
+	const width =
+		typeof record.width === 'number' && Number.isFinite(record.width) && record.width > 0
+			? record.width
+			: undefined;
 	// Best-effort scales: an invalid snapshot may carry a malformed scales array
 	// while the author edits; the matrix renderer tolerates undefined (it falls
 	// back to a neutral palette), so parse permissively and drop on failure.
@@ -347,6 +361,7 @@ export function toPreviewView(snapshot: unknown): ReportView {
 	return {
 		title,
 		theme,
+		width,
 		scales,
 		matrixBlocks,
 		sections: flowSections,

@@ -17,6 +17,11 @@
 			"maxLength": 300,
 			"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
 		},
+		"width": {
+			"type": "integer",
+			"minimum": 640,
+			"maximum": 2400
+		},
 		"scales": {
 			"maxItems": 16,
 			"type": "array",

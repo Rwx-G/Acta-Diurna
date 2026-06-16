@@ -514,3 +514,36 @@ describe('toPreviewView - dangling internal links (Story 11.5)', () => {
 		expect(toPreviewView(fullDocument).danglingLinks).toEqual([]);
 	});
 });
+
+describe('reader width threading', () => {
+	function sizedDoc(width: number): DocumentV1 {
+		const result = validateDocument({
+			version: 1,
+			title: 'Sized',
+			width,
+			sections: [
+				{ id: 's', title: 'S', blocks: [{ type: 'text', id: 't', paragraphs: [[{ text: 'x' }]] }] }
+			]
+		});
+		if (!result.ok) throw new Error('fixture should be valid');
+		return result.document;
+	}
+
+	it('carries the document width onto the reader view', () => {
+		expect(toReportView(sizedDoc(1080)).width).toBe(1080);
+	});
+
+	it('is undefined on the reader view when the document declares no width', () => {
+		expect(toReportView(validFull()).width).toBeUndefined();
+	});
+
+	it('reads a valid width off a preview snapshot and drops a malformed one', () => {
+		expect(toPreviewView({ version: 1, title: 'X', width: 1280, sections: [] }).width).toBe(1280);
+		expect(
+			toPreviewView({ version: 1, title: 'X', width: 'wide', sections: [] }).width
+		).toBeUndefined();
+		expect(
+			toPreviewView({ version: 1, title: 'X', width: -5, sections: [] }).width
+		).toBeUndefined();
+	});
+});
