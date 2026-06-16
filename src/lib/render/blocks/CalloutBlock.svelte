@@ -36,11 +36,18 @@
 </aside>
 
 <style>
+	/* The box carries a FULL border, not just the left accent: the 8% tint alone could
+	   land on the page background on some themes (e.g. the cool Aurora bg vs the info
+	   blue), making the callout vanish. A 1px border in the tone softened over the
+	   surface (50%) defines the box edge on every theme, the 4px left accent keeps the
+	   tone emphasis, and a 12% tint reads the tone in the fill. The body text stays
+	   --report-text (AAA); the border/tint are decorative (not contrast-gated). */
 	.callout {
 		padding: var(--space-4) var(--space-5);
+		border: 1px solid color-mix(in srgb, var(--tone-color) 50%, var(--report-surface));
 		border-left: 4px solid var(--tone-color);
 		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--tone-color) 8%, var(--report-surface));
+		background: color-mix(in srgb, var(--tone-color) 12%, var(--report-surface));
 		font-family: var(--font-sans);
 	}
 
