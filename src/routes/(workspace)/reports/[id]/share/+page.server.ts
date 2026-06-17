@@ -20,6 +20,14 @@ import { AppError, errorPageShape } from '$lib/server/problem';
 /** A share plus its restricted-mode recipient list (empty for open shares). */
 interface ShareView extends ShareSummary {
 	recipients: string[];
+	/**
+	 * The re-displayable absolute reader link, built from the owner-recoverable
+	 * token with the SAME `shareUrl` helper the create action uses (so it is
+	 * byte-identical to the URL shown at creation). Null when the token is not
+	 * recoverable (the share predates this feature, or its cipher cannot be
+	 * decrypted), in which case the UI advises revoking and recreating.
+	 */
+	link: string | null;
 }
 
 interface SharePageData {
@@ -44,7 +52,7 @@ interface SharePageData {
  * share's allow-list (FR19); in SINGLE mode those operations are refused by the
  * service (no email to verify recipients) and the UI hides their controls.
  */
-export const load: PageServerLoad = async ({ params, locals }): Promise<SharePageData> => {
+export const load: PageServerLoad = async ({ params, url, locals }): Promise<SharePageData> => {
 	try {
 		const multi = isMultiAuthor();
 		const scope = await resolveAuthorScope(locals.authorSession?.authorId);
@@ -57,7 +65,8 @@ export const load: PageServerLoad = async ({ params, locals }): Promise<SharePag
 			: new Map<string, string[]>();
 		const shares = summaries.map((share) => ({
 			...share,
-			recipients: recipientsByShare.get(share.id) ?? []
+			recipients: recipientsByShare.get(share.id) ?? [],
+			link: share.recoverableToken ? shareUrl(url.origin, share.recoverableToken) : null
 		}));
 		return {
 			report: { id: report.id, title: report.title, status: report.status },

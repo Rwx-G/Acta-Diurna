@@ -30,6 +30,13 @@ function decodeEqFilter(filter: unknown): { column: string; value: unknown } {
 	return { column: column.name, value: param.value };
 }
 
+// The token cipher (token-cipher.ts) derives its key from SESSION_SECRET, so the
+// real env loader is replaced with a fixed secret - createShare now encrypts the
+// token at rest and toSummary decrypts it back for the owner's management view.
+vi.mock('$lib/server/env', () => ({
+	serverEnv: () => ({ SESSION_SECRET: 's'.repeat(32) })
+}));
+
 // Mode is controllable per test (story 8.4): single mode mints consultation
 // (open) tokens and refuses restricted; multi mode keeps the 3.4 restricted/open
 // choice. Default single, mirroring the no-SMTP baseline.
@@ -101,6 +108,7 @@ function seedShare(overrides: Partial<ShareRow> = {}): ShareRow {
 		id: '0197b300-0000-7000-8000-000000000001',
 		reportId: REPORT_ID,
 		tokenHash: sha256('seeded-token'),
+		tokenCipher: null,
 		mode: 'restricted',
 		expiresAt: null,
 		createdAt: new Date('2026-06-12T10:00:00Z'),
@@ -120,8 +128,8 @@ beforeEach(() => {
 });
 
 describe('createShare', () => {
-	it('on a published report returns a raw token and persists only its hash', async () => {
-		const { token, share } = await createShare(REPORT_ID, TEST_SCOPE);
+	it('on a published report returns a raw token and stores its hash plus cipher', async () => {
+		const { token } = await createShare(REPORT_ID, TEST_SCOPE);
 
 		// >= 128 bits of entropy: 32 raw bytes base64url-encode to 43 chars.
 		expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -130,10 +138,18 @@ describe('createShare', () => {
 		expect(row.tokenHash).toBe(sha256(token));
 		expect(row.tokenHash).not.toBe(token);
 		expect(row.tokenHash).not.toContain(token);
-		// The raw token is on NO persisted column.
+		// The raw token is on NO persisted column in cleartext: the hash is one-way,
+		// and the cipher is an AES-GCM envelope, never the raw value.
 		expect(Object.values(row)).not.toContain(token);
-		// And it never leaks into the returned summary.
-		expect(JSON.stringify(share)).not.toContain(token);
+		expect(row.tokenCipher).toEqual(expect.any(String));
+		expect(row.tokenCipher).not.toContain(token);
+	});
+
+	it('stores an owner-recoverable cipher that decrypts back to the same token', async () => {
+		const { token, share } = await createShare(REPORT_ID, TEST_SCOPE);
+		// The summary re-exposes the token to the authenticated owner, decrypted from
+		// the at-rest cipher, so an existing link can be re-displayed and re-sent.
+		expect(share.recoverableToken).toBe(token);
 	});
 
 	it('single mode mints a consultation (open) token regardless of input (story 8.4)', async () => {
@@ -266,7 +282,7 @@ describe('getShareByToken', () => {
 });
 
 describe('listShares', () => {
-	it('projects each share by report id, never exposing a raw token', async () => {
+	it('projects each share by report id, exposing the owner-recoverable token but not the hash', async () => {
 		const { token } = await createShare(REPORT_ID, TEST_SCOPE);
 		seedShare({ tokenHash: sha256('second'), reportId: REPORT_ID });
 
@@ -274,14 +290,22 @@ describe('listShares', () => {
 
 		expect(summaries.length).toBe(2);
 		const serialized = JSON.stringify(summaries);
-		expect(serialized).not.toContain(token);
+		// The hash-at-rest column never reaches the projection.
 		expect(serialized).not.toContain('tokenHash');
 		for (const summary of summaries) {
 			expect(summary).not.toHaveProperty('token');
 			expect(summary).toHaveProperty('status');
 			expect(summary).toHaveProperty('mode');
 			expect(summary).toHaveProperty('expiresAt');
+			expect(summary).toHaveProperty('recoverableToken');
 		}
+		// The freshly-created share round-trips: its cipher decrypts back to the raw
+		// token the owner can re-display. The seeded share has no cipher, so its
+		// recoverableToken is null (a pre-feature row).
+		const created = summaries.find((summary) => summary.recoverableToken === token);
+		expect(created).toBeDefined();
+		const seeded = summaries.find((summary) => summary.recoverableToken === null);
+		expect(seeded).toBeDefined();
 		expect(dbState.whereFilters).toContainEqual({ column: 'report_id', value: REPORT_ID });
 	});
 

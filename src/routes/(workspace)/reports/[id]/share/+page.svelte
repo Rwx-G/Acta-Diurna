@@ -17,6 +17,10 @@
 	const isMulti = $derived(data.multi);
 
 	let copied = $state(false);
+	// Per-share copy confirmation for the existing-links list: holds the id of the
+	// share whose link was just copied, so each row's "Copied" message is scoped to
+	// that row (the create-form copy uses the separate `copied` flag above).
+	let copiedShareId = $state<string | null>(null);
 	// Mirror the create-form mode selector so the recipient field shows only for a
 	// restricted share (open shares have no allow-list, FR19). Multi mode only.
 	let createMode = $state<'restricted' | 'open'>('restricted');
@@ -63,6 +67,22 @@
 			setTimeout(() => (copied = false), 3000);
 		} catch {
 			copied = false;
+		}
+	}
+
+	async function copyShareLink(shareId: string, link: string): Promise<void> {
+		// Re-displaying an EXISTING link: the value comes from the row's recoverable
+		// token (decrypted server-side from the at-rest cipher), so unlike the
+		// one-shot create copy it survives a reload. The read-only input is the no-JS
+		// fallback - it is selectable even when clipboard access is unavailable.
+		try {
+			await navigator.clipboard.writeText(link);
+			copiedShareId = shareId;
+			setTimeout(() => {
+				if (copiedShareId === shareId) copiedShareId = null;
+			}, 3000);
+		} catch {
+			copiedShareId = null;
 		}
 	}
 
@@ -201,6 +221,37 @@
 								</form>
 							{/if}
 						</div>
+
+						{#if share.status === 'active'}
+							{#if share.link}
+								{@const link = share.link}
+								<div class="link-row">
+									<label class="visually-hidden" for="link-{share.id}">Share link</label>
+									<input
+										id="link-{share.id}"
+										class="link-input"
+										type="text"
+										readonly
+										value={link}
+									/>
+									<Button
+										variant="secondary"
+										type="button"
+										onclick={() => copyShareLink(share.id, link)}
+									>
+										{copiedShareId === share.id ? 'Copied' : 'Copy link'}
+									</Button>
+									<span class="visually-hidden" role="status" aria-live="polite">
+										{copiedShareId === share.id ? 'Link copied to clipboard' : ''}
+									</span>
+								</div>
+							{:else}
+								<p class="hint muted">
+									This link was created before links became re-displayable - revoke it and create a
+									new one to get a copyable link.
+								</p>
+							{/if}
+						{/if}
 
 						{#if isMulti && share.mode === 'restricted'}
 							<form method="POST" action="?/set-recipients" use:enhance class="recipients-editor">
@@ -405,6 +456,36 @@
 
 	.open-note {
 		margin: 0;
+	}
+
+	.link-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+	}
+
+	.link-input {
+		flex: 1;
+		min-width: 0;
+		padding: var(--space-2) var(--space-3);
+		font-family: ui-monospace, monospace;
+		font-size: 13px;
+		color: var(--color-ink);
+		background: var(--color-surface);
+		border: 1px solid var(--color-ink-12);
+		border-radius: var(--radius-sm);
+	}
+
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.consultation-note {

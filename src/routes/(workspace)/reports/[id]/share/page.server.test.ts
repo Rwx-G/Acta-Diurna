@@ -56,6 +56,14 @@ function publishedReport(): Report {
 	return { id: REPORT_ID, title: 'A report', status: 'published' } as Report;
 }
 
+function loadEvent(): Parameters<typeof load>[0] {
+	return {
+		params: { id: REPORT_ID },
+		url: new URL('http://localhost/reports/x/share'),
+		locals: { authorSession: null }
+	} as Parameters<typeof load>[0];
+}
+
 function formRequest(fields: Record<string, string>): Request {
 	const body = new URLSearchParams(fields);
 	return new Request('http://localhost/reports/x/share?/create-share', {
@@ -99,10 +107,7 @@ describe('load', () => {
 		getReportMock.mockResolvedValue(publishedReport());
 		listSharesMock.mockResolvedValue([]);
 
-		const result = await load({
-			params: { id: REPORT_ID },
-			locals: { authorSession: null }
-		} as Parameters<typeof load>[0]);
+		const result = await load(loadEvent());
 
 		expect(result).toBeDefined();
 		expect(result!.report.status).toBe('published');
@@ -110,26 +115,40 @@ describe('load', () => {
 		expect(listSharesMock).toHaveBeenCalledWith(REPORT_ID, TEST_SCOPE);
 	});
 
-	it('does not leak a raw token: load never touches the token service', async () => {
+	it('builds each share link from its recoverable token, null when unrecoverable', async () => {
 		getReportMock.mockResolvedValue(publishedReport());
-		listSharesMock.mockResolvedValue([]);
+		listSharesMock.mockResolvedValue([
+			{
+				id: 's-live',
+				mode: 'open',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active',
+				recoverableToken: 'RECOVERED'
+			},
+			{
+				id: 's-old',
+				mode: 'open',
+				expiresAt: null,
+				createdAt: new Date(),
+				revokedAt: null,
+				status: 'active',
+				recoverableToken: null
+			}
+		]);
 
-		const result = await load({
-			params: { id: REPORT_ID },
-			locals: { authorSession: null }
-		} as Parameters<typeof load>[0]);
+		const result = await load(loadEvent());
 
-		expect(JSON.stringify(result)).not.toContain('token');
+		expect(result!.shares[0].link).toBe('http://localhost/r/RECOVERED');
+		expect(result!.shares[1].link).toBeNull();
 	});
 
 	it('surfaces multi=true in multi mode and reads each share allow-list', async () => {
 		getReportMock.mockResolvedValue(publishedReport());
 		listSharesMock.mockResolvedValue([]);
 
-		const result = await load({
-			params: { id: REPORT_ID },
-			locals: { authorSession: null }
-		} as Parameters<typeof load>[0]);
+		const result = await load(loadEvent());
 
 		expect(result!.multi).toBe(true);
 		expect(listRecipientsForSharesMock).toHaveBeenCalled();
@@ -145,14 +164,12 @@ describe('load', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		]);
 
-		const result = await load({
-			params: { id: REPORT_ID },
-			locals: { authorSession: null }
-		} as Parameters<typeof load>[0]);
+		const result = await load(loadEvent());
 
 		expect(result!.multi).toBe(false);
 		// No email, so no recipient lists exist - the batched read is skipped entirely.
@@ -171,7 +188,8 @@ describe('create-share action', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		});
 
@@ -195,7 +213,8 @@ describe('create-share action', () => {
 				expiresAt: new Date('2026-12-31T23:59:00Z'),
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		});
 
@@ -218,7 +237,8 @@ describe('create-share action', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		});
 
@@ -270,7 +290,8 @@ describe('create-share action', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		});
 
@@ -296,7 +317,8 @@ describe('load with recipients', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		]);
 		listRecipientsForSharesMock.mockResolvedValue(
@@ -323,7 +345,8 @@ describe('create-share with an initial recipient list', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		});
 
@@ -347,7 +370,8 @@ describe('create-share with an initial recipient list', () => {
 				expiresAt: null,
 				createdAt: new Date(),
 				revokedAt: null,
-				status: 'active'
+				status: 'active',
+				recoverableToken: null
 			}
 		});
 

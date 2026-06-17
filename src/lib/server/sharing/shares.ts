@@ -6,8 +6,11 @@
  * on the publish lifecycle: `createShare` reuses 1.7's `assertShareable`, so a
  * draft is refused before any token is generated (FR6).
  *
- * The read side (`listShares`, `getShareByToken`) never exposes the raw token -
- * it does not exist after creation. `getShareByToken` reports a share's status
+ * The reader gate (`getShareByToken`) never exposes the raw token - it resolves a
+ * presented token by hash only. The management read side (`listShares`) re-exposes
+ * the token to the AUTHENTICATED OWNER, decrypted from the row's at-rest cipher
+ * (token-cipher.ts), so an existing link can be re-displayed and re-sent without
+ * weakening the DB-leak model. `getShareByToken` reports a share's status
  * (active / expired / revoked) so the reader gate (story 3.3) and the
  * revocation/expiry neutral page (story 3.5) build on one status function; this
  * story does NOT yet enforce that status at the route.
@@ -22,6 +25,7 @@ import { assertShareable, getReport } from '$lib/server/documents/reports';
 import { isMultiAuthor } from '$lib/server/mode';
 import { AppError } from '$lib/server/problem';
 import { generateShareToken, hashShareToken } from './tokens';
+import { decryptShareToken, encryptShareToken } from './token-cipher';
 
 /**
  * Share-link modes (FR20): restricted = recipient list (3.4), open = anyone with
@@ -42,7 +46,14 @@ export type ShareMode = 'restricted' | 'open';
 /** A share's lifecycle state, derived from `revokedAt`/`expiresAt` against now. */
 export type ShareStatus = 'active' | 'expired' | 'revoked';
 
-/** Management-view projection: never carries the raw token (it is gone after creation). */
+/**
+ * Management-view projection. `recoverableToken` is the raw share token, decrypted
+ * from the row's at-rest cipher so the authenticated owner can re-display and
+ * re-send an EXISTING link; it is null when the row predates this feature (no
+ * cipher stored) or the cipher cannot be decrypted (SESSION_SECRET rotated). The
+ * decrypted token NEVER leaves the owner's authenticated management context - the
+ * reader gate still resolves a presented token by `token_hash`, not from here.
+ */
 export interface ShareSummary {
 	id: string;
 	mode: ShareMode;
@@ -50,6 +61,7 @@ export interface ShareSummary {
 	createdAt: Date;
 	revokedAt: Date | null;
 	status: ShareStatus;
+	recoverableToken: string | null;
 }
 
 /** A resolved share (by raw token) plus its current status, for the reader gate. */
@@ -138,7 +150,8 @@ function toSummary(row: ShareRow): ShareSummary {
 		expiresAt: row.expiresAt ?? null,
 		createdAt: row.createdAt,
 		revokedAt: row.revokedAt ?? null,
-		status: shareStatus(row)
+		status: shareStatus(row),
+		recoverableToken: decryptShareToken(row.tokenCipher ?? null)
 	};
 }
 
@@ -154,8 +167,10 @@ function expiryInPast(): AppError {
 /**
  * Creates a share for a published report. Refuses a draft via `assertShareable`
  * (409 `/problems/report-not-published`) BEFORE minting a token, so no token is
- * ever generated for a non-shareable report. Mints a 256-bit token, stores only
- * its hash plus the metadata, and returns the raw token once (URL only).
+ * ever generated for a non-shareable report. Mints a 256-bit token, stores its
+ * SHA-256 hash (the reader-gate lookup key) AND its AES-GCM cipher (so the owner
+ * can re-display the link, see token-cipher.ts) plus the metadata, and returns the
+ * raw token once (the create action shows the URL straight from this return).
  *
  * Mode by operating mode (story 8.4): in MULTI mode the author chooses
  * restricted/open (default `restricted`). In SINGLE mode there is no email and no
@@ -189,6 +204,7 @@ export async function createShare(
 		id: uuidv7(),
 		reportId: report.id,
 		tokenHash: hashShareToken(token),
+		tokenCipher: encryptShareToken(token),
 		mode,
 		expiresAt,
 		createdAt: now,
@@ -201,8 +217,9 @@ export async function createShare(
 
 /**
  * Lists a report's shares, newest first, for the management UI. Returns id,
- * mode, expiry, creation, revocation, and the derived status - never the raw
- * token (it does not exist after creation).
+ * mode, expiry, creation, revocation, the derived status, and the owner-
+ * recoverable token (decrypted from each row's at-rest cipher, null for a
+ * pre-feature or undecryptable row) so the owner can re-display the link.
  */
 export async function listShares(reportId: string, scope: AuthorScope): Promise<ShareSummary[]> {
 	// Shares scope through their report (a share has a non-null report_id, so it

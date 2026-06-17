@@ -4,7 +4,8 @@ import { E2E_BASE_URL } from './fixtures.ts';
 // Authenticated via the `setup` project's storage state. Lean happy path for
 // story 3.2 (FR17/FR21): a draft refuses sharing with a "publish first"
 // message; once published, creating a share returns a /r/[token] link shown
-// exactly once, and the share is then listed without exposing the raw token.
+// once at creation AND re-displayable from the existing-links list so the owner
+// can copy/re-send the SAME link later (re-displayable share links).
 //
 // The POSTs go through Playwright's request context with an explicit Origin
 // header because the APIRequestContext does not set one automatically the way a
@@ -56,10 +57,13 @@ test('a draft refuses sharing; a published report yields a one-time link', async
 	const url = (await linkCode.textContent())!.trim();
 	expect(url).toMatch(/\/r\/[A-Za-z0-9_-]{43}$/);
 
-	// The share is now listed with an active status, and the raw token is not in
-	// the listing (only the one-time created block carries it).
+	// The share is now listed with an active status, and the SAME link is
+	// re-displayed in the existing-links list with a copy control, so the owner can
+	// re-send it without recreating. The link is byte-identical to the one shown at
+	// creation (built from the at-rest cipher, decrypted server-side).
 	const listing = page.locator('.share-list');
 	await expect(listing.getByText('active')).toBeVisible();
-	const rawToken = url.split('/r/')[1];
-	await expect(listing).not.toContainText(rawToken);
+	const listedLink = listing.locator('.link-input');
+	await expect(listedLink).toHaveValue(url);
+	await expect(listing.getByRole('button', { name: 'Copy link' })).toBeVisible();
 });
