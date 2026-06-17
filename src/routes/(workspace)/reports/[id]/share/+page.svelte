@@ -160,7 +160,7 @@
 
 		{#if form?.created}
 			<div class="created" role="status">
-				<p class="created-label">Your share link (shown once - copy it now):</p>
+				<p class="created-label">Link created. Copy it now:</p>
 				<div class="created-row">
 					<code class="created-url">{form.created.url}</code>
 					<Button variant="secondary" type="button" onclick={() => copyLink(form.created.url)}>
@@ -168,8 +168,8 @@
 					</Button>
 				</div>
 				<p class="hint">
-					This is the only time the full link is displayed. The link itself is not stored - only a
-					hash of it. If you lose it, generate a new one.
+					You can copy this link again at any time from the list below; it stays available to you
+					until you revoke it.
 				</p>
 			</div>
 		{/if}
