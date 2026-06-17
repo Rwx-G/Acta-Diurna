@@ -31,9 +31,10 @@
 	// would otherwise leave below and to the right.
 	const DEVICE_WIDTH = { desktop: 1280, mobile: 390 } as const;
 	const deviceWidth = $derived(DEVICE_WIDTH[viewport]);
-	// The width the stage scales into, measured off the scroll frame, and the stage's own
-	// unscaled content height. Neither feeds back into the other (the stage width is fixed
-	// at `deviceWidth`, the clip box height does not constrain the stage), so no loop.
+	// The width the stage scales into, measured off a NON-scrolling wrapper (so the frame's
+	// own scrollbar never feeds back into the width), and the stage's own unscaled content
+	// height. Neither feeds back into the other (the stage width is fixed at `deviceWidth`,
+	// the clip box height does not constrain the stage), so no loop.
 	let frameWidth = $state(0);
 	let naturalHeight = $state(0);
 	const scale = $derived(frameWidth > 0 ? Math.min(1, frameWidth / deviceWidth) : 1);
@@ -87,22 +88,24 @@
 		</div>
 	{/if}
 
-	<div class="frame" bind:clientWidth={frameWidth}>
-		<div class="stage-clip" style="width: {stageWidth}px; height: {scaledHeight}px;">
-			<div
-				class="stage"
-				bind:clientHeight={naturalHeight}
-				style="width: {deviceWidth}px; transform: scale({scale}); transform-origin: top left;"
-			>
-				{#key document}
-					<Report
-						{view}
-						mode="scroll"
-						embedded
-						level={previewLevel}
-						onlevelchange={(next) => (previewLevel = next)}
-					/>
-				{/key}
+	<div class="frame-measure" bind:clientWidth={frameWidth}>
+		<div class="frame">
+			<div class="stage-clip" style="width: {stageWidth}px; height: {scaledHeight}px;">
+				<div
+					class="stage"
+					bind:clientHeight={naturalHeight}
+					style="width: {deviceWidth}px; transform: scale({scale}); transform-origin: top left;"
+				>
+					{#key document}
+						<Report
+							{view}
+							mode="scroll"
+							embedded
+							level={previewLevel}
+							onlevelchange={(next) => (previewLevel = next)}
+						/>
+					{/key}
+				</div>
 			</div>
 		</div>
 	</div>
@@ -168,12 +171,22 @@
 		padding-left: var(--space-5);
 	}
 
-	.frame {
+	/* The width is measured on this NON-scrolling wrapper, not the scrolling frame: a
+	   vertical scrollbar on the frame changes its clientWidth, which would feed back into
+	   the scale (and thus the height, and thus the scrollbar) - a ResizeObserver loop.
+	   Measuring on a wrapper with no overflow keeps the measured width stable. */
+	.frame-measure {
 		margin: 0 auto;
 		width: 100%;
 		max-width: var(--tool-width);
+	}
+
+	.frame {
 		max-height: 78vh;
-		overflow: auto;
+		overflow-y: auto;
+		/* The stage-clip is at most the measured width; clip any sub-pixel / scrollbar
+		   overflow rather than letting it raise a horizontal scrollbar. */
+		overflow-x: hidden;
 		background: var(--report-bg, var(--color-stone));
 		border: 1px solid var(--color-ink-12);
 		border-radius: var(--radius-md);
