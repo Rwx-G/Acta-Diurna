@@ -1126,6 +1126,8 @@
 																"type": "string",
 																"enum": [
 																	"action",
+																	"decision-required",
+																	"in-progress",
 																	"deferred",
 																	"done"
 																]

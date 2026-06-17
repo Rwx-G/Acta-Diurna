@@ -62,10 +62,11 @@
 		return scaleEntryColor(scale, index === -1 ? 0 : index, theme);
 	}
 
-	// The pill colour follows the treatment status, in lockstep with the matrix cell
-	// tints: deferred reads neutral grey (parked), done reads resolved green, and an
-	// open `action` item keeps its criticality colour. So the UpSet doubles as an
-	// at-a-glance execution view, not just a coverage chart.
+	// The pill colour follows the treatment status: the two TERMINAL/parked states read
+	// their fixed colour (deferred = neutral grey, done = resolved green), while every
+	// OPEN item (action, decision-required, in-progress) keeps its criticality colour, so
+	// the coverage chart still surfaces how critical the still-open gaps are. The fine
+	// status distinction between open items lives in the matrix's per-cell tints.
 	function pillColor(pill: FindingPill): string {
 		if (pill.treatmentStatus === 'deferred') return 'var(--report-text-muted)';
 		if (pill.treatmentStatus === 'done') return 'var(--report-trend-up)';

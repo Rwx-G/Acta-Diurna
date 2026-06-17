@@ -444,7 +444,13 @@ describe('ComparisonMatrixBlockEditor', () => {
 		const select = getByLabelText('Finding 1 treatment status').element() as HTMLSelectElement;
 		const optionLabels = Array.from(select.options).map((option) => option.textContent);
 
-		expect(optionLabels).toEqual(['Action', 'Deferred', 'Done']);
+		expect(optionLabels).toEqual([
+			'Decision required',
+			'Action',
+			'In progress',
+			'Deferred',
+			'Done'
+		]);
 	});
 });
 

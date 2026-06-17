@@ -321,4 +321,26 @@ describe('ComparisonMatrixBlock render', () => {
 		expect(container.querySelectorAll('.treatment-cell.done').length).toBe(2);
 		expect(container.querySelector('.treatment-cell.action')).toBeNull();
 	});
+
+	it.each(['decision-required', 'in-progress'] as const)(
+		'tags a finding with its %s lifecycle treatment class',
+		(status) => {
+			const { container } = render(ComparisonMatrixBlock, {
+				block: block({
+					findings: [
+						{
+							category: 'Access',
+							label: 'Weak policy',
+							severity: 'high',
+							sources: { siem: { state: 'found' } },
+							treatment: { before: 'No policy', after: 'Enforced', status }
+						}
+					]
+				}),
+				scales
+			});
+			// Both treatment cells (before + after) carry the status class.
+			expect(container.querySelectorAll(`.treatment-cell.${status}`).length).toBe(2);
+		}
+	);
 });

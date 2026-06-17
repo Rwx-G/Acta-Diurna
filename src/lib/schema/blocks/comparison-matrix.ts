@@ -38,15 +38,23 @@ export const sourceCellSchema = z.object({
 export type SourceCell = z.infer<typeof sourceCellSchema>;
 
 /**
- * Treatment disposition for a finding. A closed enum (unlike the author-defined
- * severity/source scales): `action` = remediation is due, `deferred` =
- * accepted/parked, `done` = resolved/closed. Render tints the treatment cells from
- * fixed theme tokens, never from a scale: action = the criticality tint, deferred =
- * neutral grey, done = a resolved green - so a remediation report doubles as an
- * execution tracker. `done` is additive: a document using only action/deferred
- * validates and renders unchanged.
+ * Treatment disposition for a finding, the full execution-tracking lifecycle. A
+ * closed enum (unlike the author-defined severity/source scales): `decision-required`
+ * = awaiting a go/no-go, `action` = remediation is due, `in-progress` = being worked,
+ * `done` = resolved/closed, `deferred` = accepted/parked. Render tints the treatment
+ * cells from fixed theme tokens, never from a scale: action = the criticality red,
+ * decision-required = amber, in-progress = blue, done = resolved green, deferred =
+ * neutral grey - so a remediation report doubles as an execution tracker. The enum is
+ * additive: a document using only the original action/deferred/done validates and
+ * renders unchanged.
  */
-export const treatmentStatusSchema = z.enum(['action', 'deferred', 'done']);
+export const treatmentStatusSchema = z.enum([
+	'action',
+	'decision-required',
+	'in-progress',
+	'deferred',
+	'done'
+]);
 
 export type TreatmentStatus = z.infer<typeof treatmentStatusSchema>;
 

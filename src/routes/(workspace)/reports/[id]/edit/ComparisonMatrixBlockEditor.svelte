@@ -41,8 +41,12 @@
 		{ value: 'none', label: 'Not covered' }
 	];
 
+	// Lifecycle order: a finding moves decision-required -> action -> in-progress -> done,
+	// with deferred as the parked side state.
 	const TREATMENT_STATUSES: { value: TreatmentStatus; label: string }[] = [
+		{ value: 'decision-required', label: 'Decision required' },
 		{ value: 'action', label: 'Action' },
+		{ value: 'in-progress', label: 'In progress' },
 		{ value: 'deferred', label: 'Deferred' },
 		{ value: 'done', label: 'Done' }
 	];

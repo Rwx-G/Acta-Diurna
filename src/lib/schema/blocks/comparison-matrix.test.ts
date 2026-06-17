@@ -155,6 +155,17 @@ describe('comparison-matrix block - execution-tracking additions', () => {
 		if (result.success) expect(result.data.findings[0].treatment.status).toBe('done');
 	});
 
+	it.each(['decision-required', 'in-progress'] as const)(
+		'accepts the additive "%s" lifecycle status',
+		(status) => {
+			const result = comparisonMatrixBlockSchema.safeParse(
+				validBlock({ findings: [validFinding({ treatment: { before: 'a', after: 'b', status } })] })
+			);
+			expect(result.success).toBe(true);
+			if (result.success) expect(result.data.findings[0].treatment.status).toBe(status);
+		}
+	);
+
 	it('accepts an optional treatmentLabels override', () => {
 		const result = comparisonMatrixBlockSchema.safeParse(
 			validBlock({ treatmentLabels: { before: 'Current status', after: 'Target' } })

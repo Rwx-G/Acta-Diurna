@@ -87,6 +87,8 @@
 	// raw enum token. The visible cell tint/text is unchanged.
 	const TREATMENT_LABEL: Record<TreatmentStatus, string> = {
 		action: 'Action due',
+		'decision-required': 'Decision required',
+		'in-progress': 'In progress',
 		deferred: 'Deferred',
 		done: 'Resolved'
 	};
@@ -322,18 +324,26 @@
 		max-width: 24ch;
 	}
 
-	/* treatment tints: a fixed two-state semantic tint from theme tokens, never a
-	   scale - status is a closed enum. */
+	/* treatment tints: one fixed semantic tint per lifecycle status from theme tokens,
+	   never a scale - status is a closed enum. Five distinct hues so a status reads at a
+	   glance: action = criticality red, decision-required = amber, in-progress = blue,
+	   done = resolved green, deferred = neutral grey. */
 	.treatment-cell.action {
 		background: color-mix(in srgb, var(--report-trend-down) 12%, transparent);
+	}
+
+	.treatment-cell.decision-required {
+		background: color-mix(in srgb, var(--report-tone-warning) 13%, transparent);
+	}
+
+	.treatment-cell.in-progress {
+		background: color-mix(in srgb, var(--report-tone-info) 13%, transparent);
 	}
 
 	.treatment-cell.deferred {
 		background: color-mix(in srgb, var(--report-text-muted) 10%, transparent);
 	}
 
-	/* done: a resolved-green tint, distinct from the action criticality tint and the
-	   neutral deferred grey - so a closed item reads as closed, not parked. */
 	.treatment-cell.done {
 		background: color-mix(in srgb, var(--report-trend-up) 14%, transparent);
 	}
