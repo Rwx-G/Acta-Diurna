@@ -230,12 +230,19 @@ export const dataSets = pgTable(
 
 export type DataSetRow = typeof dataSets.$inferSelect;
 
-// A share link (FR17/FR21/NFR6) points a reader at a published report. The raw
-// token lives ONLY in the share URL handed out once at creation; the table
-// stores its SHA-256 hash (D5, same hash-at-rest as the sessions token), so a
-// database leak exposes no usable link. `token_hash` is uniquely indexed - the
-// reader gate (story 3.3) resolves a share by hashing the URL token and looking
-// it up here.
+// A share link (FR17/FR21/NFR6) points a reader at a published report. The token
+// is held two ways. `token_hash` is the SHA-256 hash-at-rest (D5, same as the
+// sessions token) and is uniquely indexed: the reader gate (story 3.3) resolves
+// a presented token by hashing the URL token and looking it up here - that
+// lookup is one-way and never reverses a leaked hash into a working link.
+// `token_cipher` is the SAME token reversibly encrypted at rest (AES-256-GCM,
+// key derived from SESSION_SECRET via HKDF, see token-cipher.ts), so the
+// authenticated owner can re-display and re-send an existing link from the
+// management view. A DB-only leak (the dump without SESSION_SECRET) still yields
+// no usable link: the hash is irreversible and the cipher is undecryptable
+// without the app key. `token_cipher` is NULLABLE - rows created before this
+// feature have no recoverable token (the link is unrecoverable, surfaced in the
+// UI as "revoke and recreate").
 //
 // `report_id` is ON DELETE CASCADE (contrast `data_sets`' SET NULL): a share is
 // meaningless without its report - it serves that report's published snapshot
@@ -257,6 +264,7 @@ export const shares = pgTable(
 			.notNull()
 			.references(() => reports.id, { onDelete: 'cascade' }),
 		tokenHash: text('token_hash').notNull(),
+		tokenCipher: text('token_cipher'),
 		mode: text('mode').notNull().default('restricted'),
 		expiresAt: timestamp('expires_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
